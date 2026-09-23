@@ -47,14 +47,27 @@ export async function syncInspections(ctx: InspectionsContext, opts: { force?: b
   syncing = true;
   try {
     const current = getInspectionDataset(ctx.db, year);
-    const passport = await erknm.fetchPassport(year);
+    const dir = datasetDir(ctx.config);
+    let passport: erknm.DatasetPassport;
+    try {
+      passport = await erknm.fetchPassport(year);
+    } catch (err) {
+      // Источник недоступен (например, отдаёт 502), но архив уже лежит в DATA_DIR — разбираем его, чтобы сервис не зависел от сайта.
+      const local = await newestArchive(dir);
+      if (!local || (current && current.fileName === local)) throw err;
+      ctx.log.warn({ err: describeSyncError(err), file: local }, 'erknm: источник недоступен, разбираю архив с диска');
+      passport = {
+        year, datasetId: `7710146102-plan-${year}`, datasetName: `Планы проверок на ${year} год`,
+        owner: 'Генеральная прокуратура Российской Федерации', fileName: local, fileUrl: '',
+        version: erknm.versionFromFileName(local) ?? 'local', xsdUrl: null, fetchedAt: new Date().toISOString(),
+      };
+    }
     if (!opts.force && current && current.fileName === passport.fileName) {
       // Версия та же: отмечаем проверку, иначе набор навсегда останется «просроченным» и мы будем ходить к источнику каждый час.
       touchInspectionDataset(ctx.db, year);
       ctx.log.info({ year, version: current.version, records: current.records }, 'erknm: набор уже актуален');
       return { status: 'up_to_date', dataset: getInspectionDataset(ctx.db, year) ?? current };
     }
-    const dir = datasetDir(ctx.config);
     const zipPath = join(dir, passport.fileName);
     // Архив нужной версии уже лежит в DATA_DIR (перезапуск после обрыва разбора) — качать заново не нужно.
     const onDisk = await stat(zipPath).then((s) => s.size, () => 0);
@@ -119,6 +132,13 @@ function pickRegion(aliases: ReturnType<typeof erknm.buildRegionAliases>, addres
     if (region) return { region, address };
   }
   return null;
+}
+
+/** Самый свежий архив плана в DATA_DIR/erknm (по дате в имени) — для разбора без доступа к источнику. */
+async function newestArchive(dir: string): Promise<string | null> {
+  const names = await readdir(dir).catch(() => [] as string[]);
+  const zips = names.filter((n) => /^data-\d{8}-structure-\d{8}\.zip$/.test(n)).sort();
+  return zips.at(-1) ?? null;
 }
 
 async function dropOldArchives(dir: string, keep: string, ctx: InspectionsContext): Promise<void> {
