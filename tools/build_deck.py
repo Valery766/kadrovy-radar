@@ -247,7 +247,12 @@ for ri, row in enumerate(rows):
         txt(s, x + Inches(0.05), y + Inches(0.04), widths[ci] - Inches(0.15), Inches(0.4), cell, size=10.5, bold=(ri == 0), color=WHITE if ri == 0 else DARK)
         x += widths[ci]
     y += Inches(0.42)
-txt(s, Inches(0.6), Inches(6.55), Inches(12), Inches(0.5), 'Доказательство: два пакета уже работают на одном коде (Общепит · СПб и Розница · Татарстан); риски — смещение госпортала, доступность источников (кэш и деградация), актуальность словарей пакета (владелец контента).', size=11, color=MUTED)
+cov = ROOT / 'docs' / 'coverage-summary.json'
+cov_txt = ''
+if cov.exists():
+    c = json.loads(cov.read_text(encoding='utf8'))
+    cov_txt = f" Карта покрытия (docs/coverage.md): {c['okPairs']} из {c['totalPairs']} пар «регион × профессия» дают ≥ {c['min']} вакансий, в {c['regionsOk']} из {c['regions']} регионов — не менее 5 профессий."
+txt(s, Inches(0.6), Inches(6.5), Inches(12), Inches(0.6), 'Доказательство: два пакета уже работают на одном коде (Общепит · СПб и Розница · Татарстан); риски — смещение госпортала, доступность источников (кэш и деградация), актуальность словарей пакета (владелец контента).' + cov_txt, size=10.5, color=MUTED)
 
 # 12. Пилот
 s = prs.slides.add_slide(BLANK); n += 1
