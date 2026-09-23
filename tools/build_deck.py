@@ -1,294 +1,675 @@
-"""Сборка презентации «Ставка» (PPTX → PDF через LibreOffice).
-Запуск: tools/.venv/bin/python tools/build_deck.py --commit <hash> [--token ...] [--secrets-file .env] --out out/
-Служебный первый слайд заполняется из аргументов; без секретов получается публичная версия."""
-import argparse, json, os, subprocess, sys
+"""Сборка презентации «Кадровый радар» (PPTX → PDF через LibreOffice).
+
+Запуск:
+    tools/.venv/bin/python tools/build_deck.py --commit $(git rev-parse HEAD) --out out/
+
+Первый слайд служебный (формат сдачи трека «Эффективный бизнес», стр. 10 ТЗ): ссылки,
+репозиторий с commit hash, переменные окружения, порядок проверки. Токен по умолчанию
+не печатается — строка «передаётся отдельно при загрузке решения»; для финальной версии
+можно передать --token.
+
+Имя файла — только ASCII: soffice в headless-режиме спотыкается о кириллицу в пути.
+Конвертация обязательно с -env:UserInstallation, иначе падает на чужом профиле LibreOffice.
+"""
+import argparse, subprocess, sys
 from pathlib import Path
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
+from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
 ROOT = Path(__file__).resolve().parent.parent
 SHOTS = ROOT / 'docs' / 'shots'
-BLUE = RGBColor(0x2F, 0x6B, 0xFF); DARK = RGBColor(0x11, 0x18, 0x27); MUTED = RGBColor(0x6B, 0x72, 0x80)
-LIGHT = RGBColor(0xF3, 0xF6, 0xFF); WHITE = RGBColor(0xFF, 0xFF, 0xFF); GREEN = RGBColor(0x1F, 0x9D, 0x55); ORANGE = RGBColor(0xF9, 0x73, 0x16)
+
+BLUE = RGBColor(0x2F, 0x6B, 0xFF)
+DARK = RGBColor(0x11, 0x18, 0x27)
+MUTED = RGBColor(0x6B, 0x72, 0x80)
+LIGHT = RGBColor(0xF1, 0xF5, 0xFF)
+GREY = RGBColor(0xF3, 0xF4, 0xF6)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+GREEN = RGBColor(0x14, 0x7D, 0x45)
+ORANGE = RGBColor(0xD9, 0x5E, 0x0B)
+RED = RGBColor(0xC0, 0x27, 0x2D)
+LINE = RGBColor(0xD5, 0xDD, 0xF5)
 FONT = 'Arial'
+FOOTER = 'Кадровый радар · unecon.tech · хакатон MAX 2026 · трек «Эффективный бизнес» · данные на 23.09.2026'
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--commit', default='<commit hash>')
-ap.add_argument('--repo', default='<ссылка на репозиторий>')
-ap.add_argument('--secrets-file', default=None, help='.env с MAX_BOT_TOKEN/MAX_WEBHOOK_SECRET для служебного слайда')
-ap.add_argument('--out', default=str(ROOT / 'out'))
+ap.add_argument('--repo', default='https://github.com/Valery766/kadrovy-radar')
+ap.add_argument('--bot-url', default='https://max.ru/t796_hakaton_max_bot')
 ap.add_argument('--app-url', default='https://radar.digital-projects.tech/app/')
-ap.add_argument('--name', default='stavka-presentation')
+ap.add_argument('--token', default=None, help='MAX_BOT_TOKEN для финальной версии PDF; по умолчанию не печатается')
+ap.add_argument('--out', default=str(ROOT / 'out'))
+ap.add_argument('--name', default='kadrovy-radar-presentation')
 args = ap.parse_args()
 
-secrets = {}
-if args.secrets_file and Path(args.secrets_file).exists():
-    for line in Path(args.secrets_file).read_text(encoding='utf8').splitlines():
-        if '=' in line and not line.startswith('#'):
-            k, v = line.split('=', 1); secrets[k.strip()] = v.strip()
-
 prs = Presentation()
-prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
+prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
 BLANK = prs.slide_layouts[6]
 W, H = prs.slide_width, prs.slide_height
 
-def txt(slide, x, y, w, h, text, size=18, bold=False, color=DARK, align=PP_ALIGN.LEFT, font=FONT, anchor=MSO_ANCHOR.TOP):
-    tb = slide.shapes.add_textbox(x, y, w, h); tf = tb.text_frame; tf.word_wrap = True; tf.vertical_anchor = anchor
-    tf.margin_left = tf.margin_right = Inches(0.05); tf.margin_top = tf.margin_bottom = Inches(0.02)
+
+# ---------------------------------------------------------------- примитивы
+def txt(slide, x, y, w, h, text, size=16, bold=False, color=DARK, align=PP_ALIGN.LEFT,
+        anchor=MSO_ANCHOR.TOP, space=4, line=None):
+    tb = slide.shapes.add_textbox(x, y, w, h)
+    tf = tb.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = anchor
+    tf.margin_left = tf.margin_right = Inches(0.04)
+    tf.margin_top = tf.margin_bottom = Inches(0.02)
     lines = text if isinstance(text, list) else [text]
-    for i, line in enumerate(lines):
+    for i, ln in enumerate(lines):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment = align
-        r = p.add_run(); r.text = line; r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = color; r.font.name = font
-        p.space_after = Pt(4)
+        p.space_after = Pt(space)
+        if line:
+            p.line_spacing = line
+        st = {}
+        if isinstance(ln, tuple):
+            ln, st = ln[0], ln[1]
+        r = p.add_run()
+        r.text = ln
+        r.font.size = Pt(st.get('size', size))
+        r.font.bold = st.get('bold', bold)
+        r.font.color.rgb = st.get('color', color)
+        r.font.name = FONT
     return tb
 
-def bullets(slide, x, y, w, h, items, size=16, color=DARK):
-    tb = slide.shapes.add_textbox(x, y, w, h); tf = tb.text_frame; tf.word_wrap = True
-    tf.margin_left = tf.margin_right = Inches(0.05)
+
+def bullets(slide, x, y, w, h, items, size=15, color=DARK, space=7):
+    """Элемент строки: строка (маркер), (строка, True) — подзаголовок без маркера."""
+    tb = slide.shapes.add_textbox(x, y, w, h)
+    tf = tb.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = Inches(0.04)
     for i, it in enumerate(items):
+        head = False
+        if isinstance(it, tuple):
+            it, head = it
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        bold = False
-        if isinstance(it, tuple): it, bold = it
-        r = p.add_run(); r.text = ('• ' if not bold else '') + it; r.font.size = Pt(size); r.font.color.rgb = color; r.font.name = FONT; r.font.bold = bold
-        p.space_after = Pt(6)
+        p.space_after = Pt(space if not head else space + 1)
+        p.space_before = Pt(6 if head and i else 0)
+        r = p.add_run()
+        r.text = it if head else '• ' + it
+        r.font.size = Pt(size)
+        r.font.bold = head
+        r.font.color.rgb = BLUE if head else color
+        r.font.name = FONT
     return tb
 
-def rect(slide, x, y, w, h, fill=LIGHT, line=None, radius=True):
+
+def rect(slide, x, y, w, h, fill=LIGHT, line=None, radius=True, adj=0.08):
     s = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE if radius else MSO_SHAPE.RECTANGLE, x, y, w, h)
-    s.fill.solid(); s.fill.fore_color.rgb = fill
-    if line is None: s.line.fill.background()
-    else: s.line.color.rgb = line
-    if radius: s.adjustments[0] = 0.08
+    s.fill.solid()
+    s.fill.fore_color.rgb = fill
+    if line is None:
+        s.line.fill.background()
+    else:
+        s.line.color.rgb = line
+        s.line.width = Pt(1)
+    if radius:
+        s.adjustments[0] = adj
     s.shadow.inherit = False
     return s
 
+
+def arrow(slide, x, y, w, h=Inches(0.22), color=BLUE):
+    s = slide.shapes.add_shape(MSO_SHAPE.RIGHT_ARROW, x, y, w, h)
+    s.fill.solid()
+    s.fill.fore_color.rgb = color
+    s.line.fill.background()
+    s.shadow.inherit = False
+    return s
+
+
 def header(slide, title, subtitle=None, n=None):
-    rect(slide, 0, 0, W, Inches(0.12), fill=BLUE, radius=False)
-    txt(slide, Inches(0.6), Inches(0.35), Inches(11.5), Inches(0.8), title, size=30, bold=True)
-    if subtitle: txt(slide, Inches(0.6), Inches(1.05), Inches(11.8), Inches(0.5), subtitle, size=15, color=MUTED)
-    txt(slide, Inches(0.6), H - Inches(0.5), Inches(8), Inches(0.35), 'Ставка · unecon.tech · Хакатон MAX 2026 · трек «Эффективный бизнес»', size=10, color=MUTED)
-    if n is not None: txt(slide, W - Inches(1.2), H - Inches(0.5), Inches(0.6), Inches(0.35), str(n), size=10, color=MUTED, align=PP_ALIGN.RIGHT)
+    rect(slide, 0, 0, W, Inches(0.13), fill=BLUE, radius=False)
+    txt(slide, Inches(0.55), Inches(0.28), Inches(12.2), Inches(0.7), title, size=30, bold=True)
+    if subtitle:
+        txt(slide, Inches(0.55), Inches(0.98), Inches(12.2), Inches(0.5), subtitle, size=14, color=MUTED)
+    txt(slide, Inches(0.55), H - Inches(0.46), Inches(11), Inches(0.32), FOOTER, size=9, color=MUTED)
+    if n is not None:
+        txt(slide, W - Inches(1.1), H - Inches(0.46), Inches(0.55), Inches(0.32), str(n), size=9,
+            color=MUTED, align=PP_ALIGN.RIGHT)
 
-def tile(slide, x, y, w, h, label, value, fill=LIGHT, vcolor=DARK):
+
+def tile(slide, x, y, w, h, label, value, fill=LIGHT, vcolor=DARK, vsize=22, note=None):
     rect(slide, x, y, w, h, fill=fill)
-    txt(slide, x + Inches(0.15), y + Inches(0.1), w - Inches(0.3), Inches(0.4), label, size=11, color=MUTED)
-    txt(slide, x + Inches(0.15), y + Inches(0.45), w - Inches(0.3), h - Inches(0.5), value, size=22, bold=True, color=vcolor)
+    txt(slide, x + Inches(0.14), y + Inches(0.09), w - Inches(0.28), Inches(0.5), label, size=11, color=MUTED)
+    txt(slide, x + Inches(0.14), y + Inches(0.5), w - Inches(0.28), Inches(0.5), value, size=vsize, bold=True, color=vcolor)
+    if note:
+        txt(slide, x + Inches(0.14), y + h - Inches(0.42), w - Inches(0.28), Inches(0.36), note, size=10, color=MUTED)
 
-def pic(slide, path, x, y, w=None, h=None):
-    p = SHOTS / path
-    if not p.exists(): rect(slide, x, y, w or Inches(3), h or Inches(5), fill=LIGHT); txt(slide, x, y + Inches(1), w or Inches(3), Inches(1), f'[скриншот {path}]', size=12, color=MUTED, align=PP_ALIGN.CENTER); return
-    if w and h: return slide.shapes.add_picture(str(p), x, y, width=w, height=h)
-    if w: return slide.shapes.add_picture(str(p), x, y, width=w)
-    return slide.shapes.add_picture(str(p), x, y, height=h)
 
-def crop_top(shape, ratio):
-    """Обрезать картинку снизу, оставив верхнюю долю ratio (0..1)."""
-    shape.crop_bottom = 1 - ratio
-    shape.height = int(shape.height * ratio)
+def table(slide, x, y, widths, rows, size=11, heights=None, head=True):
+    """rows[0] — шапка. heights — высота каждой строки в Emu (по умолчанию 0.42\")."""
+    yy = y
+    for ri, row in enumerate(rows):
+        h = (heights[ri] if heights else Inches(0.42))
+        xx = x
+        for ci, cell in enumerate(row):
+            fill = BLUE if (ri == 0 and head) else (LIGHT if ri % 2 else WHITE)
+            rect(slide, xx, yy, widths[ci] - Inches(0.04), h, fill=fill, radius=False,
+                 line=None if (ri == 0 and head) else LINE)
+            txt(slide, xx + Inches(0.07), yy + Inches(0.05), widths[ci] - Inches(0.2), h - Inches(0.08),
+                cell, size=size, bold=(ri == 0 and head), color=WHITE if (ri == 0 and head) else DARK, space=1)
+            xx += widths[ci]
+        yy += h
+    return yy
+
+
+def png_size(path):
+    b = path.read_bytes()[16:24]
+    return int.from_bytes(b[:4], 'big'), int.from_bytes(b[4:], 'big')
+
+
+def shot(slide, name, x, y, h, top=0.0, bottom=0.0, caption=None, frame=True):
+    """Скриншот полосой: top/bottom — доли высоты, которые обрезаем. Ширина считается по высоте."""
+    p = SHOTS / name
+    if not p.exists():
+        rect(slide, x, y, Inches(2.2), h, fill=GREY)
+        txt(slide, x, y + h / 2, Inches(2.2), Inches(0.4), f'[нет {name}]', size=10, color=MUTED, align=PP_ALIGN.CENTER)
+        return Inches(2.2)
+    px_w, px_h = png_size(p)
+    band = px_h * (1 - top - bottom)
+    w = int(h * px_w / band)
+    pic = slide.shapes.add_picture(str(p), x, y, width=w)
+    pic.crop_top, pic.crop_bottom = top, bottom
+    pic.height = h
+    if frame:
+        f = rect(slide, x - Inches(0.03), y - Inches(0.03), w + Inches(0.06), h + Inches(0.06),
+                 fill=WHITE, line=LINE, adj=0.02)
+        f.fill.background()
+    if caption:
+        txt(slide, x, y + h + Inches(0.06), w, Inches(0.3), caption, size=9, color=MUTED, align=PP_ALIGN.CENTER)
+    return w
+
+
+def wrapped_lines(lines, width_in, size):
+    """Сколько строк займёт текст после переноса: Arial, кириллица, эмпирический коэффициент."""
+    per = max(12, int(width_in * 72 / (size * 0.60)))
+    return sum(max(1, -(-len(ln) // per)) for ln in lines)
+
+
+def bubble(slide, x, y, w, lines, side='bot', size=10, h=None):
+    """Пузырь чата: side='bot' — светлый слева, 'user' — синий справа. Высота считается по переносам."""
+    xx = x if side == 'bot' else x + Inches(2.4)
+    ww = w if side == 'bot' else w - Inches(2.4)
+    if h is None:
+        rows_n = wrapped_lines(lines, ww / 914400 - 0.24, size)
+        h = Inches(0.13 + rows_n * size * 1.2 / 72)
+    n_h = h
+    rect(slide, xx, y, ww, n_h, fill=LIGHT if side == 'bot' else BLUE, adj=0.12)
+    txt(slide, xx + Inches(0.12), y + Inches(0.07), ww - Inches(0.24), n_h - Inches(0.12), lines,
+        size=size, color=DARK if side == 'bot' else WHITE, space=1, line=0.95)
+    return y + n_h + Inches(0.08)
+
+
+def chips(slide, x, y, labels, w=None, size=9.5, h=Inches(0.26), gap=Inches(0.07)):
+    xx = x
+    for lb in labels:
+        cw = w or Inches(0.13 + 0.072 * len(lb))
+        rect(slide, xx, y, cw, h, fill=WHITE, line=BLUE, adj=0.35)
+        txt(slide, xx, y + Inches(0.03), cw, h, lb, size=size, color=BLUE, align=PP_ALIGN.CENTER, space=0)
+        xx += cw + gap
+    return y + h + Inches(0.09)
+
 
 n = 0
-# 1. Служебный слайд
-s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Техническая информация для проверки', 'Служебный слайд, не оценивается: ссылки, репозиторий, переменные окружения, порядок проверки.', n)
-rows = [
-    ('Работающее решение в MAX', 'Бот: https://max.ru/t796_hakaton_max_bot  ·  Мини-приложение: ' + args.app_url + '  ·  Состояние: https://radar.digital-projects.tech/api/health'),
-    ('Git-репозиторий и commit hash', f'{args.repo}  ·  commit {args.commit}'),
-    ('Собственный API', 'Не заявляется (внутренний HTTP между мини-приложением и сервером; DATA-API.yaml не требуется)'),
-    ('Тестовые логины и пароли', 'Не требуются: сценарий доступен любому пользователю MAX. Демо-ИНН: 7801633015 (ООО «Малый 43», СПб), 1601000159 (Агрызское райпо, Татарстан)'),
-    ('Переменные окружения для запуска', 'MAX_BOT_TOKEN=' + secrets.get('MAX_BOT_TOKEN', '<токен команды — передаётся через официальный канал сдачи>') + '\nMAX_WEBHOOK_SECRET=' + secrets.get('MAX_WEBHOOK_SECRET', '<секрет вебхука>') + '\nMAX_UPDATES_MODE=none|polling|webhook  ·  PUBLIC_URL=https://…  ·  PORT=8080  ·  DATA_DIR=/data'),
-    ('Локальный запуск', 'cp .env.example .env && docker compose up --build  →  http://localhost:8080/app/  (сборка ≈ 1 мин)'),
-    ('Порядок прохождения сценария', '1) «Начать» → 2) «Ввести ИНН» → 7801633015 → 3) «Верно, дальше» → «Повар» → 45000 → карточка → 4) «PDF-отчёт» → 5) «Открыть радар» → «Отправить PDF-отчёт в чат» → «Поделиться отчётом в MAX» → 6) «Следить за рынком» → 7) «Текст вакансии». Подробно — README §12'),
-]
-y = Inches(1.6)
-for label, value in rows:
-    txt(s, Inches(0.6), y, Inches(3.2), Inches(0.9), label, size=12, bold=True, color=BLUE)
-    txt(s, Inches(3.8), y, Inches(9.0), Inches(0.9), value.split('\n'), size=11)
-    y += Inches(0.78)
 
-# 2. Титул
+# ------------------------------------------------------- 1. служебный слайд
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Техническая информация для проверки',
+       'Служебный слайд, в продуктовой оценке не участвует: доступ, зафиксированная версия кода, окружение, порядок проверки.', n)
+token_line = f'MAX_BOT_TOKEN = {args.token}' if args.token else 'MAX_BOT_TOKEN: передаётся отдельно при загрузке решения (в репозитории и в этом файле токена нет)'
+rows = [
+    ('Работающее решение в MAX', [
+        f'Чат-бот: {args.bot_url}   (@t796_hakaton_max_bot)',
+        f'Мини-приложение: {args.app_url}   ·   состояние сервера: /api/health']),
+    ('Зафиксированная версия кода', [f'Репозиторий: {args.repo}', f'commit {args.commit}']),
+    ('Собственный API и тестовые учётные записи', [
+        'Собственный API не заявляется, DATA-API.yaml не требуется.',
+        'Тестовые логины не нужны. Демо-ИНН: 7801633015 (ООО «Малый 43»), 1601000159 (Агрызское райпо).']),
+    ('Переменные окружения', [
+        token_line,
+        'MAX_WEBHOOK_SECRET · MAX_UPDATES_MODE=webhook · PUBLIC_URL=https://radar.digital-projects.tech',
+        'SESSION_SECRET · PORT=8080 · DATA_DIR=/data · NODE_EXTRA_CA_CERTS · ERKNM_YEAR · LOG_LEVEL',
+        'Полный список с комментариями — в .env.example; рабочих секретов в репозитории нет.']),
+    ('Локальный запуск (Docker)', [
+        'cp .env.example .env && docker compose up --build → http://localhost:8080/app/ · сборка ≈ 1 минута',
+        'Без токена поднимается демо-режим приложения и API — этого хватает для воспроизводимой проверки.']),
+    ('Порядок прохождения сценария', [
+        '1) «Начать» → «Проверить ставку»  2) ИНН 7801633015 → «Верно, дальше»  3) «Повар» → 45000 → карточка',
+        '4) «Подробный разбор» → приложение  5) «Текст вакансии» → «Опубликовать» → ссылка и QR в чат',
+        '6) вторым аккаунтом открыть ссылку → три вопроса → «Поделиться номером»  7) «Пригласить» → «Нанят»',
+        '8) команды /staff, /regions, /checks.  Подробно — README §12.']),
+]
+y = Inches(1.5)
+for i, (label, vals) in enumerate(rows):
+    h = Inches(0.18 + 0.215 * wrapped_lines(vals, 8.95, 10.5))
+    rect(s, Inches(0.55), y, Inches(12.25), h, fill=LIGHT if i % 2 == 0 else WHITE, adj=0.12)
+    txt(s, Inches(0.68), y + Inches(0.06), Inches(3.0), h, label, size=12, bold=True, color=BLUE, space=1)
+    txt(s, Inches(3.8), y + Inches(0.06), Inches(8.85), h, vals, size=10.5, space=2)
+    y += h + Inches(0.09)
+
+# ------------------------------------------------------------- 2. титульный
 s = prs.slides.add_slide(BLANK); n += 1
 rect(s, 0, 0, W, H, fill=BLUE, radius=False)
-txt(s, Inches(0.8), Inches(1.6), Inches(11), Inches(1.2), 'Ставка', size=66, bold=True, color=WHITE)
-txt(s, Inches(0.8), Inches(2.9), Inches(11), Inches(1.0), 'Зарплатный радар для малого бизнеса в MAX', size=30, color=WHITE)
-txt(s, Inches(0.8), Inches(3.8), Inches(11), Inches(1.4), ['Чат-бот + мини-приложение: сколько платят конкуренты вашего размера, где ваша ставка на шкале рынка и что написать в вакансии.', 'Только официальные живые данные: реестр МСП ФНС и портал «Работа России».'], size=17, color=WHITE)
-txt(s, Inches(0.8), Inches(5.5), Inches(11.5), Inches(1.5), ['Команда unecon.tech (СПбГЭУ): Черевко Валерий — капитан, backend · Бережных Михаил — frontend · Частикова Анастасия — product-менеджер · Шакирьянова Суфия — UX/UI-дизайнер', 'Хакатон MAX 2026 · трек «Эффективный бизнес» · https://max.ru/t796_hakaton_max_bot'], size=13, color=WHITE)
+txt(s, Inches(0.9), Inches(1.45), Inches(11.5), Inches(1.2), 'Кадровый радар', size=60, bold=True, color=WHITE)
+txt(s, Inches(0.9), Inches(2.7), Inches(11.5), Inches(0.9), 'Кадровый цикл малого бизнеса целиком — внутри MAX', size=28, color=WHITE)
+txt(s, Inches(0.9), Inches(3.6), Inches(11.6), Inches(1.5), [
+    'Чат-бот и мини-приложение: сколько платят конкуренты вашего размера, какую ставку поставить, как опубликовать вакансию и нанять,',
+    'не отстал ли ваш штат от рынка и какие плановые проверки ждут бизнес в этом году.',
+    'Только официальные живые данные: реестр МСП ФНС, портал «Работа России», реестр проверок Генпрокуратуры.'], size=16, color=WHITE, space=6)
+rect(s, Inches(0.9), Inches(5.45), Inches(11.5), Inches(1.15), fill=RGBColor(0x1E, 0x52, 0xD6))
+txt(s, Inches(1.1), Inches(5.56), Inches(11.1), Inches(1.0), [
+    'Команда unecon.tech (СПбГЭУ): Черевко Валерий — капитан, backend · Бережных Михаил — frontend · Частикова Анастасия — product-менеджер · Шакирьянова Суфия — UX/UI-дизайнер',
+    'Трек «Эффективный бизнес» · бот https://max.ru/t796_hakaton_max_bot · мини-приложение https://radar.digital-projects.tech/app/'], size=13, color=WHITE, space=5)
 
-# 3. Executive summary
+# ------------------------------------------------------ 3. executive summary
 s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Executive summary', 'Одна боль, один сценарий, два настоящих госисточника, детерминированное ядро', n)
-bullets(s, Inches(0.6), Inches(1.6), Inches(6.6), Inches(5), [
-    'Владелец кафе или магазина вводит ИНН, должность и ставку — и за 30 секунд видит рынок труда своего региона по официальным вакансиям.',
-    'Уникальное: сравнение с работодателями своего размера (микро/малое/среднее по реестру МСП), а не с сетями и бюджетом.',
-    'Результат: перцентиль ставки, медиана и вилка, варианты ставки, частые требования, PDF-отчёт, пересылка отчёта коллеге в MAX, подписка на сдвиг рынка, черновик вакансии.',
-    'Без модельных данных и без генеративных моделей: каждое число выводимо из источника, на карточке — бейдж «источник · дата».',
-    'Масштабирование — пакетами контекста (YAML): новый регион = 0 строк кода, новая отрасль = один файл.',
+header(s, 'Executive summary', 'Одна боль, один сквозной сценарий, три государственных источника, детерминированный расчёт', n)
+bullets(s, Inches(0.55), Inches(1.6), Inches(7.1), Inches(5.1), [
+    'Владелец кафе, магазина или фермы вводит должность, регион и свою ставку — и за 10–40 секунд видит рынок труда по живым вакансиям своего региона.',
+    'Ключевое отличие: сравнение с работодателями своего размера (микро / малые / средние по реестру МСП ФНС), а не с сетями и бюджетом, где зарплаты живут по другим правилам.',
+    'Дальше цикл не обрывается: текст вакансии → публикация ссылкой и QR внутри MAX → отклики кандидатов с номером телефона → приглашение и найм → контроль, не отстал ли штат от рынка.',
+    'Пять направлений в проде: рынок зарплат · вакансия и найм · «Мой штат» · регионы и сезонность · плановые проверки 2026.',
+    'Ни одного сгенерированного числа: каждая цифра выводима из источника, на каждом экране бейдж «источник · получено дата, время» и размер выборки. Данных мало — так и написано.',
 ], size=15)
-tile(s, Inches(7.6), Inches(1.6), Inches(2.6), Inches(1.3), 'Повар, Санкт-Петербург: медиана', '65 000 ₽')
-tile(s, Inches(10.4), Inches(1.6), Inches(2.6), Inches(1.3), 'у микропредприятий', '80 000 ₽')
-tile(s, Inches(7.6), Inches(3.1), Inches(2.6), Inches(1.3), 'ставка 45 000 ₽ =', '22-й перцентиль', vcolor=ORANGE)
-tile(s, Inches(10.4), Inches(3.1), Inches(2.6), Inches(1.3), 'выборка', '258 вак. / 234 раб.')
-tile(s, Inches(7.6), Inches(4.6), Inches(5.4), Inches(1.3), 'Живая демонстрация 23.09.2026, источник «Работа России» + реестр МСП ФНС', 'бот · мини-приложение · PDF · shareMaxContent', fill=LIGHT, vcolor=BLUE)
+tile(s, Inches(7.95), Inches(1.6), Inches(2.35), Inches(1.28), 'Повар, Санкт-Петербург: медиана', '65 000 ₽')
+tile(s, Inches(10.5), Inches(1.6), Inches(2.3), Inches(1.28), 'у микропредприятий', '80 000 ₽', vcolor=GREEN)
+tile(s, Inches(7.95), Inches(3.03), Inches(2.35), Inches(1.28), 'ставка 45 000 ₽ — это', '22-й перцентиль', vsize=19, vcolor=ORANGE)
+tile(s, Inches(10.5), Inches(3.03), Inches(2.3), Inches(1.28), 'выборка карточки', '258 / 234', vsize=20)
+tile(s, Inches(7.95), Inches(4.46), Inches(4.85), Inches(1.15), 'официальных источника работают программно, без имитации: «Работа России», реестр МСП ФНС, ЕРКНМ Генпрокуратуры', '3 из 3', vcolor=BLUE)
+rect(s, Inches(7.95), Inches(5.78), Inches(4.85), Inches(0.92), fill=GREY)
+txt(s, Inches(8.1), Inches(5.87), Inches(4.55), Inches(0.8),
+    ['Проверено 23.09.2026 на проде: бот отвечает в MAX,', 'мини-приложение открыто по HTTPS, 97 автотестов зелёные.'], size=11, space=2)
 
-# 4. Аудитория
-s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Целевая аудитория и приоритетный сегмент', 'Три оси сегментации: отрасль, масштаб, ситуация', n)
-bullets(s, Inches(0.6), Inches(1.6), Inches(6.8), Inches(5), [
-    ('Кто', True), 'Владелец или управляющий 1–5 точек общепита, розницы, бытовых услуг, который нанимает линейный персонал сам — HR-отдела нет.',
-    ('Ситуация', True), 'Уволился повар / продавец / пекарь — смена под угрозой, вакансию нужно закрыть за 1–2 недели, а ставку назначить прямо сейчас.',
-    ('Почему именно они', True), 'Сети и бюджет имеют HR-аналитику и тарифные сетки; микробизнес назначает ставку «по ощущениям» и проигрывает конкуренцию за людей.',
-    ('Первый пилот', True), 'Общепит Санкт-Петербурга и розница Татарстана — два готовых пакета контекста; универсальный пакет покрывает все 91 регион.',
-], size=15)
-tile(s, Inches(7.8), Inches(1.6), Inches(2.5), Inches(1.3), 'субъектов МСП (реестр ФНС, 10.09.2026)', '6,77 млн')
-tile(s, Inches(10.5), Inches(1.6), Inches(2.5), Inches(1.3), 'из них микро', '96 %')
-tile(s, Inches(7.8), Inches(3.1), Inches(2.5), Inches(1.3), 'работников в МСП', '15,1 млн')
-tile(s, Inches(10.5), Inches(3.1), Inches(2.5), Inches(1.3), 'заявленная потребность в работниках (Росстат, май 2026)', '1,8 млн')
-tile(s, Inches(7.8), Inches(4.6), Inches(5.2), Inches(1.3), 'индекс RSBI «Кадры», май 2026 (минимум за 6 лет); обеспеченность кадрами по ЦБ −19,7 п.', '44,2', vcolor=ORANGE)
-
-# 5. Проблема
+# ------------------------------------------------------------- 4. проблема
 s = prs.slides.add_slide(BLANK); n += 1
 header(s, 'Проблема и её актуальность', 'Формула кейса: пользователь · контекст · результат · барьер · последствие', n)
-rect(s, Inches(0.6), Inches(1.6), Inches(12.1), Inches(1.5), fill=LIGHT)
-txt(s, Inches(0.8), Inches(1.7), Inches(11.8), Inches(1.4), 'Владелец кафе на две точки, когда у него уволился повар и смена под угрозой, хочет понять, за какие деньги он реально наймёт замену в своём городе за две недели, но видит только разрозненные объявления и не знает рынок целиком — из-за чего ставит нерыночную ставку, месяц стоит в недокомплекте и теряет выручку смен.', size=15)
-txt(s, Inches(0.6), Inches(3.3), Inches(5.8), Inches(0.4), 'Как сейчас (As Is)', size=16, bold=True, color=BLUE)
-bullets(s, Inches(0.6), Inches(3.7), Inches(5.8), Inches(3), ['8–12 вкладок job-бордов, 30–40 минут ручного просмотра', 'сравнение с сетями и бюджетом, а не с похожими заведениями', 'нет распределения — только «примерно столько»', 'ставку назначают по ощущениям; ошибка видна только через месяц простоя'], size=14)
-txt(s, Inches(6.9), Inches(3.3), Inches(5.8), Inches(0.4), 'Со «Ставкой» (To Be)', size=16, bold=True, color=GREEN)
-bullets(s, Inches(6.9), Inches(3.7), Inches(5.8), Inches(3), ['ИНН + должность + ставка → карточка за 30 секунд в чате', 'срез «работодатели вашего размера» из реестра МСП', 'перцентиль, медиана, вилка, гистограмма, типичные вакансии', 'варианты ставки, PDF партнёру, подписка на сдвиг рынка'], size=14)
-txt(s, Inches(0.6), Inches(6.2), Inches(12), Inches(0.6), 'Подтверждение данными: цена ошибки видна в самих данных — ставка 45 000 ₽ повару в Петербурге ниже 75 % вакансий; у микропредприятий медиана 80 000 ₽ против 46 000 ₽ у бюджетных организаций (выборка 23.09.2026).', size=12, color=MUTED)
-
-# 6. Сценарий
-s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Решение и основной пользовательский сценарий', 'Чат-бот ведёт короткий диалог, мини-приложение показывает радар рынка', n)
-steps = ['1. «Начать» в боте @t796_hakaton_max_bot', '2. ИНН → профиль из реестра МСП (категория, ОКВЭД, регион) → пакет контекста', '3. Должность кнопкой или текстом', '4. Ставка в месяц до НДФЛ (или «нет»)', '5. Карточка рынка в чате: перцентиль, медиана, «такие же, как вы», требования, выборка и источник', '6. Кнопки: «Открыть радар» · варианты ставки (голосование) · PDF-отчёт · Следить за рынком · Текст вакансии', '7. Мини-приложение: шкала, гистограмма, категории работодателей, типичные вакансии → «Отправить PDF в чат» → «Поделиться в MAX»']
-bullets(s, Inches(0.6), Inches(1.6), Inches(6.2), Inches(5.3), steps, size=13)
-p1 = pic(s, 'app-02-card-top.png', Inches(7.1), Inches(1.5), h=Inches(5.3))
-p2 = pic(s, 'app-04-profile.png', Inches(9.9), Inches(1.5), w=Inches(2.6))
-if p2 is not None and p2.height > Inches(5.3): crop_top(p2, float(Inches(5.3)) / float(p2.height))
-txt(s, Inches(0.6), Inches(6.55), Inches(6.2), Inches(0.4), 'Скриншоты мини-приложения (iPhone 14, демо-режим); бот проверен в web.max.ru.', size=10, color=MUTED)
-
-# 7. Эффект
-s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Ожидаемый эффект и как его проверить', 'Гипотеза: если помочь владельцу назначить ставку по данным, вакансия закроется быстрее, потому что 75 % «долгих» вакансий стоят ниже медианы', n)
-tile(s, Inches(0.6), Inches(1.7), Inches(3.9), Inches(1.4), 'время принятия решения о ставке', '40 мин → 1 мин')
-tile(s, Inches(4.7), Inches(1.7), Inches(3.9), Inches(1.4), 'ручных действий', '8–12 вкладок → 3 поля')
-tile(s, Inches(8.8), Inches(1.7), Inches(3.9), Inches(1.4), 'что измеряем в пилоте', 'срок закрытия вакансии')
-bullets(s, Inches(0.6), Inches(3.4), Inches(12), Inches(3.5), [
-    'Метрики пилота: доля вакансий с рыночной ставкой (≥ медианы); срок закрытия вакансии (дней); число повторных обращений; доля завершивших сценарий; «метрика честности» — доля карточек в состоянии «данных мало».',
-    'Проверяемость уже заложена: сервер ежедневно фиксирует появление и исчезновение вакансий в выдаче — блок «как закрываются вакансии выше и ниже медианы» появляется после трёх дней наблюдений.',
-    'Ожидаемая динамика: рост доли вакансий с рыночной ставкой на 20–30 п.п. у пользователей за квартал (гипотеза, проверяется в пилоте).',
+rect(s, Inches(0.55), Inches(1.55), Inches(12.25), Inches(1.35), fill=LIGHT)
+txt(s, Inches(0.75), Inches(1.65), Inches(11.9), Inches(1.2),
+    'Владелец небольшого бизнеса, когда у него увольняется сотрудник или начинается сезон, хочет быстро и по адекватной цене нанять замену, но не видит рынок целиком: не знает, сколько платят конкуренты его размера, что писать в вакансии, где взять кандидатов и не уйдут ли действующие сотрудники к тем, кто платит больше. Из-за этого ставка назначается «по ощущениям», вакансия висит неделями, смена стоит в недокомплекте, бизнес теряет выручку и людей.',
+    size=15, line=1.05)
+txt(s, Inches(0.55), Inches(3.1), Inches(5.9), Inches(0.35), 'Как сейчас (As Is)', size=17, bold=True, color=ORANGE)
+bullets(s, Inches(0.55), Inches(3.5), Inches(5.9), Inches(2.6), [
+    '8–12 вкладок job-бордов, 30–40 минут ручного просмотра',
+    'сравнение со всеми подряд: сети и бюджет тянут картину в свою сторону',
+    'нет распределения — только «примерно столько»',
+    'вакансия, отклики, звонки кандидатам — в четырёх разных сервисах',
+    'ставку действующих сотрудников никто не сверяет с рынком, пока не пришло заявление',
 ], size=14)
+txt(s, Inches(6.9), Inches(3.1), Inches(5.9), Inches(0.35), 'С «Кадровым радаром» (To Be)', size=17, bold=True, color=GREEN)
+bullets(s, Inches(6.9), Inches(3.5), Inches(5.9), Inches(2.6), [
+    'должность + регион + ставка → карточка рынка за 10–40 секунд в чате',
+    'срез «работодатели вашего размера» из реестра МСП ФНС',
+    'перцентиль, медиана, вилка, распределение, требования, сезонность',
+    'вакансия публикуется ссылкой и QR, отклики приходят в тот же чат',
+    'штат сверяется с рынком за один экран, подписка ловит сдвиг медианы',
+], size=14)
+rect(s, Inches(0.55), Inches(6.2), Inches(12.25), Inches(0.66), fill=GREY)
+txt(s, Inches(0.7), Inches(6.28), Inches(11.95), Inches(0.6),
+    'Цена ошибки видна прямо в данных: ставка 45 000 ₽ повару в Петербурге — 22-й перцентиль, 75 % вакансий платят больше; у микропредприятий медиана 80 000 ₽, у организаций вне реестра МСП — 46 000 ₽. Сравнение «со всем рынком» вводит в заблуждение на 34 000 ₽ (выборка 23.09.2026).',
+    size=12, color=MUTED, line=1.0)
 
-# 8. Архитектура
+# ------------------------------------------------------------ 5. аудитория
 s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Архитектура решения', 'Один сервис, одна база, один контейнер — масштаб MVP без лишних слоёв', n)
-boxes = [('MAX (мобильный и веб)', 'чат с ботом · мини-приложение (MAX Bridge)'), ('Вебхук HTTPS:443', 'секрет X-Max-Bot-Api-Secret, ответ 200 сразу, идемпотентность'), ('Сценарий бота / API', 'состояние в БД, HMAC-проверка initData, сессии'), ('Сервис рынка', 'кэш → «Работа России» (6 страниц параллельно) → реестр МСП (обогащение ИНН)'), ('Ядро (core)', 'нормализация · дедупликация · перцентили · вердикт · черновик'), ('Результат', 'карточка в чат · JSON мини-приложению · PDF → uploads → mid → shareMaxContent')]
-x = Inches(0.6)
+header(s, 'Целевая аудитория и приоритетный сегмент', 'Приоритет — работодатель; кандидат и партнёр региона нужны, чтобы сценарий замкнулся', n)
+rows = [('Роль', 'Кто это', 'Что получает'),
+        ('Работодатель\n(приоритетный сегмент)', 'владелец или управляющий 1–5 точек общепита, розницы, услуг, АПК; нанимает линейный персонал сам, HR-службы нет', 'рынок по своей должности и региону, ставку, текст вакансии, отклики, найм, контроль штата, план проверок'),
+        ('Кандидат', 'человек, открывший вакансию по ссылке или QR в MAX', 'три вопроса, кнопка «поделиться номером», статус отклика и приглашение — не выходя из мессенджера'),
+        ('Партнёр региона (B2G/B2B)', 'центр «Мой бизнес», центр занятости, отраслевая ассоциация, банк для МСП', 'сводка по региону: дефицитные профессии, медианы, неделя пика набора — готова к публикации в канал MAX')]
+table(s, Inches(0.55), Inches(1.55), [Inches(2.5), Inches(4.3), Inches(5.45)], rows, size=12,
+      heights=[Inches(0.4), Inches(0.95), Inches(0.8), Inches(0.8)])
+txt(s, Inches(0.55), Inches(4.65), Inches(6.2), Inches(0.35), 'Ситуация, в которой продукт нужен сегодня', size=15, bold=True, color=BLUE)
+bullets(s, Inches(0.55), Inches(5.05), Inches(6.3), Inches(1.7), [
+    'уволился повар, продавец, тракторист — смена или сезон под угрозой, ставку надо назвать сейчас;',
+    'открывается вторая точка или другой город — непонятно, где люди дешевле и где их больше;',
+    'сотрудник принёс оффер конкурента — нужно понять, насколько его ставка отстала от рынка.',
+], size=13)
+tile(s, Inches(7.2), Inches(4.65), Inches(2.7), Inches(1.0), 'субъектов МСП (реестр ФНС, 10.09.2026)', '6,77 млн', vsize=20)
+tile(s, Inches(10.12), Inches(4.65), Inches(2.7), Inches(1.0), 'из них микропредприятия', '96 %', vsize=20)
+tile(s, Inches(7.2), Inches(5.78), Inches(2.7), Inches(1.0), 'заявленная потребность в работниках (Росстат, май 2026)', '1,8 млн', vsize=20, vcolor=ORANGE)
+tile(s, Inches(10.12), Inches(5.78), Inches(2.7), Inches(1.0), 'индекс RSBI «Кадры», май 2026 — минимум за 6 лет', '44,2', vsize=20, vcolor=ORANGE)
+
+# ------------------------------------------------- 6. пять направлений
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Решение: пять направлений одного кадрового цикла', 'Всё внутри MAX, на одном ядре и одних данных — от «сколько платить» до «нанял и не потерял»', n)
+cards = [
+    ('1. Рынок зарплат', ['ИНН → профиль из реестра МСП', 'медиана, вилка, перцентиль ставки', 'срез «работодатели вашего размера»', 'требования, графики, PDF-отчёт, подписка']),
+    ('2. Вакансия и найм', ['черновик объявления из частых формулировок рынка', 'публикация ссылкой и QR в чаты и каналы MAX', 'кандидат отвечает боту и делится номером', 'инбокс откликов: пригласить · отказать · нанят']),
+    ('3. Мой штат', ['3–20 должностей и ставок одним списком', 'кто уже ниже 25-го перцентиля — риск ухода', 'цена выхода на медиану в рублях и в % к фонду', 'еженедельный дайджест изменений']),
+    ('4. Регионы и сезонность', ['сравнение до 8 регионов по одной должности', 'индекс доступности: медиана ÷ средняя по региону', 'неделя и месяц пика набора по датам публикаций', 'сводка по региону для партнёров']),
+    ('5. Проверки 2026', ['план ЕРКНМ Генпрокуратуры по вашему ИНН', 'даты, вид надзора, орган, статус', 'контекст: сколько проверок в регионе по вашему ОКВЭД', 'никаких оценок вероятности — только строки плана']),
+]
+x = Inches(0.55)
+for i, (t, items) in enumerate(cards):
+    rect(s, x, Inches(1.6), Inches(2.35), Inches(3.55), fill=LIGHT if i % 2 == 0 else WHITE, line=LINE)
+    rect(s, x, Inches(1.6), Inches(2.35), Inches(0.76), fill=BLUE, adj=0.16)
+    txt(s, x + Inches(0.12), Inches(1.7), Inches(2.1), Inches(0.62), t, size=14, bold=True, color=WHITE, space=0, line=0.95)
+    bullets(s, x + Inches(0.06), Inches(2.46), Inches(2.25), Inches(2.6), items, size=11, space=5)
+    x += Inches(2.47)
+rect(s, Inches(0.55), Inches(5.35), Inches(12.25), Inches(1.35), fill=GREY)
+txt(s, Inches(0.72), Inches(5.45), Inches(11.9), Inches(1.2), [
+    ('Универсальность заложена в архитектуру, а не обещана на словах', {'bold': True, 'size': 14, 'color': BLUE}),
+    'Любая должность: 15 позиций в каталоге пакета плюс свободный ввод с подсказками по справочнику ОКПДТР «Работы России» (8 037 позиций).   ·   Любой регион: все 91 регион справочника, регион определяется по ИНН.',
+    'Любая отрасль: пакет контекста — один YAML-файл (packs/): общепит · СПб, розница · Татарстан, АПК · Краснодарский край, универсальный. Ядро не знает ни одного названия региона, отрасли и профессии — новый контекст добавляется без изменения кода.',
+], size=12, space=3)
+
+# --------------------------------------------------- 7. сценарий в боте
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Основной сценарий: диалог в чате', 'Четыре сообщения пользователя — и на руках карточка рынка с источником и размером выборки', n)
+y = Inches(1.55)
+y = bubble(s, Inches(0.55), y, Inches(6.5), [
+    'Здравствуйте! Я «Кадровый радар» — зарплатный помощник для малого бизнеса.',
+    'За минуту покажу, сколько платят конкуренты вашего размера, где ваша ставка на шкале рынка и что написать в вакансии.',
+    'Данные — только официальные: реестр МСП ФНС и портал «Работа России».'])
+y = chips(s, Inches(0.67), y, ['Проверить ставку', 'Показать на примере', 'Открыть приложение'])
+y = bubble(s, Inches(0.55), y, Inches(6.5), ['7801633015'], side='user')
+y = bubble(s, Inches(0.55), y, Inches(6.5), [
+    'Нашёл в реестре МСП (ФНС, получено 23.09, 18:57):',
+    '• ООО «Малый 43»  • Микропредприятие  • ОКВЭД 56.10  • Санкт-Петербург  • пакет «Общепит · СПб»',
+    '• Проверки 2026: плановых проверок по вашему ИНН нет',
+    'Всё верно?      [ Верно, дальше ]   [ Другой ИНН ]'])
+y = bubble(s, Inches(0.55), y, Inches(6.5), ['Повар          45000'], side='user')
+y = bubble(s, Inches(0.55), y, Inches(6.5), [
+    'Повар — Санкт-Петербург',
+    'Ваши 45 000 ₽ — 22-й перцентиль (ниже рынка): 75 % вакансий платят больше.',
+    'Медиана 65 000 ₽, половина предложений — 45 625…76 000 ₽. У работодателей вашего размера (микропредприятия): медиана 80 000 ₽, 24 работодателя.',
+    'Выборка: 258 вакансий от 234 работодателей (из 702 по запросу). Источник: «Работа России» · получено 23.09, 18:58; размеры работодателей — реестр МСП ФНС.'])
+y = chips(s, Inches(0.67), y, ['Подробный разбор', 'Текст вакансии', 'Опубликовать на 66 000 ₽'])
+txt(s, Inches(0.55), y + Inches(0.05), Inches(6.6), Inches(0.4),
+    'Реплики и подписи кнопок — дословно из кода бота (server/src/bot/texts.ts), числа — из ответа прода 23.09.2026.', size=9, color=MUTED)
+bullets(s, Inches(7.4), Inches(1.62), Inches(5.45), Inches(5.0), [
+    ('Что происходит под капотом', True),
+    'ИНН → реестр МСП ФНС: категория, ОКВЭД, регион → автоматически выбирается пакет контекста.',
+    'Должность кнопкой или текстом: нет в каталоге — подсказки по ОКПДТР и кнопка «Считать по вашему названию».',
+    'Ставка — оклад в месяц до НДФЛ; можно ответить «нет» и посмотреть рынок без сравнения.',
+    'Карточка собирается из 702 живых вакансий: фильтры, дедупликация, квантили, срез по размеру работодателя.',
+    ('Почему это удобно именно в мессенджере', True),
+    'Ничего не устанавливать и не регистрировать: бот уже в списке чатов, ИНН необязателен.',
+    'Решение о ставке принимается вдвоём: кнопки голосования собирают голоса владельца и управляющего в общем чате.',
+    'Ошибка не ломает сценарий: понятное сообщение и кнопка «Повторить», состояние диалога живёт на сервере.',
+    'Тот же путь доступен в мини-приложении без бота и в веб-версии MAX.',
+], size=13)
+
+# ------------------------------------------ 8. мини-приложение: карточка
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Подробный разбор в мини-приложении', 'Одна карточка отвечает на вопрос «сколько платить» и показывает, откуда взялось каждое число', n)
+shot(s, 'ux-after-02-card-top.png', Inches(0.55), Inches(1.56), Inches(4.9), top=0.0, bottom=0.25)
+shot(s, 'ux-after-03-card-full.png', Inches(3.7), Inches(1.56), Inches(5.1), top=0.435, bottom=0.40)
+bullets(s, Inches(6.9), Inches(1.6), Inches(5.95), Inches(5.2), [
+    ('Ваша ставка на шкале рынка', True),
+    'Перцентиль, медиана, «половина предложений» 45 625–76 000 ₽ и подпись человеческим языком: «вы платите больше, чем 23 вакансий из 100».',
+    'Варианты ставки: оставить · медиана 66 000 ₽ · верхняя четверть 77 000 ₽ — по выбранной сразу собирается текст вакансии.',
+    ('Кто нанимает: размер работодателя — ключевая ценность', True),
+    'микропредприятия 80 000 ₽ (24 работодателя) · малые 60 000 ₽ · средние 75 000 ₽ · не МСП, бюджет и крупный бизнес 46 000 ₽.',
+    'Размер берётся не «на глаз»: ИНН каждого работодателя выборки проверяется в реестре МСП ФНС.',
+    ('Что ещё на карточке', True),
+    'распределение заявленных ставок (фиксированная ставка без вилки — у 51 % вакансий); сезонность набора: пик — август 2026, 22,2 % вакансий года, активная неделя в 4,7 раза выше средней;',
+    'что требуют работодатели и какой график; типичные предложения со ссылками на первоисточник; блок «Откуда эти цифры» с датой получения и разбором фильтров.',
+], size=13)
+txt(s, Inches(0.55), Inches(6.72), Inches(5.7), Inches(0.35),
+    'Скриншоты прода 23.09.2026, 19:01. Выборка живая (обновление раз в 6 часов), поэтому она на единицы отличается от чисел в тексте.',
+    size=9, color=MUTED)
+
+# ----------------------------------------------------- 9. вакансия и найм
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Вакансия, отклики и найм — не выходя из MAX', 'Сценарий не обрывается на цифре: от ставки до «нанят» пользователь остаётся в мессенджере', n)
+steps = [('Ставка выбрана', 'медиана 66 000 ₽'), ('Текст вакансии', 'шаблон отрасли + частые формулировки рынка'),
+         ('Публикация', 'ссылка max.ru/бот?start=vac_… и картинка QR в чат'), ('Кандидат', '3 вопроса + кнопка «Поделиться номером»'),
+         ('Инбокс откликов', 'балл совпадения, пригласить · отказать · нанят')]
+x = Inches(0.55)
+for i, (t, d) in enumerate(steps):
+    rect(s, x, Inches(1.6), Inches(2.18), Inches(1.25), fill=LIGHT if i % 2 == 0 else WHITE, line=BLUE)
+    txt(s, x + Inches(0.1), Inches(1.7), Inches(2.0), Inches(0.4), t, size=13, bold=True, color=BLUE, space=0)
+    txt(s, x + Inches(0.1), Inches(2.12), Inches(2.0), Inches(0.7), d, size=10.5, space=0, line=0.95)
+    if i < 4:
+        arrow(s, x + Inches(2.2), Inches(2.12), Inches(0.22))
+    x += Inches(2.47)
+shot(s, 'ux-after-03-card-full.png', Inches(0.55), Inches(3.05), Inches(1.85), top=0.2624, bottom=0.6774)
+yb = bubble(s, Inches(0.55), Inches(5.15), Inches(4.0), [
+    'Вакансия опубликована: Повар — Санкт-Петербург · ставка от 66 000 ₽',
+    'Ссылка для кандидатов и картинка QR: max.ru/t796_hakaton_max_bot?start=vac_…'])
+chips(s, Inches(0.67), yb, ['Поделиться в MAX', 'Отклики', 'Закрыть вакансию'], size=9)
+bullets(s, Inches(4.55), Inches(3.05), Inches(8.3), Inches(3.7), [
+    ('Номер телефона кандидата — штатной кнопкой MAX', True),
+    'request_contact: кандидат сам отдаёт номер одним нажатием, подпись контакта проверяется на сервере — ни парсинга, ни ручного ввода.',
+    ('Ранжирование откликов — правилами, а не нейросетью', True),
+    'балл совпадения складывается из опыта, готовности к графику вакансии, попадания ожиданий в ставку и наличия номера; формула открыта и объяснима пользователю.',
+    ('Продукт сам считает свои метрики', True),
+    'время до первого отклика и срок закрытия вакансии фиксируются автоматически — в пилоте это будут факты, а не гипотезы.',
+    ('QR — мост из офлайна', True),
+    'ту же карточку вакансии можно распечатать и повесить в зале: гость сканирует и попадает в диалог с ботом.',
+], size=13)
+
+# ------------------------------- 10. штат, регионы, сезонность, проверки
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Штат, регионы и плановые проверки', 'Три сценария, которые удерживают пользователя после первой карточки', n)
+shot(s, 'fix-11-staff-result.png', Inches(0.55), Inches(1.6), Inches(3.6), top=0.45, bottom=0.20)
+shot(s, 'fix-07-regions-sort-median.png', Inches(3.25), Inches(1.6), Inches(3.6), top=0.54, bottom=0.195)
+bullets(s, Inches(6.65), Inches(1.6), Inches(6.2), Inches(2.2), [
+    ('«Мой штат»: удержание вместо найма заново', True),
+    'повар на 40 000 ₽ в Петербурге — 14-й перцентиль, высокий риск ухода; разрыв до медианы 25 000 ₽ (62,5 %);',
+    'подтянуть весь штат до медианы — 25 000 ₽ в месяц, +62,5 % к фонду: решение видно до того, как принесут заявление.',
+], size=13)
+bullets(s, Inches(6.65), Inches(3.75), Inches(6.2), Inches(1.5), [
+    ('Регионы и сезонность', True),
+    '«Повар»: Татарстан 40 500 ₽ · Москва 60 000 ₽ · Санкт-Петербург 65 000 ₽ — разрыв 60,5 %; индекс доступности 0,45 / 0,33 / 0,54 показывает, где профессия дешевле относительно местного рынка.',
+], size=13)
+rect(s, Inches(0.55), Inches(5.35), Inches(12.25), Inches(1.35), fill=LIGHT)
+txt(s, Inches(0.72), Inches(5.45), Inches(11.9), Inches(1.2), [
+    ('Проверки 2026 — третий официальный источник (ЕРКНМ Генеральной прокуратуры)', {'bold': True, 'size': 14, 'color': BLUE}),
+    'Годовой план контрольных (надзорных) мероприятий — 29 832 записи на 2026 год — скачивается фоном (архив 38,8 МБ, 809 XML), разбирается за 14 секунд и живёт в SQLite; запрос пользователя в сеть не ходит.',
+    'По ИНН: есть ли бизнес в плане, даты, вид надзора, орган, статус. Контекст по региону и разделу ОКВЭД: ГИТ 660 · Роспотребнадзор 13 838 · пожарный надзор 9 258 проверок. Регион определён у 86 % записей — так и написано. Вероятности и рейтинги риска мы не считаем: только строки плана и версия набора.',
+], size=11.5, space=3)
+
+# ------------------------------------------------------------- 11. эффект
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Ожидаемый эффект и как мы его проверим',
+       'Гипотеза: если владелец назначает ставку по данным рынка, вакансия закрывается быстрее, потому что ставка ниже медианы проигрывает конкуренцию за людей', n)
+tile(s, Inches(0.55), Inches(1.75), Inches(3.9), Inches(1.3), 'время до решения о ставке', '40 мин → 1 мин', vsize=19)
+tile(s, Inches(4.65), Inches(1.75), Inches(3.9), Inches(1.3), 'ручных действий', '8–12 вкладок → 3 поля', vsize=17)
+tile(s, Inches(8.75), Inches(1.75), Inches(4.05), Inches(1.3), 'сервисов на путь «ставка → наём»', '4 → 1 (MAX)', vsize=19, vcolor=GREEN)
+rows = [('Показатель', 'Как измеряем', 'Откуда берём'),
+        ('Срок закрытия вакансии', 'дни от публикации до статуса «нанят»', 'считается автоматически в продукте'),
+        ('Время до первого отклика', 'часы от публикации до первого отклика', 'считается автоматически в продукте'),
+        ('Доля вакансий с рыночной ставкой', 'ставка публикации ≥ медианы рынка', 'считается автоматически в продукте'),
+        ('Доля карточек «данных мало»', 'метрика честности: где продукт молчит вместо красивой цифры', 'считается автоматически в продукте'),
+        ('Доля пользователей, дошедших до результата', 'из начавших диалог — до карточки и до публикации', 'счётчики сценария')]
+table(s, Inches(0.55), Inches(3.25), [Inches(4.2), Inches(5.0), Inches(3.05)], rows, size=12,
+      heights=[Inches(0.4)] + [Inches(0.46)] * 5)
+txt(s, Inches(0.55), Inches(6.25), Inches(12.25), Inches(0.6),
+    'Ожидаемая динамика в пилоте (гипотеза, проверяется цифрами выше): рост доли вакансий с рыночной ставкой на 20–30 п. п. за квартал и сокращение срока закрытия на четверть. Продукт уже ведёт ежедневные снимки выдачи — блок «как закрываются вакансии выше и ниже медианы» появляется после трёх дней наблюдений.',
+    size=12, color=MUTED, line=1.0)
+
+# -------------------------------------------------------- 12. архитектура
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Архитектура решения', 'Один сервис, одна база, один контейнер — масштаб MVP без лишних слоёв; ядро отделено от контекста физически', n)
+boxes = [('MAX: чат и мини-приложение', 'бот в чате · мини-приложение на MAX Bridge (мобильный и веб)'),
+         ('Вебхук HTTPS:443', 'секрет X-Max-Bot-Api-Secret, ответ 200 сразу, идемпотентность по событию'),
+         ('Бот и API', 'сценарий и состояние в SQLite · HMAC-проверка initData · сессии'),
+         ('Сервисы', 'рынок · штат · регионы · сводка · проверки · отчёт · найм'),
+         ('Источники', '«Работа России» (6 страниц параллельно) · реестр МСП · ЕРКНМ фоном'),
+         ('Ядро core/', 'нормализация → дедупликация → квантили → вердикт → черновик'),
+         ('Результат', 'карточка в чат · JSON приложению · PDF → uploads → mid → shareMaxContent')]
+x = Inches(0.55)
 for i, (t, d) in enumerate(boxes):
-    rect(s, x, Inches(1.7), Inches(2.0), Inches(2.2), fill=LIGHT if i % 2 == 0 else WHITE, line=BLUE)
-    txt(s, x + Inches(0.1), Inches(1.8), Inches(1.8), Inches(0.7), t, size=12, bold=True, color=BLUE)
-    txt(s, x + Inches(0.1), Inches(2.5), Inches(1.8), Inches(1.4), d, size=10)
-    x += Inches(2.05)
-bullets(s, Inches(0.6), Inches(4.2), Inches(12.2), Inches(2.8), [
-    'Стек: Node 24 + TypeScript, Fastify, SQLite (node:sqlite), @maxhub/max-bot-api 0.3.1, React 19 + @maxhub/max-ui 0.5.0, pdfkit. Docker: один образ, docker compose up --build, сборка ≈ 1 мин.',
-    'Надёжность: сторож вебхука (MAX отписывает бота через 8 ч без 200), таймауты и повторы к источникам, лечение невалидного JSON, кэш при недоступности, «Повторить» без перезапуска сценария.',
-    'Безопасность: токен и секрет только в .env на сервере; initData по официальному HMAC-алгоритму (ключ WebAppData, окно 1 час); UUID v4 для карточек; персональные данные не логируются; lock-файл, закреплённый базовый образ, сертификат Минцифры в образе.',
-    'Ядро не импортирует ни MAX, ни источники, ни пакеты — 28 автотестов на реальной выборке из 100 вакансий.',
-], size=13)
+    rect(s, x, Inches(1.62), Inches(1.62), Inches(2.0), fill=LIGHT if i % 2 == 0 else WHITE, line=BLUE)
+    txt(s, x + Inches(0.08), Inches(1.72), Inches(1.46), Inches(0.75), t, size=11, bold=True, color=BLUE, space=0, line=0.95)
+    txt(s, x + Inches(0.08), Inches(2.5), Inches(1.46), Inches(1.05), d, size=9.5, space=0, line=0.95)
+    if i < 6:
+        arrow(s, x + Inches(1.64), Inches(2.5), Inches(0.14), h=Inches(0.16))
+    x += Inches(1.79)
+bullets(s, Inches(0.55), Inches(3.85), Inches(6.2), Inches(2.9), [
+    ('Стек', True),
+    'Node 24 + TypeScript + Fastify 5, база — встроенный node:sqlite (файл, без сервера БД); @maxhub/max-bot-api; мини-приложение — React 19 + @maxhub/max-ui + Vite; PDF — pdfkit.',
+    'Docker: один образ, docker compose up --build, сборка ≈ 1 минута. Прод: systemd + nginx + Let’s Encrypt на университетском сервере.',
+    ('Качество и предсказуемость', True),
+    '97 автотестов (vitest): ядро на реальной выборке из 100 вакансий, дедупликация, статистика, HMAC initData, БД, PDF, пакеты, разбор плана ЕРКНМ, сценарий бота, найм, штат, регионы.',
+], size=12.5)
+bullets(s, Inches(6.95), Inches(3.85), Inches(5.9), Inches(2.9), [
+    ('Стабильность', True),
+    'вебхук отвечает 200 до обработки, повторные доставки MAX отсекаются по ключу события; сторож переподписывает вебхук каждые 10 минут; таймауты, повторы и лечение невалидного JSON у источников; недоступен источник — последний кэш с датой и кнопка «Повторить».',
+    ('Безопасность', True),
+    'токен и секреты только в .env на сервере, в репозитории .env.example без значений; initData проверяется по официальному алгоритму HMAC-SHA256 (ключ WebAppData, окно 1 час); идентификаторы карточек — UUID v4; персональные данные не логируются; лимиты MAX (30 rps, 2 сообщения в секунду на чат) не превышаются; rate-limit на тяжёлые расчёты; зависимости зафиксированы package-lock.json.',
+], size=12.5)
 
-# 9. Данные и интеграции
+# ----------------------------------------------------- 13. данные и метод
 s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Используемые данные и интеграции', 'Обе интеграции — настоящие, из списка источников кейса; модельных данных нет', n)
-rows = [('Источник', 'Что берём', 'Как', 'Подводные камни, которые обработаны'),
-        ('«Работа России», Open API v1 (Роструд)', 'живые вакансии: зарплата, ИНН работодателя, требования, график, адреса', 'без авторизации; страницы по 100; до 2000 записей на запрос; кэш 6 ч; ежедневные снимки', 'offset — номер страницы; потолок 10 000; неизвестные параметры молча игнорируются; 88 % дублей от сетей; невалидные escape в JSON'),
-        ('Единый реестр субъектов МСП (ФНС)', 'профиль бизнеса по ИНН и категория каждого работодателя выборки', 'search-proc.json?query=ИНН; кэш 30 дней; до 60 ИНН на карточку', 'пустой ответ = не МСП (бюджет/крупный) — не ошибка; ИП = ПДн: храним только ИНН'),
-        ('MAX Bot API + Bridge', 'события, сообщения, кнопки, загрузка PDF, initData, shareMaxContent', 'platform-api2.max.ru, сертификат Минцифры, лимиты 30 rps / 2 сообщения в чат в секунду', 'GET /chats удалён; в вебе нет DeviceStorage — состояние на сервере')]
+header(s, 'Используемые данные и интеграции', 'Три источника работают программно и вживую. Модельных данных в основном сценарии нет', n)
+rows = [('Источник', 'Что берём', 'Как работает', 'Что пришлось обойти'),
+        ('«Работа России» (Роструд),\nOpen API v1', 'живые вакансии: зарплата, ИНН работодателя, требования, график, даты публикации', 'без авторизации, страницы по 100, 6 страниц параллельно; кэш 6 часов; ежедневные снимки выдачи', 'offset — номер страницы, потолок 10 000; невалидные escape-последовательности в JSON; массовые дубли объявлений сетей'),
+        ('Единый реестр субъектов МСП\n(ФНС России)', 'профиль бизнеса по ИНН и категория каждого работодателя выборки', 'search-proc.json по ИНН, кэш 30 дней, до 60 работодателей на карточку', 'пустой ответ — это «не субъект МСП», а не ошибка; ИНН ИП — персональные данные: храним только ИНН и публичные поля'),
+        ('ЕРКНМ, Генеральная прокуратура\n(портал контрольной и надзорной деятельности)', 'годовой план контрольных (надзорных) мероприятий: ИНН, даты, вид надзора, орган, статус, адрес объекта', 'фоновая загрузка архива (38,8 МБ, 809 XML) в SQLite, проверка новой версии раз в неделю', 'интерактивный поиск по реестру закрыт CAPTCHA — используем открытый набор; регион берём из адреса объекта, определился у 86 % записей')]
+table(s, Inches(0.55), Inches(1.55), [Inches(3.0), Inches(3.1), Inches(3.05), Inches(3.1)], rows, size=10.5,
+      heights=[Inches(0.38), Inches(1.0), Inches(1.0), Inches(1.12)])
+txt(s, Inches(0.55), Inches(5.2), Inches(6.2), Inches(0.35), 'Факт · расчёт · рекомендация разделены на каждом экране', size=14, bold=True, color=BLUE)
+bullets(s, Inches(0.55), Inches(5.58), Inches(6.3), Inches(1.3), [
+    'Факт — заявленная в вакансии ставка и строка плана проверок как есть.',
+    'Расчёт — середина вилки, фильтры, дедупликация, квантили (тип 7), перцентиль = доля вакансий ниже вашей.',
+    'Рекомендация — варианты «медиана» и «верхняя четверть», округление вверх до тысячи.',
+], size=12)
+rect(s, Inches(7.1), Inches(5.2), Inches(5.72), Inches(1.5), fill=LIGHT)
+txt(s, Inches(7.28), Inches(5.3), Inches(5.4), Inches(1.35), [
+    ('Как 702 вакансии превращаются в 258 (запрос «повар», СПб)', {'bold': True, 'size': 12.5, 'color': BLUE}),
+    'загружено 702 → другая роль −193 → название не совпало −172 → дубли −56 → сверх лимита 3 объявления на работодателя −22 → 258 вакансий от 234 работодателей.',
+    'Крупнейший работодатель даёт 1 % выборки — картину не перекашивает. Всё это пользователь видит в блоке «Откуда эти цифры».',
+], size=11, space=3)
+
+# --------------------------------------------------------- 14. бонус MAX
+s = prs.slides.add_slide(BLANK); n += 1
+header(s, 'Возможности MAX сверх минимума', 'Каждая доведена до результата и создаёт ценность, а не добавлена ради галочки', n)
+items = [
+    ('Пересылка PDF-отчёта внутри мессенджера', 'Мини-приложение просит сервер отправить отчёт → бот загружает файл (POST /uploads) и отправляет сообщение → сервер запоминает mid → приложение вызывает shareMaxContent({ mid }) → отчёт уходит совладельцу или бухгалтеру в любой чат, не покидая MAX.'),
+    ('Двусторонний сценарий работодатель — кандидат', 'Обе стороны в одном мессенджере: кандидат приходит по диплинку ?start=vac_<id>, отвечает боту и отдаёт номер штатной кнопкой MAX (request_contact, подпись проверяется на сервере).'),
+    ('Диплинки и QR', '?startapp=card_<id> открывает ту же карточку рынка у коллеги; карточка вакансии с QR печатается и вешается в зале — офлайн-вход в чат-бот.'),
+    ('Голосование по ставке в чате', 'Кнопки «Голос: оставить / медиана / верхняя» в общем чате владельца и управляющего: решение о ставке принимается вдвоём, счётчик голосов ведёт бот.'),
+    ('Бот живёт после сценария', 'Подписка «Следить за рынком»: еженедельный пересчёт и сообщение при сдвиге медианы больше 5 %; дайджест по штату; сводка региона, готовая к публикации в канал MAX.'),
+    ('Гигиена платформы', 'Меню команд (PATCH /me/commands), индикатор набора текста, кнопка «Назад» в мини-приложении, единый словарь кнопок в боте и приложении, работа в мобильной и веб-версии.'),
+]
 y = Inches(1.6)
-widths = [Inches(2.6), Inches(3.0), Inches(3.2), Inches(3.4)]
-for ri, row in enumerate(rows):
-    x = Inches(0.6)
-    for ci, cell in enumerate(row):
-        rect(s, x, y, widths[ci] - Inches(0.05), Inches(1.15) if ri else Inches(0.45), fill=BLUE if ri == 0 else (LIGHT if ri % 2 else WHITE), radius=False)
-        txt(s, x + Inches(0.05), y + Inches(0.05), widths[ci] - Inches(0.15), Inches(1.1), cell, size=11 if ri else 12, bold=(ri == 0), color=WHITE if ri == 0 else DARK)
-        x += widths[ci]
-    y += Inches(1.15) if ri else Inches(0.45)
-txt(s, Inches(0.6), Inches(5.6), Inches(12.1), Inches(1.2), ['Факт / расчёт / рекомендация разделены на каждом экране и в PDF: факты — заявленные в вакансиях ставки; расчёт — середина вилки, дедупликация, квантили (тип 7), перцентиль = доля ниже; рекомендация — варианты «медиана» и «верхняя четверть». На карточке всегда бейдж «источник · получено ДД.ММ ЧЧ:ММ» и размер выборки.'], size=12, color=MUTED)
+for i, (t, d) in enumerate(items):
+    rect(s, Inches(0.55), y, Inches(12.25), Inches(0.82), fill=LIGHT if i % 2 == 0 else WHITE, line=LINE)
+    txt(s, Inches(0.7), y + Inches(0.08), Inches(3.5), Inches(0.7), t, size=12.5, bold=True, color=BLUE, space=0, line=0.95)
+    txt(s, Inches(4.35), y + Inches(0.08), Inches(8.35), Inches(0.7), d, size=11.5, space=0, line=0.98)
+    y += Inches(0.87)
 
-# 10. Бонус MAX
+# ------------------------------------------------------ 15. масштабирование
 s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Возможности MAX сверх минимума', 'Бонус: сценарий доведён до результата и создаёт ценность — отчёт уходит партнёру, не покидая мессенджер', n)
-bullets(s, Inches(0.6), Inches(1.6), Inches(7.0), Inches(5.2), [
-    ('Пересылка отчёта внутри MAX (shareMaxContent по mid)', True), 'Мини-приложение просит сервер отправить PDF в диалог → бот загружает файл (POST /uploads) и отправляет сообщение (POST /messages) → сервер сохраняет mid → мини-приложение вызывает window.WebApp.shareMaxContent({ mid, chatType }) → пользователь выбирает чат совладельца или бухгалтера.',
-    ('Диплинк с восстановлением состояния', True), 'https://max.ru/t796_hakaton_max_bot?startapp=card_<uuid> открывает ту же карточку у коллеги (initData.start_param); кнопка «Поделиться ссылкой».',
-    ('Голосование по ставке в чате', True), 'inline-кнопки «оставить / медиана / топ-25 %» → POST /answers; счётчик голосов для решения вдвоём.',
-    ('Подписка «Следить за рынком»', True), 'еженедельный пересчёт и сообщение при сдвиге медианы > 5 % — бот живёт после сценария.',
-    ('Гигиена платформы', True), 'меню команд (PATCH /me/commands), индикатор набора текста, BackButton в мини-приложении, работа в мобильной и веб-версии.',
-], size=13)
-p = pic(s, 'app-02-card-full.png', Inches(8.0), Inches(1.5), w=Inches(2.6))
-if p is not None: crop_top(p, 0.55)
-p = pic(s, 'app-03-vacancy-text.png', Inches(10.8), Inches(1.5), w=Inches(2.3))
-if p is not None and p.height > Inches(5.4): crop_top(p, float(Inches(5.4)) / float(p.height))
+header(s, 'Масштабирование: что не меняется и что адаптируется',
+       'Ядро и переменная часть разделены физически: server/src/core не импортирует источники и не содержит ни одного названия региона, отрасли и профессии', n)
+rect(s, Inches(0.55), Inches(1.58), Inches(6.0), Inches(2.25), fill=LIGHT)
+txt(s, Inches(0.72), Inches(1.68), Inches(5.6), Inches(0.35), 'Ядро продукта — переносится как есть', size=14, bold=True, color=BLUE)
+bullets(s, Inches(0.72), Inches(2.08), Inches(5.6), Inches(1.7), [
+    'проблема и логика сценария, экраны бота и мини-приложения',
+    'модель данных, нормализация, дедупликация, квантили, вердикт',
+    'драйверы источников с единым интерфейсом, архитектура, безопасность',
+], size=12.5, space=5)
+rect(s, Inches(6.8), Inches(1.58), Inches(6.0), Inches(2.25), fill=WHITE, line=GREEN)
+txt(s, Inches(6.97), Inches(1.68), Inches(5.6), Inches(0.35), 'Переменная часть — файлы packs/*.yaml', size=14, bold=True, color=GREEN)
+bullets(s, Inches(6.97), Inches(2.08), Inches(5.6), Inches(1.7), [
+    'регион (код ФНС) и отрасль (префиксы ОКВЭД)',
+    'список профессий, синонимы, исключения, словарь требований',
+    'пороги достоверности, шаблон условий вакансии, демо-пример',
+], size=12.5, space=5)
+rows = [('Куда тиражируем', 'Переносится как есть', 'Что адаптируется', 'Данные и интеграции', 'Трудоёмкость'),
+        ('Любой из 91 региона', 'всё', 'ничего: регион берётся из профиля', 'те же три источника', '0'),
+        ('Любая должность вне каталога', 'всё', 'ничего: подсказки по ОКПДТР из текста', 'те же', '0'),
+        ('Новая отрасль (автосервис, стройка)', 'ядро, бот, приложение', 'один YAML: профессии и шаблон условий', 'те же', '≈ 1 час'),
+        ('Сезонная отрасль: АПК (уже сделано)', 'ядро, бот, приложение', 'YAML + профессии сезона, пик — ядром', 'те же', '≈ 1 час'),
+        ('Второй источник вакансий', 'ядро и пакеты', 'драйвер в integrations/', 'новый источник', '1–2 дня'),
+        ('Партнёр: «Мой бизнес», банк для МСП', 'всё', 'брендирование и канал входа', 'те же', 'дни')]
+table(s, Inches(0.55), Inches(3.9), [Inches(3.4), Inches(2.1), Inches(3.5), Inches(1.9), Inches(1.3)], rows, size=10.5,
+      heights=[Inches(0.42)] + [Inches(0.36)] * 6)
+txt(s, Inches(0.55), Inches(6.54), Inches(12.25), Inches(0.4),
+    'Доказательство, а не обещание: четыре пакета уже работают на одном коде — общепит · СПб, розница · Татарстан, АПК · Краснодарский край, универсальный. Риски: смещённость госпортала, доступность источников, актуальность словарей пакета — нужен владелец контента.',
+    size=10.5, color=MUTED)
 
-# 11. Масштабирование
+# ------------------------------------------------------------- 16. пилот
 s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Потенциал масштабирования и условия адаптации', 'Ядро и переменная часть разделены физически: server/src/core не знает регионов, отраслей и профессий', n)
-txt(s, Inches(0.6), Inches(1.6), Inches(5.9), Inches(0.4), 'Ядро (не меняется)', size=15, bold=True, color=BLUE)
-bullets(s, Inches(0.6), Inches(2.0), Inches(5.9), Inches(2.4), ['модель данных, сценарий бота, экраны мини-приложения', 'нормализация, дедупликация, квантили, вердикт, черновик', 'драйверы источников с единым интерфейсом', 'архитектура: вебхук, кэш, PDF, безопасность'], size=13)
-txt(s, Inches(6.9), Inches(1.6), Inches(5.9), Inches(0.4), 'Переменная часть (packs/*.yaml)', size=15, bold=True, color=GREEN)
-bullets(s, Inches(6.9), Inches(2.0), Inches(5.9), Inches(2.4), ['регион (код ФНС) и отрасль (префиксы ОКВЭД)', 'профессии: запрос, синонимы, исключения', 'пороги достоверности, шаблон условий вакансии', 'словарь требований, демо-пример'], size=13)
-rows = [('Контекст', 'Без изменений', 'Адаптируется', 'Трудоёмкость'), ('Любой из 91 региона', 'всё', 'ничего — универсальный пакет берёт регион из профиля', '0'), ('Новая отрасль (автосервис 45.20, салоны 96.02)', 'ядро, бот, приложение', 'один YAML: профессии, синонимы, условия', '≈ 1 час'), ('Второй источник вакансий (hh.ru по договору)', 'ядро, пакеты', 'драйвер в integrations/', '1–2 дня'), ('Сеть центров «Мой бизнес» / банк для МСП', 'всё', 'брендирование, канал входа', 'дни')]
-y = Inches(4.5); widths = [Inches(3.6), Inches(2.4), Inches(4.2), Inches(1.9)]
-for ri, row in enumerate(rows):
-    x = Inches(0.6)
-    for ci, cell in enumerate(row):
-        rect(s, x, y, widths[ci] - Inches(0.05), Inches(0.42), fill=BLUE if ri == 0 else (LIGHT if ri % 2 else WHITE), radius=False)
-        txt(s, x + Inches(0.05), y + Inches(0.04), widths[ci] - Inches(0.15), Inches(0.4), cell, size=10.5, bold=(ri == 0), color=WHITE if ri == 0 else DARK)
-        x += widths[ci]
-    y += Inches(0.42)
-cov = ROOT / 'docs' / 'coverage-summary.json'
-cov_txt = ''
-if cov.exists():
-    c = json.loads(cov.read_text(encoding='utf8'))
-    cov_txt = f" Карта покрытия (docs/coverage.md): {c['okPairs']} из {c['totalPairs']} пар «регион × профессия» дают ≥ {c['min']} вакансий, в {c['regionsOk']} из {c['regions']} регионов — не менее 5 профессий."
-txt(s, Inches(0.6), Inches(6.5), Inches(12), Inches(0.6), 'Доказательство: два пакета уже работают на одном коде (Общепит · СПб и Розница · Татарстан); риски — смещение госпортала, доступность источников (кэш и деградация), актуальность словарей пакета (владелец контента).' + cov_txt, size=10.5, color=MUTED)
+header(s, 'Пилот и внедрение', 'Первый регион, канал входа, участники, метрики и следующий шаг', n)
+cells = [
+    ('Где и с кем', ['Республика Татарстан (розница и общепит) — пакет готов;', 'параллельно общепит Санкт-Петербурга.', '100 бизнесов × 3 месяца.']),
+    ('Как встраивается в процесс', ['Бот добавляется в рабочий чат владельца и управляющего —', 'туда, где уже обсуждают смены.', 'Ставка утверждается голосованием, отчёт уходит бухгалтеру.']),
+    ('Канал доступа', ['Ссылка и QR в рассылках центров «Мой бизнес» и центров занятости,', 'в отраслевых чатах и каналах MAX,', 'QR в залах заведений-участников.']),
+    ('Участники и ресурсы', ['Владелец процесса — центр «Мой бизнес» или отраслевая ассоциация;', 'от нас — один сервер и сопровождение пакетов;', 'юрист проверяет формулировки черновика вакансии.']),
+    ('Метрики пилота', ['Срок закрытия вакансии и время до первого отклика (считает продукт),', 'доля вакансий с рыночной ставкой, доля дошедших до результата,', 'доля карточек «данных мало».']),
+    ('Следующий шаг после пилота', ['Второй источник вакансий и накопленная статистика закрытия →', '«за сколько дней закрывается вакансия с такой ставкой»;', 'сводки регионов — партнёрам.']),
+]
+x, y = Inches(0.55), Inches(1.6)
+for i, (t, lines) in enumerate(cells):
+    if i == 3:
+        x, y = Inches(0.55), Inches(4.2)
+    rect(s, x, y, Inches(3.98), Inches(2.4), fill=LIGHT if i % 2 == 0 else WHITE, line=LINE)
+    txt(s, x + Inches(0.15), y + Inches(0.12), Inches(3.7), Inches(0.4), t, size=15, bold=True, color=BLUE, space=0)
+    txt(s, x + Inches(0.15), y + Inches(0.62), Inches(3.7), Inches(1.7), lines, size=12, space=4, line=1.0)
+    x += Inches(4.15)
 
-# 12. Пилот
+# -------------------------------------------------------- 17. ограничения
 s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Сценарий пилотного запуска и внедрения', 'Задел на очный этап: где, с кем и по каким метрикам', n)
-bullets(s, Inches(0.6), Inches(1.6), Inches(12), Inches(5.2), [
-    ('Где', True), 'Республика Татарстан (финал в Казани): розница и общепит — пакет уже готов; параллельно общепит Санкт-Петербурга.',
-    ('Как встраивается', True), 'Ссылка на бота в рассылках центров «Мой бизнес» и канала МСП.РФ в MAX; бот в рабочем чате владельца и управляющего — решение о ставке принимается вдвоём.',
-    ('Данные, интеграции, ресурсы', True), 'Два открытых источника уже подключены; один сервер; владелец контента пакетов — отраслевая ассоциация или центр «Мой бизнес»; юридическая проверка формулировок черновика вакансии.',
-    ('Метрики пилота', True), '100 бизнесов × 3 месяца: доля вакансий с рыночной ставкой, срок закрытия, повторные обращения, доля «данных мало».',
-    ('Следующий шаг', True), 'Второй источник вакансий и наблюдение за закрытием (уже копится) → «за сколько закрывается вакансия с такой ставкой».',
-], size=14)
+header(s, 'Ограничения, риски и допущения', 'Что мы знаем про слабые места продукта и говорим об этом прямо', n)
+bullets(s, Inches(0.55), Inches(1.58), Inches(4.05), Inches(5.0), [
+    ('Ограничения данных', True),
+    'Заявленные в вакансиях ставки ≠ фактические выплаты.',
+    'Госпортал смещён к сетям и бюджету — поэтому срез по размеру работодателя и честный размер выборки.',
+    'У 51 % вакансий ставка фиксированная, без вилки; часть вакансий вовсе без зарплаты — они отбрасываются.',
+    'Редкая профессия в малом регионе → состояние «данных мало» вместо красивой цифры.',
+    'План ЕРКНМ — план на год, а не история: внеплановые мероприятия в набор не входят, строки меняются, поэтому набор перечитывается раз в неделю.',
+], size=12)
+bullets(s, Inches(4.75), Inches(1.58), Inches(4.05), Inches(5.0), [
+    ('Технические ограничения и риски', True),
+    'Латентность источника 6–11 с на страницу: первая карточка по новому запросу — до 40 секунд, дальше из кэша.',
+    'Обогащение категорий — до 60 работодателей на карточку (вежливость к реестру).',
+    'shareMaxContent, диплинки и initData работают после привязки мини-приложения организаторами; до неё — демо-режим в браузере.',
+    'Риски: изменение формата Open API (драйвер изолирован, тесты на фикстуре), ограничение доступа к реестру МСП (кэш 30 дней и деградация до режима без профиля).',
+], size=12)
+bullets(s, Inches(8.95), Inches(1.58), Inches(3.87), Inches(5.0), [
+    ('Допущения', True),
+    'Ставка — оклад в месяц до вычета НДФЛ; единица измерения в вакансиях указана не всегда.',
+    'Ставка вакансии = середина вилки.',
+    'Уверенный вывод — от 20 вакансий и 10 работодателей.',
+    ('Сознательно не делаем', True),
+    'парсинг коммерческих job-бордов без договора;',
+    'генеративные модели в расчёте;',
+    'расчёт ФОТ, налогов и кадровый документооборот;',
+    'оценку вероятности проверок и рейтинги риска.',
+], size=12)
+rect(s, Inches(0.55), Inches(6.05), Inches(12.25), Inches(0.82), fill=GREY)
+txt(s, Inches(0.72), Inches(6.14), Inches(11.9), Inches(0.72), [
+    ('Об источниках кейса честно', {'bold': True, 'size': 12, 'color': BLUE}),
+    'Из семи источников, предложенных в кейсе, три работают у нас программно: реестр МСП ФНС, «Работа России» и портал контрольной и надзорной деятельности (открытый набор ЕРКНМ). Оставшиеся четыре — МСП.РФ, ГИСП, реестры Росаккредитации и «Мой экспорт» — либо требуют входа через ЕСИА и ключей по договору, либо относятся к другим задачам (меры поддержки, сертификация, экспорт), а не к кадрам; имитировать интеграцию мы не стали.',
+], size=11, space=2)
 
-# 13. Ограничения
-s = prs.slides.add_slide(BLANK); n += 1
-header(s, 'Ограничения, риски и допущения', 'Разделяем факты, расчёты и гипотезы', n)
-bullets(s, Inches(0.6), Inches(1.6), Inches(6.2), Inches(5.2), [('Ограничения', True), 'Заявленные в вакансиях ставки ≠ фактические выплаты; госпортал смещён к сетям и бюджету — поэтому срез по размеру работодателя и честный размер выборки.', 'Латентность источника 6–11 с на страницу: первая карточка до 40 с, далее из кэша.', 'Редкие профессии в малых регионах → состояние «данных мало» вместо красивой цифры.', 'Мини-приложение проверяется внутри MAX после привязки организаторами; до этого — демо-режим в браузере.'], size=13)
-bullets(s, Inches(6.9), Inches(1.6), Inches(6.0), Inches(5.2), [('Сознательно не делаем (Won’t Have)', True), 'воронку кандидатов и отклики', 'парсинг коммерческих job-бордов без договора', 'генеративную модель в ядре (п. 9.5 правил)', 'расчёт ФОТ, налогов и бухгалтерию', ('Допущения', True), 'оклад в месяц до НДФЛ; единица ставки в вакансиях не всегда явно указана', 'обогащение до 60 работодателей на карточку'], size=13)
-
-# 14. Источники
+# ------------------------------------------------------------ 18. источники
 s = prs.slides.add_slide(BLANK); n += 1
 header(s, 'Использованные источники', None, n)
-bullets(s, Inches(0.6), Inches(1.4), Inches(12), Inches(5.6), [
-    'Кейс трека «Эффективный бизнес» и Правила хакатона MAX 2026 (ред. 21.08.2026).',
-    'Документация платформы MAX: dev.max.ru/docs, dev.max.ru/docs-api, dev.max.ru/docs/webapps/bridge, /validation, dev.max.ru/ui; репозитории max-messenger/max-bot-api-client-ts, max-ui.',
-    'Портал «Работа России», Open API v1: opendata.trudvsem.ru/api/v1/vacancies; справочники regions.json, profession.json.',
-    'Единый реестр субъектов МСП ФНС России: rmsp.nalog.ru (search-proc.json; статистика реестра на 10.09.2026).',
-    'Росстат / Роструд — потребность в работниках 1,8 млн (май 2026); Банк России — мониторинг предприятий (обеспеченность работниками −19,7 п., 2 кв. 2026); индекс RSBI (ПСБ, «Опора России»), май 2026; hh.индекс, март 2026.',
-    'Официальные сертификаты Минцифры России (gu-st.ru); шрифт PT Sans (ParaType, OFL).',
-], size=13)
+bullets(s, Inches(0.55), Inches(1.5), Inches(12.25), Inches(5.3), [
+    'Кейс трека «Эффективный бизнес» и правила хакатона MAX 2026.',
+    'Документация платформы MAX: dev.max.ru/docs, dev.max.ru/docs-api, MAX Bridge (в том числе shareMaxContent и проверка initData), библиотека MAX UI.',
+    'Портал «Работа России» (Роструд), Open API v1: opendata.trudvsem.ru/api/v1/vacancies; справочники регионов и профессий ОКПДТР (8 037 позиций).',
+    'Единый реестр субъектов малого и среднего предпринимательства, ФНС России: rmsp.nalog.ru; статистика реестра на 10.09.2026 — 6,77 млн субъектов, 96 % микропредприятий.',
+    'Единый реестр контрольных (надзорных) мероприятий, Генеральная прокуратура: proverki.gov.ru, открытый набор «План проверок на 2026 год» (версия от 23.09.2026, 29 832 записи).',
+    'Росстат по данным Роструда: заявленная работодателями потребность — почти 1,8 млн работников (май 2026, приведено в кейсе трека).',
+    'Индекс RSBI (ПСБ и «Опора России»), компонента «Кадры» — 44,2 (май 2026).',
+    'Собственные измерения на проде 23.09.2026: выборки по профессиям и регионам, тайминги источников, разбор набора ЕРКНМ. Все числа в презентации помечены датой получения.',
+], size=14)
 
-out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
+# ------------------------------------------------------------------ сборка
+out = Path(args.out)
+out.mkdir(parents=True, exist_ok=True)
 pptx_path = out / f'{args.name}.pptx'
 prs.save(pptx_path)
+print('слайдов:', len(prs.slides.__iter__.__self__._sldIdLst))
 print('pptx:', pptx_path)
 try:
-    subprocess.run(["soffice", "--headless", "-env:UserInstallation=file:///tmp/lo-profile", "--convert-to", "pdf", "--outdir", str(out), str(pptx_path)], check=True, capture_output=True, timeout=180)
+    subprocess.run(['soffice', '--headless', '-env:UserInstallation=file:///tmp/lo-profile-deck',
+                    '--convert-to', 'pdf', '--outdir', str(out), str(pptx_path)],
+                   check=True, capture_output=True, timeout=300)
     print('pdf:', out / f'{args.name}.pdf')
 except Exception as e:
-    print('pdf conversion failed:', e, file=sys.stderr)
+    print('конвертация в PDF не удалась:', e, file=sys.stderr)

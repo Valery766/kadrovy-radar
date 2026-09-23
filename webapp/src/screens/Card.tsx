@@ -167,7 +167,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
           {card.offer && <span className={`sv-badge ${BAND[card.offer.band]?.cls ?? ''}`}>{rub(card.offer.value)} · {card.offer.percentile}-й перцентиль · {BAND[card.offer.band]?.label}</span>}
           <span className={`sv-badge ${card.confidence === 'ok' ? 'sv-badge--ok' : card.confidence === 'low' ? 'sv-badge--warn' : 'sv-badge--bad'}`}>{card.confidence === 'ok' ? 'данных достаточно' : card.confidence === 'low' ? 'данных мало' : 'данных нет'}</span>
         </div>
-        {card.offer && <div className="sv-muted sv-small" style={{ marginTop: 6 }}>{card.offer.percentile}-й перцентиль — вы платите больше, чем {card.offer.percentile} вакансий из 100.</div>}
+        {card.offer && <div className="sv-muted sv-small" style={{ marginTop: 6 }}>{card.offer.percentile}-й перцентиль — вы платите больше, чем в {card.offer.percentile} % вакансий региона.</div>}
       </div>
 
       {card.confidence !== 'ok' && <div className="sv-banner">{card.confidenceReason ?? 'Подходящих вакансий не нашлось'}. {card.confidence === 'low' ? 'Цифры ниже — ориентир, а не вывод.' : 'Попробуйте другую должность или регион.'}</div>}

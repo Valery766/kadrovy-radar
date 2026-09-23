@@ -30,10 +30,27 @@ export interface Config {
   inspectionsMaxAgeDays: number;
 }
 
+/**
+ * Пустая строка — это «не задано», а не значение: `.env`, собранный из `.env.example`,
+ * приносит в контейнер `ERKNM_YEAR=`, `HOST=` и т. п., и `Number('')` дал бы 0, а `resolve('')` — cwd.
+ */
+function str(value: string | undefined): string | undefined {
+  const v = value?.trim();
+  return v ? v : undefined;
+}
+
+/** Число из переменной окружения; пустая строка и мусор дают значение по умолчанию. */
+function num(value: string | undefined, fallback: number): number {
+  const v = str(value);
+  if (v === undefined) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const mode = (env.MAX_UPDATES_MODE ?? 'none') as UpdatesMode;
+  const mode = (str(env.MAX_UPDATES_MODE) ?? 'none') as UpdatesMode;
   if (!['webhook', 'polling', 'none'].includes(mode)) throw new Error(`MAX_UPDATES_MODE: недопустимое значение «${mode}»`);
-  const publicUrl = (env.PUBLIC_URL ?? `http://localhost:${env.PORT ?? 8080}`).replace(/\/+$/, '');
+  const publicUrl = (str(env.PUBLIC_URL) ?? `http://localhost:${num(env.PORT, 8080)}`).replace(/\/+$/, '');
   const botToken = env.MAX_BOT_TOKEN?.trim() || null;
   if (mode !== 'none' && !botToken) throw new Error('MAX_BOT_TOKEN обязателен для MAX_UPDATES_MODE=webhook|polling');
   if (mode === 'webhook' && !publicUrl.startsWith('https://')) throw new Error('MAX_UPDATES_MODE=webhook требует PUBLIC_URL по https:// (порт 443)');
@@ -46,19 +63,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webhookSecret: env.MAX_WEBHOOK_SECRET?.trim() || null,
     updatesMode: mode,
     publicUrl,
-    port: Number(env.PORT ?? 8080),
-    host: env.HOST ?? (env.DATA_DIR === '/data' ? '0.0.0.0' : '127.0.0.1'),
-    dataDir: resolve(env.DATA_DIR ?? './data'),
+    port: num(env.PORT, 8080),
+    host: str(env.HOST) ?? (str(env.DATA_DIR) === '/data' ? '0.0.0.0' : '127.0.0.1'),
+    dataDir: resolve(str(env.DATA_DIR) ?? './data'),
     // Без секрета (только режим none, локальные запуски) — случайный на время процесса: сессии живут до перезапуска, но подделать их нельзя.
     sessionSecret: weakSecret ? randomBytes(32).toString('hex') : sessionSecret,
-    apiBase: env.MAX_API_BASE?.trim() || 'https://platform-api2.max.ru',
-    logLevel: env.LOG_LEVEL ?? 'info',
-    packsDir: resolve(env.PACKS_DIR ?? resolve(import.meta.dirname, '../../packs')),
-    vacancyCacheHours: Number(env.VACANCY_CACHE_HOURS ?? 6),
-    profileCacheHours: Number(env.PROFILE_CACHE_HOURS ?? 24 * 30),
-    maxVacancyRecords: Number(env.MAX_VACANCY_RECORDS ?? 2000),
-    maxEmployersToEnrich: Number(env.MAX_EMPLOYERS_TO_ENRICH ?? 60),
-    inspectionsYear: Number(env.ERKNM_YEAR ?? new Date().getFullYear()),
-    inspectionsMaxAgeDays: Number(env.ERKNM_MAX_AGE_DAYS ?? 7),
+    apiBase: str(env.MAX_API_BASE) ?? 'https://platform-api2.max.ru',
+    logLevel: str(env.LOG_LEVEL) ?? 'info',
+    packsDir: resolve(str(env.PACKS_DIR) ?? resolve(import.meta.dirname, '../../packs')),
+    vacancyCacheHours: num(env.VACANCY_CACHE_HOURS, 6),
+    profileCacheHours: num(env.PROFILE_CACHE_HOURS, 24 * 30),
+    maxVacancyRecords: num(env.MAX_VACANCY_RECORDS, 2000),
+    maxEmployersToEnrich: num(env.MAX_EMPLOYERS_TO_ENRICH, 60),
+    inspectionsYear: num(env.ERKNM_YEAR, new Date().getFullYear()),
+    inspectionsMaxAgeDays: num(env.ERKNM_MAX_AGE_DAYS, 7),
   };
 }
