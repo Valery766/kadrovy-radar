@@ -895,6 +895,9 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         return;
       }
       case 'profession': {
+        // Пользователь на шаге «должность» прислал ИНН (10 или 12 цифр, можно с приставкой «ИНН»): это не должность, а профиль бизнеса.
+        const innLike = /^(?:инн\s*)?(\d{10}|\d{12})$/iu.exec(text.replace(/[\s-]+/g, ' ').trim());
+        if (innLike && isValidInn(innLike[1]!)) { await handleInn(ctx, uid, innLike[1]!); return; }
         if (/^\d[\d\s]{3,8}$/.test(text)) { await ctx.reply('Это похоже на ставку, а сейчас шаг 2 из 3: должность.\n\nЧто дальше: напишите должность, например «повар», ставку спрошу следующим шагом.', { attachments: [T.professionKeyboard(packFor(uid))] }); return; }
         if (await handleProfessionText(ctx, uid, text)) return;
         await ctx.reply('Не понял должность.\n\nЧто дальше: выберите кнопкой или напишите название, например «повар», «продавец», «сварщик».', { attachments: [T.professionKeyboard(packFor(uid))] });
