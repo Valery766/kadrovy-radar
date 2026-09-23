@@ -21,7 +21,7 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
   const [profile, setProfile] = useState<Profile | null>(boot.user.profile);
   const [region, setRegion] = useState<Region | null>(boot.regions.find((r) => r.fnsCode === boot.user.regionFnsCode) ?? null);
   const [packTitle, setPackTitle] = useState(boot.user.pack.title);
-  const demoPack = boot.packs.find((p) => p.demo) ?? null;
+  const demoPacks = boot.packs.filter((p) => p.demo);
 
   const lookup = async () => {
     setError(null);
@@ -72,7 +72,7 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
         <div className="sv-h2">2. Проверить ставку</div>
         <div className="sv-muted sv-small">Должность → регион → ваша ставка. Источник вакансий — «Работа России» (Роструд), обновляется при запросе.</div>
         <Button stretched onClick={() => onStart({ inn: profile?.inRegistry ? profile.inn : null, regionFnsCode: region?.fnsCode ?? null })}>Показать рынок</Button>
-        {demoPack?.demo && <Button stretched variant="secondary" onClick={() => onDemo(demoPack)}>Показать на примере: {demoPack.title}</Button>}
+        {demoPacks.map((p) => <Button key={p.id} stretched variant="secondary" onClick={() => onDemo(p)}>Показать на примере: {p.title}</Button>)}
       </div>
 
       {boot.recentCards.length > 0 && (

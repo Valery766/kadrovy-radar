@@ -178,7 +178,14 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
 
     if (payload === 'inn:new') { await ack(); setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText()); return; }
     if (payload === 'profile:ok') { await ack(); setState(uid, { step: 'profession' }); const pack = packFor(uid); await ctx.reply(T.askProfessionText(pack), { attachments: [T.professionKeyboard(pack)] }); return; }
-    if (payload === 'demo') { await ack(); await runDemo(ctx, uid); return; }
+    if (payload === 'demo') {
+      await ack();
+      const demos = catalog.packs.filter((p) => p.demo);
+      if (demos.length <= 1) { await runDemo(ctx, uid, demos[0]?.id); return; }
+      await ctx.reply('Какой пример показать? Разные регионы и отрасли считаются одним и тем же кодом — меняется только пакет контекста.', { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(p.title, `demo:${p.id}`)]))] });
+      return;
+    }
+    if (payload.startsWith('demo:')) { await ack(); await runDemo(ctx, uid, payload.slice(5)); return; }
     if (payload === 'prof:again') { await ack(); setState(uid, { step: 'profession' }); const pack = packFor(uid); await ctx.reply(T.askProfessionText(pack), { attachments: [T.professionKeyboard(pack)] }); return; }
     if (payload.startsWith('prof:')) {
       await ack();
@@ -247,8 +254,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     await ack();
   });
 
-  async function runDemo(ctx: Context, uid: number) {
-    const pack = catalog.packs.find((p) => p.demo) ?? null;
+  async function runDemo(ctx: Context, uid: number, packId?: string) {
+    const pack = (packId ? catalog.packs.find((p) => p.id === packId && p.demo) : null) ?? catalog.packs.find((p) => p.demo) ?? null;
     if (!pack?.demo) { await ctx.reply('Демо-пример не настроен.'); return; }
     updateUser(db, uid, { inn: pack.demo.inn, regionFnsCode: pack.region?.fnsCode ?? undefined, packId: pack.id });
     setState(uid, { step: 'salary', professionKey: pack.demo.profession });
@@ -265,7 +272,12 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const cmd = /^\/(\w+)/.exec(text)?.[1]?.toLowerCase();
     if (cmd === 'start') { await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] }); return; }
     if (cmd === 'help') { await ctx.reply(T.helpText()); return; }
-    if (cmd === 'demo') { await runDemo(ctx, uid); return; }
+    if (cmd === 'demo') {
+      const demos = catalog.packs.filter((p) => p.demo);
+      if (demos.length <= 1) { await runDemo(ctx, uid, demos[0]?.id); return; }
+      await ctx.reply('Какой пример показать? Разные регионы и отрасли считаются одним кодом — меняется только пакет контекста.', { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(p.title, `demo:${p.id}`)]))] });
+      return;
+    }
     if (cmd === 'profile') { setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText()); return; }
     if (cmd === 'stavka') { await startFlow(ctx, uid); return; }
     if (cmd === 'subs') {
