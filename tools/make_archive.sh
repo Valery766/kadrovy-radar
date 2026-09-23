@@ -10,9 +10,9 @@ OUT="out/kadrovy-radar-$HASH.zip"
 rm -f "$OUT" "$OUT.sha256"
 git archive --format=zip --prefix="kadrovy-radar-$HASH/" -o "$OUT" HEAD
 if [ -f "$PDF" ]; then
-  cp "$PDF" "out/Кадровый радар — презентация.pdf"
-  (cd out && zip -q "$(basename "$OUT")" "Кадровый радар — презентация.pdf")
-  rm -f "out/Кадровый радар — презентация.pdf"
+  cp "$PDF" "out/kadrovy-radar-presentation-$HASH.pdf"
+  (cd out && zip -q "$(basename "$OUT")" "kadrovy-radar-presentation-$HASH.pdf")
+  rm -f "out/kadrovy-radar-presentation-$HASH.pdf"
 else
   echo "предупреждение: презентация $PDF не найдена — архив без неё" >&2
 fi
