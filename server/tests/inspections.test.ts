@@ -203,11 +203,13 @@ describe('inspectionsForBusiness', () => {
 
     const text = inspectionsText(r);
     expect(text).toContain('По ИНН 1601000159 в плане проверок 2026: 1.');
-    expect(text).toContain('02.02.2026—13.02.2026');
+    expect(text).toContain('02.02.2026 – 13.02.2026');
     expect(text).toContain('ГОСУДАРСТВЕННАЯ ИНСПЕКЦИЯ ТРУДА В РЕСПУБЛИКЕ ТАТАРСТАН');
     expect(text).toContain('версия набора от 23.09.2026');
     expect(text.length).toBeLessThanOrEqual(4000);
-    expect(inspectionsProfileLine(r)).toBe('Проверки 2026: 1 проверка в плане — подробности по команде /checks');
+    expect(inspectionsProfileLine(r)).toBe('Проверки 2026: 1 плановая проверка по вашему ИНН, кто и когда придёт: /checks');
+    expect(text).not.toContain('—');
+    expect(text).toContain('Что дальше');
     db.close();
   });
 

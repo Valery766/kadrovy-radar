@@ -1,6 +1,6 @@
 /**
  * «Штат и удержание»: сравнение ставок действующих сотрудников с рынком.
- * Чистая функция ядра — на вход список должностей и готовые карточки рынка,
+ * Чистая функция ядра – на вход список должностей и готовые карточки рынка,
  * на выходе риск ухода по каждой позиции и стоимость выхода на медиану.
  */
 import type { MarketCard, OfferBand, StaffAssessment, StaffPosition, StaffReport, StaffRisk, StaffSummary } from './types.js';
@@ -71,7 +71,7 @@ function summarize(items: StaffAssessment[]): StaffSummary {
  */
 export function assessStaff(positions: StaffPosition[], markets: Map<string, MarketCard>): StaffReport {
   const items = positions.map((p) => assessOne(p, p.professionKey ? markets.get(p.professionKey) : null));
-  // Сначала самые «отстающие»: высокий риск → умеренный → в рынке → без данных; внутри — по разрыву.
+  // Сначала самые «отстающие»: высокий риск → умеренный → в рынке → без данных; внутри – по разрыву.
   const order: Record<StaffRisk, number> = { high: 0, medium: 1, none: 2, unknown: 3 };
   const sorted = [...items].sort((a, b) => order[a.risk] - order[b.risk] || b.gapRub - a.gapRub || a.title.localeCompare(b.title, 'ru'));
   return { positions: sorted, summary: summarize(items) };

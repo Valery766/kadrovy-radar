@@ -1,6 +1,6 @@
 /**
  * Отчёт в чат: PDF рендерится детерминированно, загружается в MAX (POST /uploads),
- * отправляется ботом в диалог пользователя. Полученный mid сохраняется — по нему
+ * отправляется ботом в диалог пользователя. Полученный mid сохраняется – по нему
  * мини-приложение пересылает отчёт в любой чат через window.WebApp.shareMaxContent({mid}).
  */
 import { randomUUID } from 'node:crypto';
@@ -21,7 +21,7 @@ export function cardDeepLink(botUsername: string, cardId: string): string {
   return `https://max.ru/${botUsername}?startapp=card_${cardId}`;
 }
 
-/** Кнопка открытия мини-приложения: web_app — ник бота, к которому привязано приложение; payload → initData.start_param. */
+/** Кнопка открытия мини-приложения: web_app – ник бота, к которому привязано приложение; payload → initData.start_param. */
 export function openRadarButton(botUsername: string, cardId: string | null, text = 'Подробный разбор') {
   return Keyboard.button.openApp(text, botUsername, undefined, cardId ? `card_${cardId}` : undefined);
 }
@@ -42,8 +42,11 @@ export async function sendReportToChat(ctx: ReportContext, result: MarketResult,
   const { card, profession, region } = result;
   const text = [
     `📄 Отчёт «Кадрового радара»: ${profession.title}, ${region.name}.`,
-    card.stats ? `Медиана ${formatRub(card.stats.median)}, половина предложений ${formatRub(card.stats.p25)}–${formatRub(card.stats.p75)}; выборка ${card.sample.vacancies} вак. / ${card.sample.employers} работод.` : 'Данных для расчёта не хватило.',
-    'Переслать отчёт партнёру или бухгалтеру можно из приложения — кнопка «Поделиться отчётом».',
+    card.stats
+      ? `Обычная ставка рынка ${formatRub(card.stats.median)} (медиана), половина вакансий в ${formatRub(card.stats.p25)}–${formatRub(card.stats.p75)}. Посчитано по ${card.sample.vacancies} объявлениям ${card.sample.employers} работодателей.`
+      : 'Данных для расчёта не хватило.',
+    '',
+    'Что дальше: переслать отчёт партнёру или бухгалтеру можно из приложения, кнопка «Поделиться отчётом». Подробный разбор с графиками: кнопка ниже.',
   ].join('\n');
   const keyboard = Keyboard.inlineKeyboard([[openRadarButton(ctx.botUsername, result.cardId)]]);
   const message = await ctx.bot.api.sendMessageToChat(chatId, text, { attachments: [file.toJson(), keyboard] });

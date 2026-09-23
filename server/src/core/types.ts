@@ -1,16 +1,16 @@
 /**
  * Ядро «Ставки»: модель данных движка рынка труда.
- * Ядро не знает ни о MAX, ни о конкретных регионах и отраслях — весь контекст
+ * Ядро не знает ни о MAX, ни о конкретных регионах и отраслях – весь контекст
  * приходит снаружи в виде пакета (Pack) и записей вакансий (VacancyRecord).
  */
 
-/** Категория субъекта МСП по реестру ФНС: 0 — не МСП, 1 — микро, 2 — малое, 3 — среднее. */
+/** Категория субъекта МСП по реестру ФНС: 0 – не МСП, 1 – микро, 2 – малое, 3 – среднее. */
 export type MspCategory = 0 | 1 | 2 | 3;
 
 export interface EmployerProfile {
   inn: string;
   name: string;
-  /** null — работодатель не найден в реестре МСП (бюджет, крупный бизнес, ликвидирован). */
+  /** null – работодатель не найден в реестре МСП (бюджет, крупный бизнес, ликвидирован). */
   category: MspCategory | null;
   okved: string | null;
   okvedName: string | null;
@@ -40,7 +40,7 @@ export interface VacancyRecord {
   /** Текст требований (включая требуемые медицинские документы). */
   requirement: string | null;
   duty: string | null;
-  /** Требуемый опыт, лет (0 — без опыта), если указан. */
+  /** Требуемый опыт, лет (0 – без опыта), если указан. */
   experienceYears: number | null;
   education: string | null;
   /** Число рабочих мест в объявлении. */
@@ -109,9 +109,9 @@ export interface Pack {
   id: string;
   title: string;
   version: number;
-  /** null — универсальный пакет: регион берётся из профиля бизнеса. */
+  /** null – универсальный пакет: регион берётся из профиля бизнеса. */
   region: PackRegion | null;
-  /** null — универсальный пакет: отрасль не ограничена. */
+  /** null – универсальный пакет: отрасль не ограничена. */
   industry: PackIndustry | null;
   professions: Profession[];
   thresholds: Thresholds;
@@ -247,12 +247,12 @@ export interface MarketCard {
   options: OfferOption[];
   histogram: HistogramBucket[];
   byCategory: CategoryStats[];
-  /** Срез «работодатели вашего размера» — если известна категория пользователя. */
+  /** Срез «работодатели вашего размера» – если известна категория пользователя. */
   sameSize: CategoryStats | null;
   examples: VacancyExample[];
   requirements: PhraseStat[];
   schedules: { label: string; share: number }[];
-  /** Распределение вакансий по неделям публикации; null — дат в выборке слишком мало. */
+  /** Распределение вакансий по неделям публикации; null – дат в выборке слишком мало. */
   seasonality?: Seasonality | null;
   /** Готовый текстовый вердикт (детерминированный, по правилам ядра). */
   verdict: string;
@@ -262,7 +262,7 @@ export interface MarketInput {
   vacancies: VacancyRecord[];
   profession: Profession;
   regionCode: string;
-  /** Предлагаемая ставка, ₽/мес; null — только обзор рынка. */
+  /** Предлагаемая ставка, ₽/мес; null – только обзор рынка. */
   offer: number | null;
   thresholds: Thresholds;
   requirementPhrases: PhraseRule[];
@@ -270,7 +270,7 @@ export interface MarketInput {
   userCategory: MspCategory | null;
   /** Название региона для текста вердикта. */
   regionName: string;
-  /** Дата «сегодня» (для расчёта свежих вакансий); по умолчанию — текущая. */
+  /** Дата «сегодня» (для расчёта свежих вакансий); по умолчанию – текущая. */
   now?: Date;
 }
 
@@ -283,7 +283,7 @@ export interface StaffPosition {
   title: string;
   /** Текущая ставка, ₽/мес до НДФЛ. */
   salary: number;
-  /** Ключ профессии каталога или «custom:<slug>»; null — профессия не определена. */
+  /** Ключ профессии каталога или «custom:<slug>»; null – профессия не определена. */
   professionKey?: string | null;
 }
 
@@ -305,7 +305,7 @@ export interface StaffAssessment {
   gapRub: number;
   /** Тот же разрыв в процентах от текущей ставки. */
   gapPct: number;
-  /** high — ниже 25-го перцентиля, medium — ниже медианы, none — в рынке, unknown — нет данных. */
+  /** high – ниже 25-го перцентиля, medium – ниже медианы, none – в рынке, unknown – нет данных. */
   risk: StaffRisk;
   /** Причина, по которой оценка не сделана. */
   note: string | null;
@@ -371,7 +371,7 @@ export interface RegionComparisonRow {
   offerPercentile: number | null;
   confidence: Confidence | null;
   error: string | null;
-  /** Место в таблице после сортировки (1 — первое); 0 у регионов без данных. */
+  /** Место в таблице после сортировки (1 – первое); 0 у регионов без данных. */
   rank: number;
 }
 

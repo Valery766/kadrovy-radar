@@ -2,7 +2,7 @@ import type { PhraseRule, PhraseStat, VacancyRecord } from './types.js';
 
 /**
  * Частотный разбор требований и обязанностей: какая доля вакансий упоминает
- * медкнижку, опыт, график и т. п. Правила — переменная часть (пакет), ядро только считает.
+ * медкнижку, опыт, график и т. п. Правила – переменная часть (пакет), ядро только считает.
  */
 export function phraseStats(vacancies: VacancyRecord[], rules: PhraseRule[], minShare = 0.05): PhraseStat[] {
   if (vacancies.length === 0) return [];

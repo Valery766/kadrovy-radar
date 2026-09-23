@@ -5,7 +5,7 @@ const dir = resolve(process.argv[2] ?? resolve(import.meta.dirname, '../../../pa
 try {
   const c = loadCatalog(dir);
   for (const p of c.packs) {
-    console.log(`✔ ${p.id} (v${p.version}): ${p.title} — регион ${p.region ? `${p.region.name} [${p.region.fnsCode}]` : 'любой'}, отрасль ${p.industry ? p.industry.okvedPrefixes.join('/') : 'любая'}, профессий ${p.professions.length}, демо ${p.demo ? p.demo.inn : '—'}`);
+    console.log(`✔ ${p.id} (v${p.version}): ${p.title} – регион ${p.region ? `${p.region.name} [${p.region.fnsCode}]` : 'любой'}, отрасль ${p.industry ? p.industry.okvedPrefixes.join('/') : 'любая'}, профессий ${p.professions.length}, демо ${p.demo ? p.demo.inn : '–'}`);
   }
   const okpdtr = c.okpdtr.length ? `${c.okpdtr.length} позиций ОКПДТР` : 'справочник ОКПДТР не найден (подсказки по свободному вводу будут пустыми)';
   console.log(`Каталог: ${c.professions.length} профессий, ${c.phrases.length} формулировок, ${c.regions.length} регионов, ${okpdtr}. Всё валидно.`);

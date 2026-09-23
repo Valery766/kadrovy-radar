@@ -1,7 +1,7 @@
 /**
- * Сравнение регионов по одной профессии — чистая часть.
+ * Сравнение регионов по одной профессии – чистая часть.
  * Ядро не ходит в источники и не знает названий регионов: на вход приходят уже
- * посчитанные срезы рынка, на выходе — упорядоченная таблица с индексами.
+ * посчитанные срезы рынка, на выходе – упорядоченная таблица с индексами.
  */
 import type {
   HistogramBucket, RegionComparison, RegionComparisonRow, RegionMarketInput, RegionSort, SalaryStats,
@@ -10,7 +10,7 @@ import { percentileFromHistogram } from './stats.js';
 
 function affordabilityIndex(stats: SalaryStats | null, avgSalary: number | null): number | null {
   if (!stats || !avgSalary || avgSalary <= 0) return null;
-  // Медиана профессии к средней зарплате региона: < 1 — профессия дешевле среднего по региону.
+  // Медиана профессии к средней зарплате региона: < 1 – профессия дешевле среднего по региону.
   return Math.round((100 * stats.median) / avgSalary) / 100;
 }
 

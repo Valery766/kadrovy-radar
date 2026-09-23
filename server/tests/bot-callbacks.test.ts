@@ -139,7 +139,7 @@ describe('бот: кнопки чужой карточки', () => {
 
   it('по анонимной карточке отклоняет публикацию, но отдаёт PDF и текст вакансии', async () => {
     await h.fire('pub:card-anon', STRANGER);
-    expect(lastAck(h)).toBe('Это карточка демо-режима: посчитайте рынок по своему бизнесу — /stavka');
+    expect(lastAck(h)).toBe('Это карточка демо-режима: посчитайте рынок по своему бизнесу: /stavka');
     expect(vacancyCount(h.db)).toBe(0);
 
     await h.fire('pdf:card-anon', STRANGER);

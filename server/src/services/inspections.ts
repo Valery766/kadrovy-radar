@@ -1,6 +1,6 @@
 /**
  * Плановые проверки на год из ЕРКНМ (Генпрокуратура): загрузка набора в SQLite и ответ бизнесу.
- * Никаких оценок «вероятности проверки» — только факты плана (даты, вид надзора, орган)
+ * Никаких оценок «вероятности проверки» – только факты плана (даты, вид надзора, орган)
  * и счётчики по региону и разделу ОКВЭД.
  */
 import { readdir, rm, stat } from 'node:fs/promises';
@@ -9,7 +9,7 @@ import type { Db, InspectionDatasetRow, InspectionKindKey, InspectionRow } from 
 import { beginInspectionsLoad, getInspectionDataset, inspectionCounts, inspectionsByInn, touchInspectionDataset } from '../db/index.js';
 import { erknm, SOURCES, SourceError } from '../integrations/index.js';
 import type { RegionRef } from '../integrations/erknm.js';
-import { pluralRu } from '../core/index.js';
+import { formatDateRu, pluralRu } from '../core/index.js';
 import type { SourceBadge } from './market.js';
 import type { Config } from '../config.js';
 import type { PackCatalog, RegionInfo } from '../packs/loader.js';
@@ -52,7 +52,7 @@ export async function syncInspections(ctx: InspectionsContext, opts: { force?: b
     try {
       passport = await erknm.fetchPassport(year);
     } catch (err) {
-      // Источник недоступен (например, отдаёт 502), но архив уже лежит в DATA_DIR — разбираем его, чтобы сервис не зависел от сайта.
+      // Источник недоступен (например, отдаёт 502), но архив уже лежит в DATA_DIR – разбираем его, чтобы сервис не зависел от сайта.
       const local = await newestArchive(dir);
       if (!local || (current && current.fileName === local)) throw err;
       ctx.log.warn({ err: describeSyncError(err), file: local }, 'erknm: источник недоступен, разбираю архив с диска');
@@ -69,7 +69,7 @@ export async function syncInspections(ctx: InspectionsContext, opts: { force?: b
       return { status: 'up_to_date', dataset: getInspectionDataset(ctx.db, year) ?? current };
     }
     const zipPath = join(dir, passport.fileName);
-    // Архив нужной версии уже лежит в DATA_DIR (перезапуск после обрыва разбора) — качать заново не нужно.
+    // Архив нужной версии уже лежит в DATA_DIR (перезапуск после обрыва разбора) – качать заново не нужно.
     const onDisk = await stat(zipPath).then((s) => s.size, () => 0);
     if (onDisk > 0) {
       ctx.log.info({ year, file: passport.fileName, bytes: onDisk }, 'erknm: архив уже скачан, разбираю');
@@ -125,7 +125,7 @@ export async function syncInspections(ctx: InspectionsContext, opts: { force?: b
   }
 }
 
-/** Первый адрес записи, по которому регион определился; если ни один — null (не угадываем). */
+/** Первый адрес записи, по которому регион определился; если ни один – null (не угадываем). */
 function pickRegion(aliases: ReturnType<typeof erknm.buildRegionAliases>, addresses: readonly string[]): { region: RegionRef; address: string } | null {
   for (const address of addresses) {
     const region = erknm.regionFromAddress(aliases, address);
@@ -134,7 +134,7 @@ function pickRegion(aliases: ReturnType<typeof erknm.buildRegionAliases>, addres
   return null;
 }
 
-/** Самый свежий архив плана в DATA_DIR/erknm (по дате в имени) — для разбора без доступа к источнику. */
+/** Самый свежий архив плана в DATA_DIR/erknm (по дате в имени) – для разбора без доступа к источнику. */
 async function newestArchive(dir: string): Promise<string | null> {
   const names = await readdir(dir).catch(() => [] as string[]);
   const zips = names.filter((n) => /^data-\d{8}-structure-\d{8}\.zip$/.test(n)).sort();
@@ -193,7 +193,7 @@ export interface InspectionsContextBlock {
 }
 
 export interface InspectionsResult {
-  /** false — набор ещё не загружен (первый запуск или источник был недоступен). */
+  /** false – набор ещё не загружен (первый запуск или источник был недоступен). */
   loaded: boolean;
   inn: string | null;
   own: InspectionView[];
@@ -206,7 +206,7 @@ const EMPTY_KINDS: Record<InspectionKindKey, number> = { labor: 0, sanitary: 0, 
 
 export interface InspectionsRequest {
   inn?: string | null;
-  /** Код ФНС региона («78») — приоритетнее кода «Работы России». */
+  /** Код ФНС региона («78») – приоритетнее кода «Работы России». */
   regionFnsCode?: string | null;
   /** Код региона «Работы России» (13 знаков). */
   regionCode?: string | null;
@@ -216,7 +216,7 @@ export interface InspectionsRequest {
 
 /**
  * Плановые КНМ по ИНН бизнеса и контекст «сколько проверок в моём регионе по моей отрасли».
- * Набора нет — возвращаем loaded: false с пустыми списками, а не ошибку: источник обновляется фоном.
+ * Набора нет – возвращаем loaded: false с пустыми списками, а не ошибку: источник обновляется фоном.
  */
 export function inspectionsForBusiness(ctx: InspectionsContext, req: InspectionsRequest): InspectionsResult {
   const year = ctx.config.inspectionsYear;
@@ -274,37 +274,47 @@ function toView(catalog: PackCatalog, r: InspectionRow): InspectionView {
 
 /* ---------- текст для чата ---------- */
 
-/** «2026-03-16» → «16.03.2026»; пусто — прочерк. */
-export const fmtPlanDate = (iso: string | null): string => {
-  const m = iso ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso) : null;
-  return m ? `${m[3]}.${m[2]}.${m[1]}` : '—';
-};
+/** «2026-03-16» → «16.03.2026»; пусто – прочерк. */
+export const fmtPlanDate = formatDateRu;
 
 /** Лимит MAX на одно сообщение: в него должен уместиться весь блок «Проверки». */
 const MAX_TEXT_LENGTH = 4000;
-/** Сколько символов резервируем под контекст региона и строку источника. */
-const TAIL_BUDGET = 800;
+/** Сколько символов резервируем под контекст региона, блоки «что это значит», «что дальше» и строку источника. */
+const TAIL_BUDGET = 1500;
 
-/** Детерминированный текст блока «Проверки {год}» для чата: только факты плана и счётчики. */
+/** Что именно проверяет каждый вид надзора: чтобы владелец понимал, к чему готовиться. */
+const KIND_HINT: Record<InspectionKindKey, string> = {
+  labor: 'трудовая инспекция: трудовые договоры, выплата зарплаты и охрана труда',
+  sanitary: 'Роспотребнадзор: санитарные нормы, медкнижки, хранение продуктов и товаров',
+  fire: 'пожарный надзор: огнетушители, выходы, инструктажи и сигнализация',
+  other: 'другой надзор: что именно, написано в виде контроля выше',
+};
+
+/** Детерминированный текст блока «Проверки {год}» для чата простыми словами: только факты плана и счётчики. */
 export function inspectionsText(r: InspectionsResult): string {
   if (!r.loaded) {
-    return 'Проверки: план ЕРКНМ ещё не загружен — набор Генпрокуратуры обновляется в фоне, обычно это несколько минут после запуска. Загляните чуть позже.';
+    return [
+      'Плановые проверки: план ещё не загружен. Реестр Генпрокуратуры обновляется в фоне, обычно это несколько минут после запуска.',
+      '',
+      'Что дальше: загляните чуть позже: /checks.',
+    ].join('\n');
   }
   const year = r.dataset!.year;
-  const lines: string[] = [`🛡 Проверки ${year}`];
+  const lines: string[] = [`🛡 Плановые проверки на ${year} год`, ''];
   if (!r.inn) {
-    lines.push('ИНН не указан — назовите его командой /profile, и я посмотрю ваш бизнес в плане.');
+    lines.push('ИНН не указан, поэтому ваш бизнес в плане не искал.');
   } else if (r.own.length === 0) {
-    lines.push(`По ИНН ${r.inn} плановых проверок в плане ${year} года нет.`);
+    lines.push(`По ИНН ${r.inn} плановых проверок в плане ${year} года нет. Внеплановые проверки в план не входят: их назначают по жалобам и заранее не объявляют.`);
   } else {
-    lines.push(`По ИНН ${r.inn} в плане проверок ${year}: ${r.own.length}.`);
-    // Формулировки реестра длинные, а сообщение одно: добавляем КНМ, пока хватает места.
-    let used = lines[0]!.length + lines[1]!.length;
+    lines.push(`По ИНН ${r.inn} в плане проверок ${year}: ${r.own.length}. Ниже кто, когда и что придёт проверять.`);
+    // Формулировки реестра длинные, а сообщение одно: добавляем проверки, пока хватает места.
+    let used = lines.reduce((n, l) => n + l.length + 1, 0);
     let shown = 0;
     for (const x of r.own) {
       const block = [
-        `• ${x.startDate ? `${fmtPlanDate(x.startDate)}—${fmtPlanDate(x.stopDate)}` : 'даты не указаны'}: ${x.kindControl ?? x.kindLabel}${x.kindKnm ? ` (${x.kindKnm})` : ''}`,
-        x.organization ? `  Орган: ${x.organization}` : null,
+        `• ${x.startDate ? `${fmtPlanDate(x.startDate)} – ${fmtPlanDate(x.stopDate)}` : 'даты не указаны'}: ${x.kindControl ?? x.kindLabel}${x.kindKnm ? ` (${x.kindKnm})` : ''}`,
+        `  Что проверят: ${KIND_HINT[x.kind]}`,
+        x.organization ? `  Кто придёт: ${x.organization}` : null,
         x.address ? `  Объект: ${x.address}` : null,
         x.status ? `  Статус в реестре: ${x.status}` : null,
       ].filter((l): l is string => l !== null);
@@ -314,28 +324,38 @@ export function inspectionsText(r: InspectionsResult): string {
       used += size;
       shown += 1;
     }
-    if (shown < r.own.length) lines.push(`…и ещё ${r.own.length - shown} — весь список в мини-приложении.`);
+    if (shown < r.own.length) lines.push(`…и ещё ${r.own.length - shown}: весь список в приложении.`);
   }
   lines.push('');
   const c = r.context;
   if (c.scope === 'none') {
-    lines.push('Контекст по региону покажу, когда буду знать ваш регион: укажите ИНН через /profile.');
+    lines.push('Сколько проверок запланировано по вашему региону, покажу, когда буду знать регион: укажите ИНН кнопкой ниже или через /profile.');
   } else {
-    const where = c.scope === 'region_okved' ? `в регионе «${c.region!.name}» по ОКВЭД ${c.okved2}` : `в регионе «${c.region!.name}»`;
-    lines.push(`Всего ${where} запланировано на ${year} год: ${c.total} ${pluralRu(c.total, 'проверка', 'проверки', 'проверок')} — ${KIND_LABEL.labor} ${c.byKind.labor}, ${KIND_LABEL.sanitary} ${c.byKind.sanitary}, ${KIND_LABEL.fire} ${c.byKind.fire}, прочий надзор ${c.byKind.other}.`);
+    const where = c.scope === 'region_okved' ? `в регионе «${c.region!.name}» по вашей отрасли (раздел ОКВЭД ${c.okved2})` : `в регионе «${c.region!.name}»`;
+    lines.push(`Всего ${where} на ${year} год запланировано ${c.total} ${pluralRu(c.total, 'проверка', 'проверки', 'проверок')}: ${KIND_LABEL.labor} ${c.byKind.labor}, ${KIND_LABEL.sanitary} ${c.byKind.sanitary}, ${KIND_LABEL.fire} ${c.byKind.fire}, ${KIND_LABEL.other} ${c.byKind.other}.`);
+    lines.push('Это сколько раз надзорные органы придут к компаниям вроде вашей за год: чем больше, тем внимательнее к отрасли в регионе.');
   }
+  lines.push('');
+  lines.push(`Что это значит для вас: ${r.own.length
+    ? 'к датам выше подготовьте документы: трудовые договоры, инструктажи, медкнижки и журналы. Плановая проверка не сюрприз, дата известна заранее.'
+    : 'плановых визитов по вашему ИНН в этом году нет, но внеплановая проверка возможна по жалобе. Держите документы на сотрудников в порядке.'}`);
+  lines.push('');
+  lines.push('Что дальше:');
+  lines.push(r.inn ? '1) Сменить ИНН: кнопка ниже или /profile.' : '1) Указать ИНН: кнопка ниже или /profile, тогда найду ваш бизнес в плане.');
+  lines.push('2) Весь план с датами и адресами: «Открыть приложение».');
+  lines.push('3) Проверить ставку или штат: /stavka, /staff.');
   lines.push('');
   lines.push(`Источник: Единый реестр контрольных (надзорных) мероприятий (Генпрокуратура), план на ${year} год, версия набора от ${fmtPlanDate(r.dataset!.version)}; загружено ${r.dataset!.records} записей, регион определён у ${r.dataset!.withRegion}.`);
   return lines.join('\n');
 }
 
-/** Одна строка для карточки профиля: «Проверки 2026: есть N плановых» либо «нет». */
+/** Одна строка для карточки профиля: «Проверки 2026: N плановых по вашему ИНН» либо «нет». */
 export function inspectionsProfileLine(r: InspectionsResult): string | null {
   if (!r.loaded || !r.inn) return null;
   const year = r.dataset!.year;
   return r.own.length > 0
-    ? `Проверки ${year}: ${r.own.length} ${pluralRu(r.own.length, 'проверка', 'проверки', 'проверок')} в плане — подробности по команде /checks`
-    : `Проверки ${year}: плановых по вашему ИНН нет — контекст по региону покажет /checks`;
+    ? `Проверки ${year}: ${r.own.length} ${pluralRu(r.own.length, 'плановая проверка', 'плановые проверки', 'плановых проверок')} по вашему ИНН, кто и когда придёт: /checks`
+    : `Проверки ${year}: плановых по вашему ИНН нет; что запланировано по региону, покажет /checks`;
 }
 
 /** Ошибка источника ЕРКНМ для логов планировщика. */

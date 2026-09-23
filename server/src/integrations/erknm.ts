@@ -2,9 +2,9 @@
  * Драйвер Единого реестра контрольных (надзорных) мероприятий (ЕРКНМ, Генеральная прокуратура).
  * Открытые данные без ключей и без входа, проверено 23.09.2026:
  *  - паспорт набора за год: GET /public/api/opendata/plans/{год}?isFederalLaw248=true → JSON
- *    с datasetPassport, ссылкой на ZIP (dataZipUrl) и XSD; список наборов — /public/api/opendata/list;
- *  - ZIP на 2026 год — 38,8 МБ, 809 XML, 29 644 плановых КНМ и 29 832 субъекта;
- *  - в ссылках паспорта встречается двойной слэш («…gov.ru//blob/…») — нормализуем;
+ *    с datasetPassport, ссылкой на ZIP (dataZipUrl) и XSD; список наборов – /public/api/opendata/list;
+ *  - ZIP на 2026 год – 38,8 МБ, 809 XML, 29 644 плановых КНМ и 29 832 субъекта;
+ *  - в ссылках паспорта встречается двойной слэш («…gov.ru//blob/…») – нормализуем;
  *  - интерактивный поиск на сайте закрыт CAPTCHA и здесь не используется.
  * Разбор идёт по одному файлу архива за раз: распаковывать 481 МБ целиком в память не нужно.
  */
@@ -21,7 +21,7 @@ export const ERKNM_BASE = 'https://proverki.gov.ru';
 export const SOURCE_ID = 'erknm';
 export const SOURCE_TITLE = 'Единый реестр контрольных (надзорных) мероприятий (Генпрокуратура)';
 
-/** Сайт отдаёт 400 на часть клиентов с нестандартным User-Agent — представляемся браузерным. */
+/** Сайт отдаёт 400 на часть клиентов с нестандартным User-Agent – представляемся браузерным. */
 const USER_AGENT = 'Mozilla/5.0 (compatible; stavka-max/0.1; +hackathon MAX)';
 
 /* ---------- паспорт набора ---------- */
@@ -43,7 +43,7 @@ export interface DatasetPassport {
   /** Имя файла архива: «data-20260923-structure-20220115.zip». */
   fileName: string;
   fileUrl: string;
-  /** Версия набора — дата из имени файла, «2026-09-23». */
+  /** Версия набора – дата из имени файла, «2026-09-23». */
   version: string;
   xsdUrl: string | null;
   fetchedAt: string;
@@ -79,7 +79,7 @@ export async function fetchPassport(year: number, opts: { timeoutMs?: number } =
   };
 }
 
-/** Скачивает архив во временный файл рядом с целевым и переименовывает — частично скачанный файл не остаётся. */
+/** Скачивает архив во временный файл рядом с целевым и переименовывает – частично скачанный файл не остаётся. */
 export async function downloadDataset(url: string, destPath: string, opts: { timeoutMs?: number } = {}): Promise<void> {
   await mkdir(dirname(destPath), { recursive: true });
   const tmp = `${destPath}.part`;
@@ -114,7 +114,7 @@ export const KIND_LABEL: Record<InspectionKind, string> = {
 
 /**
  * Группа вида надзора по подстроке KIND_CONTROL. Исходная формулировка сохраняется целиком:
- * группа — только способ сложить счётчики, в карточке показываем текст реестра.
+ * группа – только способ сложить счётчики, в карточке показываем текст реестра.
  */
 export function normalizeKind(kindControl: string | null | undefined): InspectionKind {
   const s = (kindControl ?? '').toLowerCase().replace(/ё/g, 'е');
@@ -125,7 +125,7 @@ export function normalizeKind(kindControl: string | null | undefined): Inspectio
 }
 
 export interface InspectionRecord {
-  /** Учётный номер КНМ в ЕРКНМ (ERPID) — вместе с номером субъекта даёт устойчивый ключ. */
+  /** Учётный номер КНМ в ЕРКНМ (ERPID) – вместе с номером субъекта даёт устойчивый ключ. */
   erpId: string;
   /** Идентификатор плана (атрибут ID корневого элемента PLAN). */
   planId: string;
@@ -134,7 +134,7 @@ export interface InspectionRecord {
   year: number;
   status: string | null;
   typeName: string | null;
-  /** Формулировка вида надзора из реестра — как есть. */
+  /** Формулировка вида надзора из реестра – как есть. */
   kindControl: string | null;
   kind: InspectionKind;
   /** Вид мероприятия: «Выездная проверка», «Документарная проверка», … */
@@ -147,13 +147,13 @@ export interface InspectionRecord {
   inn: string | null;
   ogrn: string | null;
   subjectName: string | null;
-  /** «ЮЛ» / «ФЛ» — тип субъекта в реестре. */
+  /** «ЮЛ» / «ФЛ» – тип субъекта в реестре. */
   subjectType: string | null;
   /** «Микропредприятие», «Малое предприятие», «Не является субъектом МСП», … */
   mspCode: string | null;
   /** Первый код ОКВЭД субъекта. */
   okved: string | null;
-  /** Раздел ОКВЭД (первые две цифры первого кода) — по нему считаем отраслевой контекст. */
+  /** Раздел ОКВЭД (первые две цифры первого кода) – по нему считаем отраслевой контекст. */
   okved2: string | null;
   /**
    * Адреса из записи: сначала ADDRESS объектов контроля, затем PLACE (место проведения КНМ).
@@ -190,7 +190,7 @@ const CLOSE_TAG = '</INSPECTION>';
 /**
  * Разбор одного XML-файла архива: PLAN → INSPECTION → по записи на каждый субъект КНМ.
  * Файл режем на блоки <INSPECTION>…</INSPECTION> и разбираем по одному: самый большой файл
- * набора — 20 МБ, и дерево целиком в памяти не помещается на маленьком сервере.
+ * набора – 20 МБ, и дерево целиком в памяти не помещается на маленьком сервере.
  */
 export function parseInspectionsXml(xml: string): InspectionRecord[] {
   const head = /<PLAN\b[^>]*>/.exec(xml);
@@ -286,7 +286,7 @@ function readEntryText(zip: ZipFile, entry: Entry): Promise<string> {
   });
 }
 
-/** Записи плана из архива — файл за файлом, чтобы в памяти лежал один XML, а не весь набор. */
+/** Записи плана из архива – файл за файлом, чтобы в памяти лежал один XML, а не весь набор. */
 export async function* readDataset(zipPath: string, onProgress?: (files: number, records: number) => void): AsyncGenerator<InspectionRecord> {
   const zip = await openZipFile(zipPath);
   let files = 0;
@@ -309,7 +309,7 @@ export async function* readDataset(zipPath: string, onProgress?: (files: number,
 /* ---------- регион по адресу объекта ---------- */
 
 export interface RegionRef {
-  /** Код региона «Работы России» (13 знаков) — общий ключ с остальными таблицами. */
+  /** Код региона «Работы России» (13 знаков) – общий ключ с остальными таблицами. */
   code: string;
   /** Код ФНС (две цифры). */
   fnsCode: string;
@@ -335,7 +335,7 @@ interface RegionAlias { tokens: string[]; region: RegionRef }
 
 /**
  * Варианты написания названия региона для поиска в адресе: «Татарстан республика» из справочника
- * покрывает и «Респ Татарстан», и «Татарстан Респ», и «Республика Татарстан» — сравниваем по ядру
+ * покрывает и «Респ Татарстан», и «Татарстан Респ», и «Республика Татарстан» – сравниваем по ядру
  * названия без слов-типов. Составные названия («Кемеровская область - Кузбасс») дают два варианта.
  */
 export function buildRegionAliases(regions: readonly RegionRef[]): RegionAlias[] {
@@ -367,7 +367,7 @@ export function buildRegionAliases(regions: readonly RegionRef[]): RegionAlias[]
 /**
  * Регион по адресу объекта контроля. Совпадение ищем по словам целиком (улица «Московское шоссе»
  * не считается Московской областью), при нескольких совпадениях берём самое длинное, а при равной
- * длине — самое раннее: субъект в адресе стоит перед улицей. Не определился — null, не угадываем.
+ * длине – самое раннее: субъект в адресе стоит перед улицей. Не определился – null, не угадываем.
  */
 export function regionFromAddress(aliases: readonly RegionAlias[], address: string | null | undefined): RegionRef | null {
   if (!address) return null;

@@ -1,4 +1,4 @@
-/** Сборка HTTP-приложения без запуска слушателя — используется main.ts и тестами (fastify.inject). */
+/** Сборка HTTP-приложения без запуска слушателя – используется main.ts и тестами (fastify.inject). */
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
@@ -32,7 +32,7 @@ export interface BuildAppOptions {
 
 /**
  * В журнал запросов не попадает строка запроса: в ней бывают ИНН (`/api/inspections?inn=…`)
- * и свободный текст подсказок (`?q=…`), а ИНН ИП — персональные данные.
+ * и свободный текст подсказок (`?q=…`), а ИНН ИП – персональные данные.
  */
 function requestSerializer(req: { method: string; url: string; ip: string }) {
   const q = req.url.indexOf('?');
@@ -47,7 +47,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<AppParts> {
       redact: ['req.headers.authorization', 'req.headers["x-max-bot-api-secret"]'],
       serializers: { req: requestSerializer },
     },
-    // X-Forwarded-For принимается только от доверенных прокси (по умолчанию loopback — nginx на том же хосте):
+    // X-Forwarded-For принимается только от доверенных прокси (по умолчанию loopback – nginx на том же хосте):
     // иначе лимиты демо-режима по IP обходились бы одним заголовком.
     trustProxy: config.trustProxy,
     bodyLimit: 1024 * 1024,
@@ -74,7 +74,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<AppParts> {
       return reply.code(404).send({ error: 'not_found' });
     });
   } else {
-    app.log.warn({ webDist }, 'сборка мини-приложения не найдена — соберите webapp (npm run build -w webapp)');
+    app.log.warn({ webDist }, 'сборка мини-приложения не найдена – соберите webapp (npm run build -w webapp)');
   }
   app.get('/', (_req, reply) => reply.redirect('/app/'));
   return { app, db, catalog, market, apiDeps };

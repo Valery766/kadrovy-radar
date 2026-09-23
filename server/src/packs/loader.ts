@@ -1,6 +1,6 @@
 /**
  * Загрузчик пакетов контекста (переменная часть). Ядро получает готовый объект Pack
- * и не знает, откуда он взялся. Здесь же — выбор пакета по профилю бизнеса.
+ * и не знает, откуда он взялся. Здесь же – выбор пакета по профилю бизнеса.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -190,7 +190,7 @@ function findInCatalog(pool: Profession[], text: string): Profession | null {
     ?? null;
 }
 
-/** Профессии пакета, затем остальной каталог — приоритет у отраслевого набора. */
+/** Профессии пакета, затем остальной каталог – приоритет у отраслевого набора. */
 export function professionPool(catalog: PackCatalog, pack: Pack | null): Profession[] {
   const packList = pack?.professions ?? [];
   return [...packList, ...catalog.professions.filter((p) => !packList.some((x) => x.key === p.key))];

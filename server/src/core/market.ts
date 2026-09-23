@@ -21,6 +21,28 @@ export function categoryLabel(category: MspCategory | null): string {
   return CATEGORY_LABEL[String(category)]!;
 }
 
+/** Размер работодателя словами владельца: категория реестра МСП плюс предел численности. */
+const SIZE_HINT: Record<string, string> = {
+  '1': 'микропредприятия, до 15 сотрудников',
+  '2': 'малые предприятия, до 100 сотрудников',
+  '3': 'средние предприятия, до 250 сотрудников',
+};
+
+export function sizeLabel(category: MspCategory | null): string {
+  if (category == null || category === 0) return 'крупные компании и бюджетные учреждения';
+  return SIZE_HINT[String(category)] ?? categoryLabel(category);
+}
+
+/** Почему объявление не попало в расчёт: ключ отбраковки простыми словами. */
+export const DROPPED_LABEL: Record<string, string> = {
+  no_salary: 'без зарплаты',
+  duplicates: 'повторы',
+  employer_cap: 'лишние объявления одного работодателя',
+  other_role: 'другая должность',
+  title_mismatch: 'название не совпало',
+  implausible_salary: 'неправдоподобная зарплата',
+};
+
 interface Prepared {
   kept: VacancyRecord[];
   values: number[];
@@ -121,7 +143,7 @@ function buildOptions(values: number[], offer: number | null, p50: number, p75: 
   return opts;
 }
 
-/** Главная функция ядра: из сырых вакансий и ставки — карточка рынка с вердиктом. */
+/** Главная функция ядра: из сырых вакансий и ставки – карточка рынка с вердиктом. */
 export function computeMarket(input: MarketInput): MarketCard {
   const { profession, thresholds, regionCode, regionName, userCategory } = input;
   const now = input.now ?? new Date();

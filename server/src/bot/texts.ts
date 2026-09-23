@@ -1,8 +1,14 @@
-/** Тексты и клавиатуры бота. Всё детерминированно: числа берутся из карточки ядра. */
+/**
+ * Тексты и клавиатуры бота. Всё детерминированно: числа берутся из карточки ядра.
+ * Правила текста: каждое число сопровождается объяснением, что оно значит для владельца;
+ * ответ с цифрами строится по схеме «вывод → числа → что это значит → что дальше → источник»;
+ * никаких длинных тире, только среднее «–» с пробелами.
+ */
 import { Keyboard } from '@maxhub/max-bot-api';
 
 type KeyboardRows = Parameters<typeof Keyboard.inlineKeyboard>[0];
-import { BAND_LABEL, categoryLabel, formatRub, pluralRu } from '../core/index.js';
+import { BAND_PLAIN, DROPPED_LABEL, formatDateTimeRu, formatRub, pluralRu, sizeLabel, sourceNote } from '../core/index.js';
+import type { MarketCard, OfferBand } from '../core/index.js';
 import type { MarketResult } from '../services/market.js';
 import type { BusinessProfile } from '../integrations/rmsp.js';
 import type { Pack } from '../core/index.js';
@@ -10,57 +16,156 @@ import type { VacancyRow } from '../db/index.js';
 import { openRadarButton } from '../services/report.js';
 import { inboxButton } from '../services/hiring.js';
 
-export const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+export const fmtDate = formatDateTimeRu;
 
+/** Подпись кнопки MAX: длиннее 22 символов ряд из двух-трёх кнопок не читается. */
+export const MAX_BUTTON_LABEL = 22;
+export function fitLabel(text: string, limit = MAX_BUTTON_LABEL): string {
+  return text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`;
+}
+const btn = (text: string, payload: string) => Keyboard.button.callback(fitLabel(text), payload);
+
+/** Сумма в тысячах для кнопок: 65 000 ₽ → «65 тыс.». */
+const thousands = (value: number) => `${Math.round(value / 1000)} тыс.`;
+
+const vacanciesWord = (n: number) => pluralRu(n, 'объявление', 'объявления', 'объявлений');
+const employersWord = (n: number) => pluralRu(n, 'работодателя', 'работодателей', 'работодателей');
+
+/** Источник и дата: последняя строка любого ответа с цифрами. */
+export const sourceLine = (fetchedAt: string): string => sourceNote(fetchedAt);
+
+/* ---------- приветствие и путеводитель ---------- */
+
+/** Первое сообщение: кто я, с чего начать. Подробности – в путеводителе следом. */
 export function welcomeText(name: string | null): string {
   return [
-    `${name ? `${name}, здравствуйте` : 'Здравствуйте'}! Я «Кадровый радар» — зарплатный помощник для малого бизнеса.`,
-    '',
-    'За минуту покажу, сколько платят за нужную должность в вашем регионе конкуренты вашего размера, где ваша ставка на шкале рынка и что написать в вакансии.',
-    '',
-    'Данные — только официальные: реестр МСП ФНС (профиль вашего бизнеса по ИНН) и портал «Работа России» (живые вакансии с зарплатами).',
-    '',
-    'С чего начнём?',
+    `${name ? `${name}, здравствуйте` : 'Здравствуйте'}! Я «Кадровый радар»: подскажу, сколько платить сотрудникам, чтобы нанять и удержать людей.`,
+    'Начните с проверки ставки: назовите должность, и я покажу, сколько платят конкуренты вашего размера в вашем регионе.',
+    'Все цифры из открытых данных: реестр МСП ФНС и портал «Работа России».',
   ].join('\n');
 }
 
 export function welcomeKeyboard(botUsername: string) {
   return Keyboard.inlineKeyboard([
-    [Keyboard.button.callback('Проверить ставку', 'stavka')],
-    [Keyboard.button.callback('Показать на примере', 'demo'), openRadarButton(botUsername, null, 'Открыть приложение')],
+    [btn('Проверить ставку', 'stavka')],
+    [btn('Что умеет бот', 'guide'), btn('Показать на примере', 'demo')],
+    [openRadarButton(botUsername, null, 'Открыть приложение')],
   ]);
 }
 
+/** Пять возможностей бота: каждая с командой и кнопкой. Приходит вторым сообщением после приветствия и по /help. */
+export const GUIDE_ITEMS: { text: string; commands: string[] }[] = [
+  { text: 'Сколько платить – проверить ставку по должности и региону. Начните с этого', commands: ['/stavka'] },
+  { text: 'Найти людей – опубликовать вакансию со ссылкой и QR и получать отклики прямо в MAX: кнопка «Опубликовать» под карточкой ставки, затем', commands: ['/vacancies'] },
+  { text: 'Проверить свой штат – кто из сотрудников получает меньше рынка и сколько стоит это исправить', commands: ['/staff'] },
+  { text: 'Сравнить регионы и увидеть весь рынок региона', commands: ['/regions', '/digest'] },
+  { text: 'Узнать о плановых проверках трудовой инспекции и Роспотребнадзора по вашему ИНН', commands: ['/checks'] },
+];
+
+export function guideText(): string {
+  const lines = ['Что умеет бот', ''];
+  GUIDE_ITEMS.forEach((item, i) => lines.push(`${i + 1}. ${item.text}: ${item.commands.join(', ')}`));
+  lines.push('');
+  lines.push('Что дальше: нажмите кнопку или напишите команду. Все команды по группам: /help');
+  return lines.join('\n');
+}
+
+export function guideKeyboard() {
+  return Keyboard.inlineKeyboard([
+    [btn('Проверить ставку', 'stavka'), btn('Мои вакансии', 'vacancies')],
+    [btn('Проверить штат', 'staff'), btn('Сравнить регионы', 'regions')],
+    [btn('Рынок региона', 'digest'), btn('Проверки по ИНН', 'checks')],
+  ]);
+}
+
+export function helpText(): string {
+  return [
+    guideText().replace(/\n\nЧто дальше:.*$/s, ''),
+    '',
+    'Команды по группам',
+    '',
+    'Основное:',
+    '/stavka – сколько платить: должность, регион, ваша ставка. Покажу, где вы среди работодателей региона',
+    '/staff – мой штат: кто получает меньше рынка и сколько стоит это исправить',
+    '/vacancies – мои вакансии и отклики кандидатов',
+    '/checks – плановые проверки на год по моему ИНН и региону',
+    '',
+    'Ещё:',
+    '/regions – сравнить одну должность по нескольким регионам',
+    '/digest – зарплаты по всему моему региону, сразу по десятку должностей',
+    '/subs – мои подписки: напишу, когда рынок заметно сдвинется',
+    '/demo – показать всё на готовом примере',
+    '',
+    'Настройки и справка:',
+    '/profile – указать или сменить ИНН бизнеса (нужен для проверок и сравнения с похожими работодателями)',
+    '/help – эта справка',
+    '',
+    'Должность можно не выбирать кнопкой, а написать текстом, любую, даже редкую: подскажу похожие позиции из государственного справочника профессий (8 037 профессий) или посчитаю по вашему названию.',
+    '',
+    'Как считаю: беру живые объявления портала «Работа России» по вашему региону, повторы одного работодателя считаю один раз, затем смотрю, сколько платит большинство и где среди них ваша ставка. Размер каждого работодателя узнаю в реестре МСП ФНС по ИНН. Плановые проверки беру из открытого реестра Генпрокуратуры. Ничего не придумываю: каждое число можно проверить по источнику.',
+    '',
+    'Что дальше: нажмите кнопку ниже или напишите команду.',
+  ].join('\n');
+}
+
+/* ---------- шаги /stavka ---------- */
+
 export function askInnText(): string {
-  return 'Введите ИНН — по нему узнаю ваш регион, отрасль и размер компании и сравню вас с похожими работодателями, а не со всем рынком.\n\nБез ИНН тоже посчитаю — просто спрошу регион.';
+  return [
+    'Шаг 1 из 3: ваш бизнес.',
+    'Напишите ИНН компании или ИП. По нему узнаю регион, отрасль и размер бизнеса и буду сравнивать вас с похожими работодателями, а не со всем рынком.',
+    'Дальше: шаг 2 – должность, шаг 3 – ваша ставка. Всё займёт минуту.',
+    '',
+    'Что дальше: напишите ИНН (10 или 12 цифр) или нажмите «Без ИНН, укажу регион».',
+  ].join('\n');
 }
 
 /** ИНН необязателен: выход со шага одной кнопкой, а не словом «пропустить». */
 export function askInnKeyboard() {
-  return Keyboard.inlineKeyboard([[Keyboard.button.callback('Пропустить — укажу регион', 'inn:skip')]]);
+  return Keyboard.inlineKeyboard([[btn('Без ИНН, укажу регион', 'inn:skip')]]);
 }
 
-/** checksLine — строка «Проверки {год}: …» из плана ЕРКНМ; null, если набор ещё не загружен. */
+export function askRegionText(reason: 'skip' | 'first' = 'skip'): string {
+  return [
+    reason === 'skip' ? 'Хорошо, без ИНН. Шаг 1 из 3: регион.' : 'Сначала регион, это шаг 1 из 3.',
+    'Напишите регион, где нанимаете, например «Санкт-Петербург» или «Татарстан». Сравню со всеми работодателями региона.',
+    'Дальше: шаг 2 – должность, шаг 3 – ваша ставка.',
+    '',
+    'Что дальше: напишите название региона. Если хотите сравнение с похожими работодателями, укажите ИНН кнопкой.',
+  ].join('\n');
+}
+
+export function askRegionKeyboard() {
+  return Keyboard.inlineKeyboard([[btn('Указать ИНН', 'inn:new')]]);
+}
+
+/** checksLine – строка «Проверки {год}: …» из плана ЕРКНМ; null, если набор ещё не загружен. */
 export function profileText(p: BusinessProfile, pack: Pack, regionName: string | null, checksLine: string | null = null): string {
   if (!p.inRegistry) {
-    return `ИНН ${p.inn} в реестре МСП не найден — так бывает с бюджетными организациями, крупным бизнесом или после ликвидации. Продолжим без профиля: напишите регион (например, «Санкт-Петербург»).`;
+    return [
+      `ИНН ${p.inn} в реестре малого бизнеса (реестр МСП ФНС) не найден. Так бывает с бюджетными организациями, крупным бизнесом или после ликвидации. Продолжим без профиля.`,
+      '',
+      'Что дальше: напишите регион, например «Санкт-Петербург».',
+    ].join('\n');
   }
   const lines = [
-    `Нашёл в реестре МСП (ФНС, получено ${fmtDate(p.fetchedAt)}):`,
+    `Нашёл ваш бизнес в реестре малого бизнеса (реестр МСП ФНС, данные на ${fmtDate(p.fetchedAt)}):`,
     `• ${p.name || 'Бизнес'}${p.kind === 'IP' ? ' (ИП)' : ''}`,
-    `• ${categoryLabel(p.category)}${p.active === false ? ', исключён из реестра' : ''}`,
-    `• ОКВЭД ${p.okved ?? '—'}${p.okvedName ? ` — ${p.okvedName}` : ''}`,
-    `• Регион: ${regionName ?? p.fnsRegionCode ?? '—'}`,
+    `• Размер: ${sizeLabel(p.category)}${p.active === false ? '; исключён из реестра' : ''}`,
+    `• Вид деятельности: ${p.okvedName ? `${p.okvedName} (код ${p.okved ?? 'не указан'})` : `код ${p.okved ?? 'не указан'}`}`,
+    `• Регион: ${regionName ?? p.fnsRegionCode ?? 'не определён'}`,
     `• Отрасль: ${pack.title}`,
     ...(checksLine ? [`• ${checksLine}`] : []),
     '',
-    'Всё верно?',
+    'Буду сравнивать вас с работодателями такого же размера в вашем регионе: это честнее, чем со всем рынком.',
+    '',
+    'Что дальше: если всё верно, нажмите «Верно, дальше» – перейдём к шагу 2 из 3, выбору должности. Ошибся – нажмите «Другой ИНН».',
   ];
   return lines.join('\n');
 }
 
 export function profileKeyboard() {
-  return Keyboard.inlineKeyboard([[Keyboard.button.callback('Верно, дальше', 'profile:ok'), Keyboard.button.callback('Другой ИНН', 'inn:new')]]);
+  return Keyboard.inlineKeyboard([[btn('Верно, дальше', 'profile:ok'), btn('Другой ИНН', 'inn:new')]]);
 }
 
 /** Короткие названия регионов для узких кнопок: полное имя субъекта в ряд не влезает. */
@@ -70,64 +175,165 @@ const SHORT_REGION: Record<string, string> = { '78': 'СПб', '77': 'Москв
 export function packShortTitle(pack: Pack): string {
   const head = (pack.title.split('·')[0] ?? pack.title).trim();
   const region = pack.region ? SHORT_REGION[pack.region.fnsCode] ?? pack.region.name : null;
-  return (region ? `${head} · ${region}` : head).slice(0, 40);
+  return fitLabel(region ? `${head} · ${region}` : head);
 }
 
 export function askProfessionText(pack: Pack): string {
-  return `Кого нанимаете? Выберите должность из отрасли «${pack.title}» или напишите её текстом — подойдёт любая, даже редкая.`;
+  return [
+    'Шаг 2 из 3: должность.',
+    `Кого нанимаете? Нажмите кнопку с должностью из отрасли «${pack.title}» или напишите её текстом – подойдёт любая, даже редкая.`,
+    'Дальше: шаг 3 – ваша ставка, и сразу покажу карточку рынка.',
+  ].join('\n');
 }
 
 export function professionKeyboard(pack: Pack) {
   const rows: KeyboardRows = [];
   const list = pack.professions.slice(0, 14);
   for (let i = 0; i < list.length; i += 2) {
-    rows.push(list.slice(i, i + 2).map((p) => Keyboard.button.callback(p.title, `prof:${p.key}`)));
+    rows.push(list.slice(i, i + 2).map((p) => btn(p.title, `prof:${p.key}`)));
   }
   return Keyboard.inlineKeyboard(rows);
 }
 
 export function askSalaryText(professionTitle: string): string {
-  return `Какую ставку планируете для должности «${professionTitle}»? Напишите оклад в месяц до вычета НДФЛ, например 45000.\n\nЕсли ставки ещё нет — напишите «нет», покажу рынок без сравнения.`;
+  return [
+    'Шаг 3 из 3: ваша ставка.',
+    `Сколько планируете платить за должность «${professionTitle}»? Напишите оклад в месяц до вычета НДФЛ, например 45000.`,
+    'Если ставки ещё нет, нажмите «Пока без ставки»: покажу рынок без сравнения.',
+    'Дальше: карточка рынка, где ваша ставка среди работодателей региона и что написать в вакансии.',
+  ].join('\n');
 }
 
-/** Подпись варианта ставки — одна и та же в боте, в приложении и в отчёте. */
-export const OPTION_LABEL: Record<string, string> = { keep: 'оставить', median: 'медиана', top: 'верхняя четверть' };
-/** Короткая подпись для кнопки голосования: целиком «верхняя четверть» в ряд из трёх кнопок не влезает. */
-const OPTION_SHORT: Record<string, string> = { keep: 'оставить', median: 'медиана', top: 'верхняя' };
+export function askSalaryKeyboard() {
+  return Keyboard.inlineKeyboard([[btn('Пока без ставки', 'salary:none')]]);
+}
+
+/* ---------- карточка рынка ---------- */
+
+/** Подпись варианта ставки: одна и та же в боте и в итогах голосования. */
+export const OPTION_LABEL: Record<string, string> = { keep: 'оставить свою', median: 'обычная ставка рынка', top: 'выше трёх четвертей рынка' };
+/** Короткая подпись для кнопки голосования: целиком в ряд из трёх кнопок не влезает. */
+const OPTION_SHORT: Record<string, string> = { keep: 'моя', median: 'обычная', top: 'верхняя' };
+/** Что даст каждый вариант, простыми словами. */
+const OPTION_EXPLAIN: Record<string, string> = {
+  keep: 'оставить свою ставку как есть',
+  median: 'обычная ставка рынка (медиана): половина работодателей платит меньше, половина больше',
+  top: 'больше, чем у трёх четвертей работодателей (верхняя четверть): так вы обгоняете большинство конкурентов',
+};
 
 /**
- * Ставка, по которой уйдёт публикация: медиана рынка, иначе своя ставка.
- * Та же формула, что в publishVacancy — иначе подпись кнопки разошлась бы с делом.
+ * Ставка, по которой уйдёт публикация: обычная ставка рынка, иначе своя ставка.
+ * Та же формула, что в publishVacancy, иначе подпись кнопки разошлась бы с делом.
  */
 export function publishSalary(r: MarketResult): number | null {
   return r.card.options.find((o) => o.kind === 'median')?.value ?? r.card.offer?.value ?? r.card.stats?.median ?? null;
 }
 
+/** Вывод одной фразой про ставку владельца. */
+function offerLead(offer: NonNullable<MarketCard['offer']>, professionTitle: string): string {
+  const lead = BAND_PLAIN[offer.band].replace(/^вы/, 'Вы');
+  if (offer.band === 'above') return `${lead}: только ${offer.shareAbove} из 100 работодателей региона предлагают на должность «${professionTitle}» больше ваших ${formatRub(offer.value)}.`;
+  return `${lead}: ${offer.shareAbove} из 100 работодателей региона предлагают на должность «${professionTitle}» больше ваших ${formatRub(offer.value)}.`;
+}
+
+/** Где ставка относительно коридора половины вакансий. */
+function corridorNote(offer: number, p25: number, p75: number): string {
+  if (offer < p25) return 'Ваша ставка ниже этого коридора: вы платите заметно меньше рынка.';
+  if (offer > p75) return 'Ваша ставка выше этого коридора: вы платите больше рынка.';
+  return 'Ваша ставка внутри коридора: вы платите как большинство.';
+}
+
+/** «Что это значит для вас» по диапазону ставки. */
+function meaningLine(card: MarketCard): string {
+  const stats = card.stats!;
+  const median = card.options.find((o) => o.kind === 'median');
+  const top = card.options.find((o) => o.kind === 'top');
+  if (!card.offer) {
+    return `чтобы нанимать без долгих поисков, ориентируйтесь на ${formatRub(stats.median)} и выше. ${formatRub(stats.p75)} и больше платит только четверть работодателей.`;
+  }
+  const band: OfferBand = card.offer.band;
+  const upgrade = median && top ? ` С ${formatRub(median.value)} вы окажетесь в верхней половине рынка, с ${formatRub(top.value)} будете платить больше, чем три четверти работодателей.` : '';
+  if (band === 'low') return `за ${formatRub(card.offer.value)} кандидаты будут выбирать конкурентов, большинство платит больше.${upgrade}`;
+  if (band === 'below_median') return `ставка чуть ниже обычной, часть кандидатов уйдёт к тем, кто платит ${formatRub(stats.median)} и больше.${upgrade}`;
+  if (band === 'market') return `вы платите как большинство.${top ? ` Чтобы обгонять три четверти конкурентов, нужно от ${formatRub(top.value)}.` : ''}`;
+  return 'ставка уже конкурентна, дальше решают условия работы и скорость ответа кандидатам.';
+}
+
+/** Сколько объявлений посчитали и почему меньше, чем нашлось. */
+export function sampleLine(card: MarketCard, total: number): string {
+  const rest = Math.max(0, total - card.sample.vacancies);
+  const reasons = Object.entries(card.sample.dropped)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => DROPPED_LABEL[k] ?? k);
+  const head = `Посчитано по ${card.sample.vacancies} ${pluralRu(card.sample.vacancies, 'объявлению', 'объявлениям', 'объявлениям')} ${card.sample.employers} ${employersWord(card.sample.employers)}.`;
+  if (!rest) return head;
+  return `${head} Ещё ${rest} ${vacanciesWord(rest)} не подошли: ${reasons.length ? reasons.slice(0, 4).join(', ') : 'без зарплаты, повторы или другая должность'}.`;
+}
+
 export function cardText(r: MarketResult): string {
   const { card, profession, region } = r;
   const lines: string[] = [];
-  lines.push(`📊 ${profession.title} — ${region.name}`);
+  lines.push(`📊 ${profession.title} – ${region.name}`);
+  lines.push('');
   if (card.confidence === 'none' || !card.stats) {
     lines.push(card.verdict);
-  } else {
-    if (card.offer) {
-      lines.push(`Ваши ${formatRub(card.offer.value)} — ${card.offer.percentile}-й перцентиль (${BAND_LABEL[card.offer.band]}): ${card.offer.shareAbove} % вакансий платят больше.`);
-    }
-    lines.push(`Медиана ${formatRub(card.stats.median)}, половина предложений — ${formatRub(card.stats.p25)}…${formatRub(card.stats.p75)}.`);
-    if (card.sameSize && card.sameSize.median != null && card.sameSize.employers >= 3) {
-      lines.push(`У работодателей вашего размера (${card.sameSize.label}): медиана ${formatRub(card.sameSize.median)}, ${card.sameSize.employers} ${pluralRu(card.sameSize.employers, 'работодатель', 'работодателя', 'работодателей')}.`);
-    }
-    if (card.options.length > 1) {
-      lines.push(`Ориентиры: ${card.options.map((o) => `${OPTION_LABEL[o.kind] ?? o.kind} ${formatRub(o.value)}`).join(' · ')}.`);
-      lines.push('Голосование команды: какую ставку ставим? Нажмите кнопку «Голос: …» — учту его и покажу итог (в групповом чате соберётся общий).');
-    }
-    if (card.confidence === 'low') lines.push(`⚠️ ${card.confidenceReason}. Цифры — ориентир, не вывод.`);
-    if (card.requirements.length) lines.push(`Чаще всего требуют: ${card.requirements.slice(0, 4).map((x) => `${x.label} (${x.share} %)`).join(', ')}.`);
+    lines.push('');
+    lines.push('Что дальше:');
+    lines.push('1) Нажмите «Другая должность» и попробуйте другое название, например без уточнений.');
+    lines.push('2) Посмотрите соседний регион: /regions.');
+    lines.push('3) Посмотрите весь рынок региона по десятку должностей: /digest.');
+    lines.push('');
+    lines.push(sourceLine(r.fetched.fetchedAt));
+    return lines.join('\n');
+  }
+  const s = card.stats;
+  const offer = card.offer;
+
+  // 1. Вывод одной фразой.
+  lines.push(offer
+    ? offerLead(offer, profession.title)
+    : `Обычная ставка «${profession.title.toLowerCase()}» в регионе – ${formatRub(s.median)}: половина работодателей платит меньше, половина больше.`);
+  lines.push('');
+
+  // 2. Числа с объяснением.
+  if (offer) lines.push(`Ваша ставка: ${formatRub(offer.value)}. Только ${offer.percentile} из 100 работодателей платят меньше (${offer.percentile}-й перцентиль).`);
+  lines.push(`Обычная ставка рынка: ${formatRub(s.median)} (медиана). Половина работодателей платит меньше этой суммы, половина больше.`);
+  lines.push(`Коридор половины вакансий: ${formatRub(s.p25)}–${formatRub(s.p75)}. ${offer ? corridorNote(offer.value, s.p25, s.p75) : 'Ниже коридора платят заметно меньше рынка, выше – больше.'}`);
+  if (card.sameSize && card.sameSize.median != null && card.sameSize.employers >= 3) {
+    const same = card.sameSize;
+    const cmp = same.median! > s.median ? 'больше, чем рынок в целом' : same.median! < s.median ? 'меньше, чем рынок в целом' : 'столько же, сколько рынок в целом';
+    lines.push(`Работодатели вашего размера (${sizeLabel(same.category)}) платят ${formatRub(same.median!)} – ${cmp}. Посчитано по ${same.employers} ${pluralRu(same.employers, 'работодателю', 'работодателям', 'работодателям')}; сравнение с ними честнее, чем со всем рынком.`);
+  }
+  if (card.confidence === 'low') lines.push(`⚠️ ${card.confidenceReason}. Это слишком мало для вывода: цифры выше – ориентир. Посмотрите соседний регион или похожую должность.`);
+  lines.push('');
+
+  // 3. Что это значит для вас.
+  lines.push(`Что это значит для вас: ${meaningLine(card)}`);
+  if (card.options.length > 1) {
+    lines.push('');
+    lines.push('Варианты ставки:');
+    for (const o of card.options) lines.push(`• ${formatRub(o.value)} – ${OPTION_EXPLAIN[o.kind] ?? o.label}.`);
+  }
+  if (card.requirements.length) {
+    lines.push('');
+    lines.push(`В объявлениях чаще всего просят: ${card.requirements.slice(0, 4).map((x) => `${x.label} (в ${x.share} % объявлений)`).join(', ')}.`);
   }
   lines.push('');
-  lines.push(`Выборка: ${card.sample.vacancies} ${pluralRu(card.sample.vacancies, 'вакансия', 'вакансии', 'вакансий')} от ${card.sample.employers} ${pluralRu(card.sample.employers, 'работодателя', 'работодателей', 'работодателей')} (из ${r.fetched.total} по запросу). Источник: «Работа России» · получено ${fmtDate(r.fetched.fetchedAt)}; размеры работодателей — реестр МСП ФНС.`);
+
+  // 4. Что дальше.
+  const next: string[] = [];
+  if (card.options.length > 1) next.push('Голосуйте за ставку кнопкой «Голос: …»: учту голос и покажу итог, в групповом чате соберётся общий.');
+  next.push('«Текст вакансии» – готовое объявление на обычную ставку рынка.');
+  next.push('«Опубликовать» – ссылка и QR для кандидатов, отклики придут в этот чат.');
+  next.push('«Подробный разбор» – распределение ставок, сезонность и кто нанимает; «Прислать PDF-отчёт» – то же одним файлом.');
+  lines.push('Что дальше:');
+  next.forEach((x, i) => lines.push(`${i + 1}) ${x}`));
   lines.push('');
-  lines.push('Дальше: «Текст вакансии» — готовое объявление на медиану; «Подробный разбор» — распределение ставок, сезонность и кто нанимает.');
+
+  // 5. Источник и дата.
+  lines.push(sampleLine(card, r.fetched.total));
+  lines.push(sourceLine(r.fetched.fetchedAt));
   return lines.join('\n');
 }
 
@@ -137,12 +343,50 @@ export function cardKeyboard(r: MarketResult, botUsername: string) {
   rows.push([openRadarButton(botUsername, r.cardId)]);
   if (r.card.options.length > 1) {
     // Слово «Голос» первым: без него ряд читается как «выбрать ставку», а это голосование.
-    rows.push(r.card.options.map((o) => Keyboard.button.callback(`Голос: ${OPTION_SHORT[o.kind] ?? o.kind} ${Math.round(o.value / 1000)} т.`, `vote:${o.kind}:${r.cardId}`)));
+    rows.push(r.card.options.map((o) => btn(`Голос: ${OPTION_SHORT[o.kind] ?? o.kind} ${thousands(o.value)}`, `vote:${o.kind}:${r.cardId}`)));
   }
-  rows.push([Keyboard.button.callback('Прислать PDF-отчёт', `pdf:${r.cardId}`), Keyboard.button.callback('Следить за рынком', `sub:${r.cardId}`)]);
-  rows.push([Keyboard.button.callback('Текст вакансии', `text:${r.cardId}`), Keyboard.button.callback('Другая должность', 'prof:again')]);
-  rows.push([Keyboard.button.callback(salary ? `Опубликовать на ${formatRub(salary)}` : 'Опубликовать вакансию', `pub:${r.cardId}`)]);
+  rows.push([btn('Прислать PDF-отчёт', `pdf:${r.cardId}`), btn('Следить за рынком', `sub:${r.cardId}`)]);
+  rows.push([btn('Текст вакансии', `text:${r.cardId}`), btn('Другая должность', 'prof:again')]);
+  rows.push([btn(salary ? `Опубликовать ${thousands(salary)}` : 'Опубликовать вакансию', `pub:${r.cardId}`)]);
   return Keyboard.inlineKeyboard(rows);
+}
+
+/** Черновик объявления из карточки: текст плюс кнопки следующего шага. */
+export function draftText(text: string): string {
+  return [
+    'Черновик вакансии. Собран из частых формулировок объявлений региона, ставка – обычная ставка рынка.',
+    '',
+    text,
+    '',
+    'Что дальше: поправьте текст под себя или сразу нажмите «Опубликовать»: получите ссылку и QR для кандидатов.',
+  ].join('\n');
+}
+
+export function draftKeyboard(r: MarketResult, botUsername: string) {
+  const salary = publishSalary(r);
+  return Keyboard.inlineKeyboard([
+    [btn(salary ? `Опубликовать ${thousands(salary)}` : 'Опубликовать вакансию', `pub:${r.cardId}`)],
+    [openRadarButton(botUsername, r.cardId), btn('Другая должность', 'prof:again')],
+  ]);
+}
+
+/** Итог голосования под карточкой. */
+export function voteText(professionTitle: string, chosen: { kind: string; value: number } | null, options: { kind: string; value: number }[], counts: Record<string, number>, total: number): string {
+  const summary = options.map((o) => `${OPTION_LABEL[o.kind] ?? o.kind} ${formatRub(o.value)} – ${counts[o.kind] ?? 0}`).join('; ');
+  return [
+    `Учёл ваш голос${chosen ? `: ${OPTION_LABEL[chosen.kind] ?? chosen.kind}, ${formatRub(chosen.value)}` : ''}.`,
+    `Итог по «${professionTitle}»: ${summary}. Всего голосов: ${total}.`,
+    '',
+    'Что дальше: когда команда определилась, нажмите «Опубликовать» под карточкой или «Текст вакансии».',
+  ].join('\n');
+}
+
+export function subscribedText(professionTitle: string, regionName: string): string {
+  return [
+    `Слежу за рынком «${professionTitle}, ${regionName}». Раз в неделю пересчитаю и напишу, если обычная ставка сдвинется больше чем на 5 %.`,
+    '',
+    'Что дальше: ничего делать не нужно, сообщение придёт сюда. Отписаться: /subs',
+  ].join('\n');
 }
 
 /* ---------- отклики и найм ---------- */
@@ -150,87 +394,156 @@ export function cardKeyboard(r: MarketResult, botUsername: string) {
 /** Карточка опубликованной вакансии в чате работодателя: ссылка, QR и действия. */
 export function publishedVacancyText(v: VacancyRow, regionName: string, link: string): string {
   return [
-    `✅ Вакансия опубликована: ${v.title} — ${regionName}`,
+    `✅ Вакансия опубликована: ${v.title} – ${regionName}`,
     v.salary ? `Ставка: от ${formatRub(v.salary)}` : 'Ставка: не указана',
     '',
-    'Ссылка для кандидатов (перешлите её в чаты сотрудников, партнёров и местные каналы MAX, распечатайте QR для зала):',
+    'Ссылка для кандидатов:',
     link,
     '',
-    'Кандидат откроет бота по ссылке, ответит на три вопроса и сможет поделиться номером. Отклики придут сюда и в мини-приложение.',
+    'Что дальше:',
+    '1) Перешлите ссылку в чаты сотрудников, партнёров и местные каналы MAX: кнопка «Поделиться в MAX». QR можно распечатать для зала.',
+    '2) Кандидат откроет бота по ссылке, ответит на три вопроса и сможет поделиться номером. Отклики придут сюда и в раздел «Вакансии и отклики».',
+    '3) Когда нашли человека, нажмите «Закрыть вакансию».',
   ].join('\n');
 }
 
 export function publishedVacancyKeyboard(v: VacancyRow, botUsername: string, link: string) {
   return Keyboard.inlineKeyboard([
     [Keyboard.button.link('Поделиться в MAX', link)],
-    [inboxButton(botUsername, v.id), Keyboard.button.callback('Закрыть вакансию', `vacclose:${v.id}`)],
+    [inboxButton(botUsername, v.id), btn('Закрыть вакансию', `vacclose:${v.id}`)],
   ]);
 }
 
 /** Карточка вакансии для кандидата, пришедшего по диплинку. */
 export function candidateVacancyText(v: VacancyRow, regionName: string): string {
   const lines = [
-    `📌 ${v.title} — ${regionName}`,
+    `📌 ${v.title} – ${regionName}`,
     v.employerName ? `Работодатель: ${v.employerName}` : null,
     v.salary ? `Ставка: от ${formatRub(v.salary)}` : null,
     '',
     v.text,
   ].filter((x): x is string => x !== null);
-  if (v.status === 'closed') lines.push('', '⚠️ Вакансия уже закрыта — откликнуться нельзя.');
+  if (v.status === 'closed') lines.push('', '⚠️ Вакансия уже закрыта, откликнуться нельзя.', '', 'Что дальше: посмотрите, сколько платят по вашей должности в регионе, кнопка ниже.');
+  else lines.push('', 'Что дальше: нажмите «Откликнуться». Задам три коротких вопроса, это займёт минуту, и работодатель получит ваш отклик.');
   return lines.join('\n');
 }
 
 export function candidateVacancyKeyboard(v: VacancyRow) {
-  if (v.status === 'closed') return Keyboard.inlineKeyboard([[Keyboard.button.callback('Посмотреть ставки по рынку', 'prof:again')]]);
-  return Keyboard.inlineKeyboard([[Keyboard.button.callback('Откликнуться', `apply:${v.id}`)]]);
+  if (v.status === 'closed') return Keyboard.inlineKeyboard([[btn('Ставки по рынку', 'prof:again')]]);
+  return Keyboard.inlineKeyboard([[btn('Откликнуться', `apply:${v.id}`)]]);
 }
 
-export const askExperienceText = 'Вопрос 1 из 3. Какой у вас опыт по этой должности?';
+export const askExperienceText = [
+  'Вопрос 1 из 3. Какой у вас опыт по этой должности?',
+  'Дальше спрошу про график и ожидания по зарплате.',
+  '',
+  'Что дальше: нажмите подходящую кнопку.',
+].join('\n');
 
 export function experienceKeyboard(vacancyId: string) {
   return Keyboard.inlineKeyboard([
-    [Keyboard.button.callback('Без опыта', `exp:none:${vacancyId}`), Keyboard.button.callback('До года', `exp:lt1:${vacancyId}`)],
-    [Keyboard.button.callback('1–3 года', `exp:mid:${vacancyId}`), Keyboard.button.callback('3 года и больше', `exp:senior:${vacancyId}`)],
+    [btn('Без опыта', `exp:none:${vacancyId}`), btn('До года', `exp:lt1:${vacancyId}`)],
+    [btn('1–3 года', `exp:mid:${vacancyId}`), btn('3 года и больше', `exp:senior:${vacancyId}`)],
   ]);
 }
 
 export function askScheduleText(v: VacancyRow): string {
   const line = /^График:\s*(.+)$/m.exec(v.text)?.[1];
-  return `Вопрос 2 из 3. Готовы работать по графику вакансии${line ? ` (${line})` : ''}?`;
+  return [
+    `Вопрос 2 из 3. Готовы работать по графику вакансии${line ? ` (${line})` : ''}?`,
+    'Остался один вопрос: ожидания по зарплате.',
+    '',
+    'Что дальше: нажмите «Да, готов» или «Нет».',
+  ].join('\n');
 }
 
 export function scheduleKeyboard(vacancyId: string) {
-  return Keyboard.inlineKeyboard([[Keyboard.button.callback('Да, готов', `sch:yes:${vacancyId}`), Keyboard.button.callback('Нет', `sch:no:${vacancyId}`)]]);
+  return Keyboard.inlineKeyboard([[btn('Да, готов', `sch:yes:${vacancyId}`), btn('Нет', `sch:no:${vacancyId}`)]]);
 }
 
 export function askSalaryExpectationText(v: VacancyRow): string {
-  return `Вопрос 3 из 3. На какую ставку рассчитываете? Напишите число в рублях в месяц${v.salary ? ` (в вакансии — от ${formatRub(v.salary)})` : ''} или «как в вакансии».`;
+  return [
+    `Вопрос 3 из 3. На какую ставку рассчитываете?${v.salary ? ` В вакансии от ${formatRub(v.salary)}.` : ''}`,
+    '',
+    'Что дальше: напишите число в рублях в месяц, например 60000, или нажмите «Как в вакансии».',
+  ].join('\n');
 }
 
-export const askPhoneText = 'Остался последний шаг. Поделитесь номером телефона — работодатель свяжется с вами напрямую. Номер увидит только он, подпись MAX проверяется на сервере.';
+export function salaryExpectationKeyboard(vacancyId: string) {
+  return Keyboard.inlineKeyboard([[btn('Как в вакансии', `expsal:asis:${vacancyId}`)]]);
+}
+
+export const askPhoneText = [
+  'Вопросы закончились, остался последний шаг.',
+  'Поделитесь номером телефона, чтобы работодатель мог позвонить. Номер увидит только он; подлинность номера проверяет сервер MAX.',
+  '',
+  'Что дальше: нажмите «Поделиться номером» или «Без номера», тогда работодатель ответит сообщением здесь.',
+].join('\n');
 
 export function phoneKeyboard(vacancyId: string) {
   return Keyboard.inlineKeyboard([
     [Keyboard.button.requestContact('Поделиться номером')],
-    [Keyboard.button.callback('Без номера', `nophone:${vacancyId}`)],
+    [btn('Без номера', `nophone:${vacancyId}`)],
   ]);
 }
 
 export function responseSentText(withPhone: boolean): string {
   return [
-    'Отклик отправлен работодателю. Статус придёт сюда же, в этот чат.',
-    withPhone ? 'Номер передан работодателю.' : 'Номер вы не оставили — работодатель ответит сообщением в MAX.',
-  ].join(' ');
+    'Отклик отправлен работодателю.',
+    withPhone ? 'Номер передан работодателю, он может позвонить.' : 'Номер вы не оставили: работодатель ответит сообщением в MAX.',
+    '',
+    'Что дальше: ждите ответа здесь, в этом чате. Приглашение, отказ или приём на работу придут сообщением. Пока ждёте, можно посмотреть, сколько платят по вашей должности в регионе.',
+  ].join('\n');
 }
 
-/** Список вакансий работодателя: /vacancies. */
+export function responseSentKeyboard() {
+  return Keyboard.inlineKeyboard([[btn('Ставки по рынку', 'stavka')]]);
+}
+
+/** Список вакансий работодателя: /vacancies. Нумерация совпадает с кнопками. */
 export function vacanciesListText(items: { title: string; responses: number; newResponses: number; status: string }[]): string {
-  if (!items.length) return 'Опубликованных вакансий пока нет. Получите карточку рынка (/stavka) и нажмите «Опубликовать» под ней.';
-  const lines = [`Ваши вакансии (${items.length}):`];
-  for (const v of items) {
-    lines.push(`• ${v.title} — ${v.status === 'open' ? 'открыта' : 'закрыта'}, откликов ${v.responses}${v.newResponses ? ` (новых ${v.newResponses})` : ''}`);
+  if (!items.length) {
+    return [
+      'Опубликованных вакансий пока нет.',
+      '',
+      'Что дальше: проверьте ставку (/stavka) и нажмите «Опубликовать» под карточкой: получите ссылку и QR для кандидатов, отклики придут сюда.',
+    ].join('\n');
   }
+  const lines = [`Ваши вакансии (${items.length}):`];
+  items.forEach((v, i) => {
+    lines.push(`${i + 1}. ${v.title} – ${v.status === 'open' ? 'открыта' : 'закрыта'}, откликов ${v.responses}${v.newResponses ? ` (новых ${v.newResponses})` : ''}`);
+  });
+  lines.push('');
+  lines.push('Что дальше: нажмите номер вакансии, чтобы открыть отклики: там можно пригласить на собеседование, отказать или принять на работу.');
   return lines.join('\n');
+}
+
+export function vacanciesKeyboard(botUsername: string, items: { id: string; title: string }[]) {
+  const rows: KeyboardRows = items.slice(0, 8).map((v, i) => [inboxButton(botUsername, v.id, fitLabel(`${i + 1}. ${v.title}`))]);
+  rows.push([btn('Проверить ставку', 'stavka')]);
+  return Keyboard.inlineKeyboard(rows);
+}
+
+/** Подписки: /subs. Нумерация совпадает с кнопками «Отписаться». */
+export function subsText(items: { title: string }[]): string {
+  if (!items.length) {
+    return [
+      'Подписок пока нет.',
+      '',
+      'Что дальше: проверьте ставку (/stavka) и нажмите «Следить за рынком» под карточкой: раз в неделю пересчитаю и напишу, если обычная ставка сдвинется больше чем на 5 %.',
+    ].join('\n');
+  }
+  const lines = [`Ваши подписки (${items.length}). Раз в неделю сравниваю обычную ставку рынка и пишу, если она сдвинулась больше чем на 5 %:`];
+  items.forEach((s, i) => lines.push(`${i + 1}. ${s.title}`));
+  lines.push('');
+  lines.push('Что дальше: чтобы отписаться, нажмите кнопку с номером подписки.');
+  return lines.join('\n');
+}
+
+export function subsKeyboard(items: { id: string; title: string }[]) {
+  const rows: KeyboardRows = items.map((s, i) => [btn(`Отписаться: ${i + 1}. ${s.title}`, `unsub:${s.id}`)]);
+  rows.push([btn('Проверить ставку', 'stavka')]);
+  return Keyboard.inlineKeyboard(rows);
 }
 
 /* ---------- свободный ввод должности ---------- */
@@ -239,17 +552,22 @@ export function vacanciesListText(items: { title: string; responses: number; new
 export function professionSuggestText(query: string, suggestions: { title: string; source: 'catalog' | 'okpdtr' }[]): string {
   const lines = [`Должности «${query.slice(0, 80)}» нет в моём списке должностей.`];
   if (suggestions.length) {
-    lines.push('Нашёл похожие в государственном справочнике профессий «Работы России» — выберите готовую позицию или считайте по своему названию:');
+    lines.push('Нашёл похожие в государственном справочнике профессий:');
+    suggestions.forEach((s, i) => lines.push(`${i + 1}. ${s.title}`));
+    lines.push('');
+    lines.push('Что дальше: нажмите номер подходящего варианта или «По моему названию», тогда поищу объявления по вашему тексту.');
   } else {
-    lines.push('Посчитаю по вашему названию — вакансии найду по этому же тексту.');
+    lines.push('Посчитаю по вашему названию: объявления найду по этому же тексту.');
+    lines.push('');
+    lines.push('Что дальше: нажмите «По моему названию» или выберите должность из списка.');
   }
   return lines.join('\n');
 }
 
 export function professionSuggestKeyboard(own: { key: string; title: string }, suggestions: { key: string; title: string }[]) {
-  const rows: KeyboardRows = suggestions.map((sug) => [Keyboard.button.callback(sug.title.slice(0, 60), `prof:${sug.key}`)]);
-  rows.push([Keyboard.button.callback(`Считать по «${own.title}»`.slice(0, 60), `prof:${own.key}`)]);
-  rows.push([Keyboard.button.callback('Выбрать из списка', 'prof:again')]);
+  const rows: KeyboardRows = [];
+  if (suggestions.length) rows.push(suggestions.map((sug, i) => btn(`Вариант ${i + 1}`, `prof:${sug.key}`)));
+  rows.push([btn('По моему названию', `prof:${own.key}`), btn('Выбрать из списка', 'prof:again')]);
   return Keyboard.inlineKeyboard(rows);
 }
 
@@ -257,69 +575,103 @@ export function professionSuggestKeyboard(own: { key: string; title: string }, s
 
 export function staffIntroText(regionName: string | null): string {
   return [
-    `Оценю ваш штат против рынка${regionName ? ` (${regionName})` : ''}: кто уже ниже медианы и сколько стоит подтянуть.`,
+    `Проверю ваш штат против рынка${regionName ? ` (${regionName})` : ''}: кто из сотрудников получает меньше рынка и сколько стоит это исправить.`,
     '',
-    'Пришлите должности со ставками — по строке на человека, можно несколькими сообщениями или одним списком:',
+    'Как вводить: по строке на человека, должность и ставка в месяц. Можно одним списком или несколькими сообщениями. Например:',
     'повар 60000',
     'официант 45000',
     'администратор 70 тыс',
     '',
-    'Когда закончите — напишите «готово». Отменить — «отмена».',
+    'Что дальше: пришлите строки. Когда закончите, нажмите «Посчитать» или напишите «готово». Передумали – «Отменить».',
   ].join('\n');
 }
 
 export function staffAddedText(added: number, total: number, skipped: string[]): string {
   const lines = [`Записал ${added} ${pluralRu(added, 'строку', 'строки', 'строк')}, всего в списке ${total}.`];
-  if (skipped.length) lines.push(`Не разобрал: ${skipped.slice(0, 3).map((x) => `«${x}»`).join(', ')} — нужна строка вида «повар 60000».`);
-  lines.push('Добавьте ещё или напишите «готово».');
+  if (skipped.length) lines.push(`Не разобрал: ${skipped.slice(0, 3).map((x) => `«${x}»`).join(', ')}. Нужна строка вида «повар 60000».`);
+  lines.push('');
+  lines.push('Что дальше: добавьте ещё строки или нажмите «Посчитать».');
   return lines.join('\n');
 }
 
+/** Кнопки на шаге ввода штата: посчитать или отменить без лишних слов. */
+export function staffInputKeyboard() {
+  return Keyboard.inlineKeyboard([[btn('Посчитать', 'staff:done'), btn('Отменить', 'staff:cancel')]]);
+}
+
 export function staffKeyboard(botUsername: string) {
-  return Keyboard.inlineKeyboard([[Keyboard.button.openApp('Мой штат', botUsername, undefined, 'staff')]]);
+  return Keyboard.inlineKeyboard([
+    [Keyboard.button.openApp('Мой штат в приложении', botUsername, undefined, 'staff')],
+    [btn('Проверить ставку', 'stavka'), btn('Что умеет бот', 'guide')],
+  ]);
 }
 
 /* ---------- сравнение регионов ---------- */
 
 export function askRegionsText(professionTitle: string, limit: number): string {
   return [
+    'Сравнение регионов, шаг 2 из 2: регионы.',
     `Сравню «${professionTitle}» по регионам: где люди дешевле и где их больше.`,
-    `Напишите до ${limit} регионов через запятую, например «СПб, Татарстан, Москва».`,
+    '',
+    `Что дальше: напишите до ${limit} регионов через запятую, например «СПб, Татарстан, Москва».`,
   ].join('\n');
 }
 
-export const askRegionsProfessionText = 'По какой должности сравнить регионы? Напишите название, например «повар» или «обвальщик мяса».';
+export const askRegionsProfessionText = [
+  'Сравнение регионов, шаг 1 из 2: должность.',
+  'По какой должности сравнить регионы? Напишите название, например «повар» или «обвальщик мяса».',
+  'Дальше: шаг 2 – список регионов.',
+].join('\n');
 
 export function regionsKeyboard(botUsername: string) {
-  return Keyboard.inlineKeyboard([[Keyboard.button.openApp('Сравнить регионы', botUsername, undefined, 'regions')]]);
+  return Keyboard.inlineKeyboard([
+    [Keyboard.button.openApp('Регионы в приложении', botUsername, undefined, 'regions')],
+    [btn('Проверить ставку', 'stavka'), btn('Что умеет бот', 'guide')],
+  ]);
 }
 
 /* ---------- сводка по региону ---------- */
 
 export function digestKeyboard(botUsername: string) {
-  return Keyboard.inlineKeyboard([[openRadarButton(botUsername, null, 'Открыть приложение')]]);
+  return Keyboard.inlineKeyboard([
+    [openRadarButton(botUsername, null, 'Открыть приложение')],
+    [btn('Проверить ставку', 'stavka'), btn('Сравнить регионы', 'regions')],
+  ]);
 }
 
-export function helpText(): string {
+/* ---------- проверки ---------- */
+
+export function checksKeyboard(botUsername: string, hasInn: boolean) {
+  return Keyboard.inlineKeyboard([
+    [openRadarButton(botUsername, null, 'Открыть приложение'), btn(hasInn ? 'Сменить ИНН' : 'Указать ИНН', 'inn:new')],
+    [btn('Проверить ставку', 'stavka'), btn('Что умеет бот', 'guide')],
+  ]);
+}
+
+/* ---------- демо ---------- */
+
+export function demoChoiceText(): string {
   return [
-    'Основное:',
-    '/stavka — сколько платить: должность, регион, ваша ставка → где вы на шкале рынка',
-    '/staff — мой штат: кто из сотрудников уже платит ниже рынка и сколько стоит подтянуть',
-    '/vacancies — мои вакансии и отклики кандидатов',
-    '/checks — плановые проверки на год по моему ИНН и по региону',
+    'Покажу на готовом примере: это реальные микропредприятия из реестра МСП, чужой бизнес. Ваш профиль не меняется.',
     '',
-    'Ещё:',
-    '/regions — сравнить одну должность по нескольким регионам',
-    '/digest — обзор зарплат по всему моему региону, сразу по десятку должностей',
-    '/subs — мои подписки на изменения рынка',
-    '/demo — показать всё на готовом примере',
+    'Что дальше: выберите пример кнопкой.',
+  ].join('\n');
+}
+
+export function demoIntroText(note: string, professionTitle: string, salary: number): string {
+  return [
+    `Пример: ${note.replace(/\u2014/g, '–')}.`,
+    `Должность «${professionTitle}», ставка ${formatRub(salary)}. Ваш профиль не меняется.`,
     '',
-    'Настройки и справка:',
-    '/profile — указать или сменить ИНН бизнеса (нужен для проверок и сравнения с похожими)',
-    '/help — эта справка',
+    'Что дальше: сейчас посчитаю карточку рынка, как для настоящего запроса.',
+  ].join('\n');
+}
+
+/** Ответ на непонятную реплику вне сценария. */
+export function fallbackText(): string {
+  return [
+    'Не понял, что сделать.',
     '',
-    'Должность можно не выбирать кнопкой, а написать текстом — любую, даже редкую: подскажу похожие позиции из государственного справочника профессий «Работы России» (8 037 профессий) или посчитаю по вашему названию.',
-    '',
-    'Как считаю: беру живые вакансии портала «Работа России» по вашему региону, убираю дубли и лишние объявления одного работодателя, считаю медиану и перцентили заявленных ставок. Размер каждого работодателя узнаю в реестре МСП ФНС по ИНН. Плановые проверки беру из открытых данных Единого реестра контрольных (надзорных) мероприятий Генпрокуратуры. Никакой генерации: каждое число выводимо из источника.',
+    'Что дальше: нажмите «Проверить ставку» или посмотрите, что умеет бот. Справка: /help',
   ].join('\n');
 }

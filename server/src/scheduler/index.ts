@@ -45,7 +45,7 @@ const sinceMeta = (db: Db, key: string): number => {
 export function startScheduler(deps: SchedulerDeps): () => void {
   const timers: NodeJS.Timeout[] = [];
 
-  // Сторож вебхука: MAX отписывает бота после 8 часов без ответа 200 — проверяем каждые 10 минут.
+  // Сторож вебхука: MAX отписывает бота после 8 часов без ответа 200 – проверяем каждые 10 минут.
   timers.push(every(10 * 60_000, async () => {
     if (!deps.updates || !deps.webhook) return;
     await ensureSubscription(deps.updates, deps.webhook.url, deps.webhook.secret);
@@ -70,7 +70,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
   let subscriptionsBusy = false;
   timers.push(every(60 * 60_000, async () => {
     if (!deps.bot || !deps.botUsername) return;
-    if (subscriptionsBusy) { deps.log.warn({}, 'subscription check still running — skipping this hour'); return; }
+    if (subscriptionsBusy) { deps.log.warn({}, 'subscription check still running – skipping this hour'); return; }
     subscriptionsBusy = true;
     try { await checkSubscriptions(); } finally { subscriptionsBusy = false; }
   }));
@@ -83,7 +83,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
       if (now - last < 7 * 86400_000) continue;
       try {
         const region = deps.market.catalog.regions.find((r) => r.code === s.regionCode);
-        // Своя должность («custom:…») живёт только текстом в состоянии пользователя: без него подписку не пересчитать — помечаем проверенной, чтобы не долбить источник каждый час.
+        // Своя должность («custom:…») живёт только текстом в состоянии пользователя: без него подписку не пересчитать – помечаем проверенной, чтобы не долбить источник каждый час.
         let profession;
         if (isCustomProfessionKey(s.professionKey)) {
           const text = (getUser(deps.db, s.maxUserId)?.state as { professionTexts?: Record<string, string> } | undefined)?.professionTexts?.[s.professionKey];
@@ -97,7 +97,8 @@ export function startScheduler(deps: SchedulerDeps): () => void {
         touchSubscription(deps.db, s.id, median);
         if (median != null && prev != null && Math.abs(median - prev) / prev >= 0.05) {
           const dir = median > prev ? 'выросла' : 'снизилась';
-          await deps.bot.api.sendMessageToChat(s.chatId, `📈 Рынок сдвинулся: медиана «${result.profession.title}, ${result.region.name}» ${dir} с ${formatRub(prev)} до ${formatRub(median)}${s.offer ? `; ваша ставка ${formatRub(s.offer)} теперь — ${result.card.offer?.percentile}-й перцентиль` : ''}.`, {
+          const offerNote = s.offer && result.card.offer ? ` Ваша ставка ${formatRub(s.offer)}: теперь только ${result.card.offer.percentile} из 100 работодателей платят меньше.` : '';
+          await deps.bot.api.sendMessageToChat(s.chatId, `📈 Рынок сдвинулся: обычная ставка «${result.profession.title}, ${result.region.name}» ${dir} с ${formatRub(prev)} до ${formatRub(median)}. Это середина рынка: половина работодателей платит меньше, половина больше.${offerNote}\n\nЧто дальше: откройте карточку кнопкой ниже или пересчитайте свою ставку: /stavka. Отписаться: /subs`, {
             attachments: [Keyboard.inlineKeyboard([[openRadarButton(deps.botUsername, result.cardId)]])],
           });
         }
@@ -107,7 +108,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
 
   // План проверок ЕРКНМ: первая загрузка фоном (старт сервера не ждёт 39 МБ архива).
   // Дальше задача просыпается раз в час, но к источнику идёт, только когда набор не подтверждали
-  // больше ERKNM_MAX_AGE_DAYS (по умолчанию 7 дней) — то есть проверка версии раз в неделю.
+  // больше ERKNM_MAX_AGE_DAYS (по умолчанию 7 дней) – то есть проверка версии раз в неделю.
   // Часовой шаг нужен для повтора: если сайт реестра недоступен, следующая попытка будет через час, а не через неделю.
   const syncChecks = async () => {
     if (!needsSync(deps.market)) return;
@@ -115,7 +116,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
       const r = await syncInspections(deps.market);
       if (r.status === 'loaded') deps.log.info({ version: r.dataset?.version, records: r.dataset?.records, withRegion: r.dataset?.withRegion }, 'erknm: план проверок обновлён');
     } catch (err) {
-      deps.log.warn({ err: describeSyncError(err) }, 'erknm: не удалось обновить план проверок — сервис отвечает по последнему загруженному набору');
+      deps.log.warn({ err: describeSyncError(err) }, 'erknm: не удалось обновить план проверок – сервис отвечает по последнему загруженному набору');
     }
   };
   setTimeout(() => { void syncChecks(); }, 20_000).unref();
@@ -124,7 +125,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
   timers.push(every(6 * 3600_000, async () => { pruneUpdatesSeen(deps.db, new Date(Date.now() - 3 * 86400_000).toISOString()); }));
 
   // Суточная чистка: кэш вакансий старше 7 дней, анонимные карточки старше 3 дней, наблюдения старше 30 дней,
-  // файлы отчётов и QR старше 14 дней, затем checkpoint WAL; раз в неделю — VACUUM.
+  // файлы отчётов и QR старше 14 дней, затем checkpoint WAL; раз в неделю – VACUUM.
   // Тик часовой, а отметки в meta: пропущенная попытка (открытая транзакция загрузки ЕРКНМ) повторяется через час, а не через сутки.
   const housekeeping = async () => {
     if (sinceMeta(deps.db, 'last_cleanup_at') < 24 * 3600_000) return;

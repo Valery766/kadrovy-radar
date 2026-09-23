@@ -17,7 +17,7 @@ const DRAIN_TIMEOUT_MS = 10_000;
 async function main() {
   const config = loadConfig();
 
-  // Бот создаём до HTTP-приложения: его username нужен кнопкам и API. Клиент — с таймаутом на каждый вызов Bot API.
+  // Бот создаём до HTTP-приложения: его username нужен кнопкам и API. Клиент – с таймаутом на каждый вызов Bot API.
   const bot = config.botToken ? new Bot(config.botToken, { clientOptions: { baseUrl: config.apiBase, fetch: botFetch } }) : null;
 
   const fetchBotInfo = async (): Promise<BotInfo> => {
@@ -26,14 +26,14 @@ async function main() {
     return { username: me.username ?? String(me.user_id), userId: me.user_id };
   };
 
-  // Первая попытка — сразу. Неудача не роняет процесс (иначе systemd/compose крутили бы рестарты, а мини-приложение
+  // Первая попытка – сразу. Неудача не роняет процесс (иначе systemd/compose крутили бы рестарты, а мини-приложение
   // и /api/health от MAX API не зависят): HTTP поднимается, бот подключается в фоне.
   let botInfo: BotInfo | null = null;
   if (bot) {
     try {
       botInfo = await fetchBotInfo();
     } catch (err) {
-      console.error('не удалось получить GET /me — проверьте MAX_BOT_TOKEN и сертификат Минцифры (NODE_EXTRA_CA_CERTS); повторю подключение в фоне:', String(err));
+      console.error('не удалось получить GET /me – проверьте MAX_BOT_TOKEN и сертификат Минцифры (NODE_EXTRA_CA_CERTS); повторю подключение в фоне:', String(err));
     }
   }
 
@@ -42,7 +42,7 @@ async function main() {
   const log = app.log;
   log.info({ packs: catalog.packs.map((p) => p.id), regions: catalog.regions.length }, 'пакеты загружены');
 
-  // Маршрут вебхука регистрируется до listen (позже Fastify маршруты не принимает); пока бот не подключён — 503, MAX повторит доставку.
+  // Маршрут вебхука регистрируется до listen (позже Fastify маршруты не принимает); пока бот не подключён – 503, MAX повторит доставку.
   const updates: UpdatesDeps | null = bot ? { bot, db, log } : null;
   let webhook: { url: string; secret: string | null } | null = null;
   if (bot && updates && config.updatesMode === 'webhook') {
@@ -71,7 +71,7 @@ async function main() {
       scheduler.updates = updates;
       scheduler.webhook = webhook;
       const ok = await ensureSubscription(updates, webhook.url, webhook.secret);
-      if (!ok) log.error('вебхук не зарегистрирован — сторож повторит через 10 минут');
+      if (!ok) log.error('вебхук не зарегистрирован – сторож повторит через 10 минут');
     }
     if (config.updatesMode === 'polling') polling = startPolling(updates);
   };
@@ -87,7 +87,7 @@ async function main() {
         await onBotReady(info);
         return;
       } catch (err) {
-        log.warn({ err: String(err), attempt: attempt + 1 }, 'MAX API недоступен — повторю подключение бота');
+        log.warn({ err: String(err), attempt: attempt + 1 }, 'MAX API недоступен – повторю подключение бота');
       }
     }
   };
@@ -107,7 +107,7 @@ async function main() {
     stopScheduler();
     polling?.stop();
     await app.close();
-    // Вебхук уже ответил 200 и записал ключ события — MAX его не повторит, поэтому обработчики дожидаемся.
+    // Вебхук уже ответил 200 и записал ключ события – MAX его не повторит, поэтому обработчики дожидаемся.
     const left = await drainUpdates(DRAIN_TIMEOUT_MS);
     if (left > 0) log.warn({ left }, 'остановка: не все обработчики событий успели завершиться');
     db.close();

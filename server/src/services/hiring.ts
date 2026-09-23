@@ -24,7 +24,7 @@ export interface CandidateAnswers {
   experience: ExperienceKey;
   /** Готов работать по графику вакансии. */
   schedule: boolean;
-  /** Ожидаемая ставка, ₽/мес; null — «как в вакансии». */
+  /** Ожидаемая ставка, ₽/мес; null – «как в вакансии». */
   expectedSalary: number | null;
 }
 
@@ -50,7 +50,7 @@ export function scoreResponse(vacancy: { salary: number | null }, answers: Candi
   if (answers.schedule) score += 3;
   const salary = vacancy.salary;
   if (salary != null && salary > 0) {
-    // «Как в вакансии» — это ровно ставка вакансии.
+    // «Как в вакансии» – это ровно ставка вакансии.
     const expected = answers.expectedSalary == null ? salary : answers.expectedSalary;
     if (expected <= salary * 1.1) score += 3;
     else if (expected <= salary * 1.3) score += 1;
@@ -130,8 +130,8 @@ export async function renderVacancyQr(ctx: { config: Config }, vacancyId: string
 }
 
 /**
- * Проверка подписи контакта MAX: hash = HMAC-SHA256(ключ — токен бота,
- * сообщение — vcf_info с переводами строк \n). Не сошлось — сохраняем номер
+ * Проверка подписи контакта MAX: hash = HMAC-SHA256(ключ – токен бота,
+ * сообщение – vcf_info с переводами строк \n). Не сошлось – сохраняем номер
  * как непроверенный, но отклик не теряем.
  */
 export function verifyContactSignature(botToken: string, vcfInfo: string, hash: string | null | undefined): boolean {
@@ -158,13 +158,13 @@ export function phoneFromVcf(vcfInfo: string): string | null {
 
 /* ---------- метрики найма ---------- */
 
-/** Время до первого отклика, минут (null — откликов ещё не было). */
+/** Время до первого отклика, минут (null – откликов ещё не было). */
 export function timeToFirstResponse(v: Pick<VacancyRow, 'createdAt' | 'firstResponseAt'>): number | null {
   if (!v.firstResponseAt) return null;
   return Math.max(0, Math.round((Date.parse(v.firstResponseAt) - Date.parse(v.createdAt)) / 60_000));
 }
 
-/** Срок закрытия вакансии, минут (null — вакансия ещё открыта). */
+/** Срок закрытия вакансии, минут (null – вакансия ещё открыта). */
 export function timeToHire(v: Pick<VacancyRow, 'createdAt' | 'closedAt'>): number | null {
   if (!v.closedAt) return null;
   return Math.max(0, Math.round((Date.parse(v.closedAt) - Date.parse(v.createdAt)) / 60_000));
@@ -172,7 +172,7 @@ export function timeToHire(v: Pick<VacancyRow, 'createdAt' | 'closedAt'>): numbe
 
 /** Человекочитаемая длительность: «12 мин», «3 ч 20 мин», «2 дн 4 ч». */
 export function formatDuration(minutes: number | null): string {
-  if (minutes == null) return '—';
+  if (minutes == null) return '–';
   if (minutes < 60) return `${minutes} мин`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} ч${minutes % 60 ? ` ${minutes % 60} мин` : ''}`;
@@ -210,18 +210,23 @@ export function inboxButton(botUsername: string, vacancyId: string, text = 'Ва
   return Keyboard.button.openApp(text, botUsername, undefined, inboxStartPayload(vacancyId));
 }
 
-/** Краткая сводка отклика для уведомления работодателя. */
+/** Сводка отклика для уведомления работодателя: балл совпадения объяснён словами. */
 export function responseSummary(r: ResponseRow<CandidateAnswers>, vacancy: VacancyRow): string {
   const a = r.answers;
-  const parts = [
-    `Опыт: ${EXPERIENCE_LABEL[a.experience] ?? a.experience}`,
-    `график: ${a.schedule ? 'готов' : 'не готов'}`,
-    `ожидания: ${a.expectedSalary == null ? 'как в вакансии' : `${a.expectedSalary.toLocaleString('ru-RU')} ₽`}`,
-    `телефон: ${r.phone ? (r.phoneVerified ? r.phone : `${r.phone} (подпись не подтверждена)`) : 'не оставил'}`,
-  ];
+  let expected = 'как в вакансии';
+  if (a.expectedSalary != null) {
+    const rub = `${a.expectedSalary.toLocaleString('ru-RU')} ₽`;
+    if (vacancy.salary && vacancy.salary > 0) {
+      const diff = Math.round((100 * (a.expectedSalary - vacancy.salary)) / vacancy.salary);
+      expected = diff > 0 ? `${rub}, на ${diff} % выше ставки вакансии` : `${rub}, в пределах ставки вакансии`;
+    } else expected = rub;
+  }
+  const phone = r.phone ? (r.phoneVerified ? r.phone : `${r.phone} (подпись MAX не подтверждена)`) : 'не оставил, ответьте сообщением в MAX';
   return [
     `📥 Новый отклик на вакансию «${vacancy.title}»`,
-    `${r.candidateName ?? 'Кандидат'} · совпадение ${r.score} из ${MAX_SCORE}`,
-    parts.join(', '),
+    `${r.candidateName ?? 'Кандидат'}: совпадение с вакансией ${r.score} из ${MAX_SCORE}. Чем выше балл, тем ближе кандидат к вашим условиям: опыт, график, ожидания по деньгам и есть ли номер.`,
+    `Опыт: ${EXPERIENCE_LABEL[a.experience] ?? a.experience}. График: ${a.schedule ? 'подходит' : 'не подходит'}. Ожидания по ставке: ${expected}. Телефон: ${phone}.`,
+    '',
+    'Что дальше: откройте «Вакансии и отклики», там можно пригласить на собеседование, отказать или принять на работу.',
   ].join('\n');
 }

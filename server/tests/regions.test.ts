@@ -71,5 +71,8 @@ describe('compareRegionMarkets', () => {
     expect(text).toContain('Краснодарский край');
     expect(text).toContain('индекс доступности');
     expect(text).toContain('Не удалось посчитать: Недоступный регион');
+    expect(text).toContain('Дешевле всего нанять в регионе «Краснодарский край»');
+    expect(text).toContain('Что дальше');
+    expect(text).not.toContain('—');
   });
 });

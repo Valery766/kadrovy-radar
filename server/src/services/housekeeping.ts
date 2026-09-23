@@ -1,7 +1,7 @@
 /**
  * Суточная чистка: данные, которые копятся без предела (кэш выдачи по мегабайту на строку,
  * анонимные карточки демо-режима, наблюдения за давно исчезнувшими вакансиями), файлы отчётов
- * и QR-кодов в DATA_DIR, затем сброс WAL и — раз в неделю — VACUUM основной базы.
+ * и QR-кодов в DATA_DIR, затем сброс WAL и – раз в неделю – VACUUM основной базы.
  */
 import { existsSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,7 +14,7 @@ export const FILE_MAX_AGE_DAYS = 14;
 export interface HousekeepingInput {
   db: Db;
   dataDir: string;
-  /** Делать ли VACUUM в этот раз (планировщик — раз в неделю). */
+  /** Делать ли VACUUM в этот раз (планировщик – раз в неделю). */
   vacuum?: boolean;
   now?: Date;
   data?: CleanupOptions;
@@ -22,7 +22,7 @@ export interface HousekeepingInput {
 }
 
 export interface HousekeepingReport {
-  /** true — база в открытой транзакции (идёт загрузка ЕРКНМ): ничего не трогали, повторить позже. */
+  /** true – база в открытой транзакции (идёт загрузка ЕРКНМ): ничего не трогали, повторить позже. */
   skipped: boolean;
   data: CleanupReport;
   /** Сколько файлов удалено в reports/ и qr/. */
@@ -30,7 +30,7 @@ export interface HousekeepingReport {
   vacuumed: boolean;
 }
 
-/** Удаляет обычные файлы каталога старше maxAgeMs по времени изменения; каталога нет — 0. */
+/** Удаляет обычные файлы каталога старше maxAgeMs по времени изменения; каталога нет – 0. */
 export function pruneFiles(dir: string, maxAgeMs: number, now = Date.now()): number {
   if (!existsSync(dir)) return 0;
   let removed = 0;
@@ -41,7 +41,7 @@ export function pruneFiles(dir: string, maxAgeMs: number, now = Date.now()): num
       if (!st.isFile() || now - st.mtimeMs < maxAgeMs) continue;
       unlinkSync(path);
       removed += 1;
-    } catch { /* файл уже удалён или недоступен — пропускаем */ }
+    } catch { /* файл уже удалён или недоступен – пропускаем */ }
   }
   return removed;
 }

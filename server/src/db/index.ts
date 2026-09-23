@@ -12,7 +12,7 @@ export type Db = DatabaseSync;
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
--- Кэш выдачи «Работы России»: ключ = регион + запрос; payload — массив VacancyRecord (JSON).
+-- Кэш выдачи «Работы России»: ключ = регион + запрос; payload – массив VacancyRecord (JSON).
 CREATE TABLE IF NOT EXISTS vacancy_cache (
   cache_key TEXT PRIMARY KEY,
   region_code TEXT NOT NULL,
@@ -166,7 +166,7 @@ CREATE INDEX IF NOT EXISTS idx_inspections_inn ON inspections(inn);
 CREATE INDEX IF NOT EXISTS idx_inspections_context ON inspections(region_code, okved2, kind);
 
 -- Версия загруженного набора ЕРКНМ: по ней решаем, нужна ли перезаливка.
--- loaded_at — когда набор загружен или последний раз подтверждён как актуальный.
+-- loaded_at – когда набор загружен или последний раз подтверждён как актуальный.
 CREATE TABLE IF NOT EXISTS inspection_datasets (
   year INTEGER PRIMARY KEY,
   dataset_id TEXT NOT NULL,
@@ -392,7 +392,7 @@ export function getVacancy(db: Db, id: string): VacancyRow | null {
   return r ? mapVacancy(r) : null;
 }
 
-/** Вакансии пользователя с числом откликов (всего и новых) — для списка «Мои вакансии». */
+/** Вакансии пользователя с числом откликов (всего и новых) – для списка «Мои вакансии». */
 export function listVacanciesByUser(db: Db, maxUserId: number, limit = 50): (VacancyRow & { responses: number; newResponses: number })[] {
   const rows = db.prepare(`SELECT v.*,
       (SELECT COUNT(*) FROM responses r WHERE r.vacancy_id = v.id) AS responses_total,
@@ -412,7 +412,7 @@ export function closeVacancy(db: Db, id: string, maxUserId: number, hiredRespons
   return res.changes > 0 ? getVacancy(db, id) : null;
 }
 
-/** Отметить время первого отклика — метрика «время до первого отклика» (ставится один раз). */
+/** Отметить время первого отклика – метрика «время до первого отклика» (ставится один раз). */
 export function markFirstResponse(db: Db, vacancyId: string, at: string): void {
   db.prepare('UPDATE vacancies SET first_response_at = COALESCE(first_response_at, ?) WHERE id = ?').run(at, vacancyId);
 }
@@ -430,13 +430,13 @@ export function getResponse<A = Record<string, unknown>>(db: Db, id: string): Re
   return r ? mapResponse<A>(r) : null;
 }
 
-/** Отклики по вакансии: по убыванию совпадения, при равенстве — раньше пришедшие выше. */
+/** Отклики по вакансии: по убыванию совпадения, при равенстве – раньше пришедшие выше. */
 export function listResponsesByVacancy<A = Record<string, unknown>>(db: Db, vacancyId: string): ResponseRow<A>[] {
   const rows = db.prepare('SELECT * FROM responses WHERE vacancy_id = ? ORDER BY score DESC, created_at ASC').all(vacancyId) as Record<string, unknown>[];
   return rows.map((r) => mapResponse<A>(r));
 }
 
-/** Последний отклик кандидата на вакансию — чтобы не плодить дубли при повторном заходе. */
+/** Последний отклик кандидата на вакансию – чтобы не плодить дубли при повторном заходе. */
 export function findResponseByCandidate<A = Record<string, unknown>>(db: Db, vacancyId: string, candidateUserId: number): ResponseRow<A> | null {
   const r = db.prepare('SELECT * FROM responses WHERE vacancy_id = ? AND candidate_user_id = ? ORDER BY created_at DESC LIMIT 1').get(vacancyId, candidateUserId) as Record<string, unknown> | undefined;
   return r ? mapResponse<A>(r) : null;
@@ -459,7 +459,7 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * true — событие новое, false — уже видели. Любая другая ошибка базы (SQLITE_FULL, SQLITE_IOERR)
+ * true – событие новое, false – уже видели. Любая другая ошибка базы (SQLITE_FULL, SQLITE_IOERR)
  * пробрасывается: иначе бот молча терял бы все события под видом «дубликатов».
  */
 export function markUpdateSeen(db: Db, updateKey: string): boolean {
@@ -491,7 +491,7 @@ export interface CleanupReport { vacancyCache: number; anonymousCards: number; v
 
 /**
  * Суточная чистка: строки кэша вакансий по мегабайту каждая, анонимные карточки и старые
- * наблюдения иначе копятся без предела. Карточки пользователей MAX не трогаем — на них
+ * наблюдения иначе копятся без предела. Карточки пользователей MAX не трогаем – на них
  * ссылаются отчёты, вакансии и ссылки «Подробный разбор».
  */
 export function cleanupData(db: Db, opts: CleanupOptions = {}): CleanupReport {
@@ -510,7 +510,7 @@ export function checkpointWal(db: Db): void {
 
 /**
  * VACUUM возвращает освобождённые страницы файловой системе. Внутри транзакции он невозможен
- * (загрузка ЕРКНМ держит транзакцию между пачками), поэтому в этом случае возвращаем false — вызывающая сторона повторит позже.
+ * (загрузка ЕРКНМ держит транзакцию между пачками), поэтому в этом случае возвращаем false – вызывающая сторона повторит позже.
  */
 export function vacuumDb(db: Db): boolean {
   if ((db as { isTransaction?: boolean }).isTransaction) return false;
@@ -646,7 +646,7 @@ export function beginInspectionsLoad(db: Db, year: number, batchSize = 1000): In
   };
 }
 
-/** Перезаливка готового массива записей — удобна в тестах и для небольших наборов. */
+/** Перезаливка готового массива записей – удобна в тестах и для небольших наборов. */
 export function replaceInspections(db: Db, dataset: Omit<InspectionDatasetRow, 'records' | 'withRegion' | 'loadedAt'>, rows: readonly InspectionRow[]): InspectionDatasetRow {
   const loader = beginInspectionsLoad(db, dataset.year);
   try {

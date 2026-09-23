@@ -87,7 +87,9 @@ describe('computeMarket on real fixture (повар, Санкт-Петербур
     expect(card.options[1]!.value % 1000).toBe(0);
     expect(card.options[2]!.value).toBeGreaterThan(card.options[1]!.value);
     expect(card.verdict).toContain('45 000 ₽');
-    expect(card.verdict).toContain('Медиана');
+    expect(card.verdict).toContain('медиана');
+    expect(card.verdict).toContain('из 100');
+    expect(card.verdict).not.toContain('—');
     expect(card.requirements.length).toBeGreaterThan(0);
   });
   it('is deterministic', () => {
@@ -106,7 +108,8 @@ describe('computeMarket on real fixture (повар, Санкт-Петербур
   it('builds a deterministic vacancy draft', () => {
     const pack = { vacancyTemplate: { conditions: ['официальное оформление', 'питание за счёт компании'] } } as unknown as Pack;
     const text = buildVacancyDraft({ card, profession: povar, pack, salary: 70000, companyName: 'ООО «Малый 43»', cityName: 'Санкт-Петербург' });
-    expect(text).toContain('Повар — Санкт-Петербург');
+    expect(text).toContain('Повар – Санкт-Петербург');
+    expect(text).not.toContain('—');
     expect(text).toContain('70 000 ₽');
     expect(text).toContain('официальное оформление');
   });

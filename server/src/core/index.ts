@@ -1,12 +1,12 @@
 export * from './types.js';
-export { computeMarket, prepareVacancies, categoryLabel } from './market.js';
+export { computeMarket, prepareVacancies, categoryLabel, DROPPED_LABEL, sizeLabel } from './market.js';
 export { matchTitle, salaryValue } from './normalize.js';
 export { dedupeVacancies } from './dedupe.js';
 export { quantileSorted, median, salaryStats, percentileOf, percentileFromHistogram, histogram } from './stats.js';
 export { phraseStats, scheduleStats } from './requirements.js';
-export { buildVerdict, bandOf, BAND_LABEL } from './verdict.js';
+export { buildVerdict, bandOf, BAND_LABEL, BAND_PLAIN } from './verdict.js';
 export { buildVacancyDraft } from './vacancy-text.js';
 export { seasonality, isoWeekLabel, weekStart } from './seasonality.js';
 export { assessStaff, RISK_LABEL } from './staff.js';
 export { compareRegionMarkets } from './regions.js';
-export { normalizeText, formatRub, roundUpThousand, pluralRu } from './text.js';
+export { normalizeText, formatRub, roundUpThousand, pluralRu, formatDateTimeRu, formatDateRu, formatPct, sourceNote } from './text.js';

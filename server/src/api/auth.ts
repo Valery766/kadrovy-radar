@@ -2,7 +2,7 @@
  * Проверка подлинности данных запуска мини-приложения (initData) по официальному алгоритму MAX:
  *   secret_key = HMAC_SHA256(key = "WebAppData", msg = BOT_TOKEN)
  *   hash       = hex(HMAC_SHA256(key = secret_key, msg = "k1=v1\nk2=v2…" по ключам a→z, без hash))
- * Сессия мини-приложения — подписанный токен (HMAC) с MAX user id и сроком жизни.
+ * Сессия мини-приложения – подписанный токен (HMAC) с MAX user id и сроком жизни.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -25,7 +25,7 @@ export function computeInitDataHash(botToken: string, pairs: [string, string][])
   return createHmac('sha256', secretKey).update(launchParams).digest('hex');
 }
 
-/** initData — строка `WebAppData` из фрагмента URL (как отдаёт window.WebApp.initData). */
+/** initData – строка `WebAppData` из фрагмента URL (как отдаёт window.WebApp.initData). */
 export function validateInitData(initData: string, botToken: string, opts: { maxAgeSec?: number; now?: number } = {}): InitDataResult {
   if (!initData || typeof initData !== 'string' || initData.length > 8192) return { ok: false, reason: 'malformed' };
   const pairs: [string, string][] = [];

@@ -68,7 +68,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   };
 
   /**
-   * Состояние пользователя (users.state) — общее с ботом: шаг диалога, тексты своих должностей,
+   * Состояние пользователя (users.state) – общее с ботом: шаг диалога, тексты своих должностей,
    * последняя оценка штата. Демо-сессии строки в users не имеют и ничего не сохраняют.
    */
   interface ApiUserState {
@@ -127,7 +127,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     return { ok: false, code: 'profession_unknown', message: `Профессия «${key}» не найдена в каталоге` };
   };
 
-  /** Скользящее окно «не больше limit попаданий за минуту» по произвольному ключу; true — попадание учтено. */
+  /** Скользящее окно «не больше limit попаданий за минуту» по произвольному ключу; true – попадание учтено. */
   const minuteWindow = (hits: Map<string, number[]>, key: string, limit: number): boolean => {
     const now = Date.now();
     const recent = (hits.get(key) ?? []).filter((t) => now - t < 60_000);
@@ -141,7 +141,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   /**
    * Тяжёлые маршруты (карточка, профиль, штат, регионы, сводка) ходят к источникам десятками запросов на один вызов:
    * не больше HEAVY_PER_MINUTE вызовов в минуту на пользователя и HEAVY_CONCURRENT расчётов одновременно на процесс.
-   * Демо-сессия выдаётся без initData любому, поэтому её ключ — IP-адрес клиента (за nginx — X-Forwarded-For), а не uid.
+   * Демо-сессия выдаётся без initData любому, поэтому её ключ – IP-адрес клиента (за nginx – X-Forwarded-For), а не uid.
    */
   const HEAVY_PER_MINUTE = 6;
   const HEAVY_PER_MINUTE_DEMO = 3;
@@ -151,14 +151,14 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   const heavyGate = (req: FastifyRequest, reply: FastifyReply, s: SessionPayload, opts: { concurrent?: boolean } = {}): boolean => {
     const key = s.demo ? `ip:${req.ip}` : `uid:${s.uid}`;
     if (!minuteWindow(heavyHits, key, s.demo ? HEAVY_PER_MINUTE_DEMO : HEAVY_PER_MINUTE)) {
-      void reply.code(429).send({ error: 'rate_limited', message: 'Слишком много запросов подряд — подождите минуту.' });
+      void reply.code(429).send({ error: 'rate_limited', message: 'Слишком много запросов подряд: подождите минуту.' });
       return false;
     }
-    if (opts.concurrent !== false && heavyRunning >= HEAVY_CONCURRENT) { void reply.code(503).send({ error: 'busy', message: 'Сейчас считаю запросы других пользователей — повторите через минуту.' }); return false; }
+    if (opts.concurrent !== false && heavyRunning >= HEAVY_CONCURRENT) { void reply.code(503).send({ error: 'busy', message: 'Сейчас считаю запросы других пользователей: повторите через минуту.' }); return false; }
     return true;
   };
 
-  /** Демо-сессии выдаются без проверки подписи — не больше SESSIONS_PER_MINUTE_DEMO в минуту с одного IP. */
+  /** Демо-сессии выдаются без проверки подписи – не больше SESSIONS_PER_MINUTE_DEMO в минуту с одного IP. */
   const SESSIONS_PER_MINUTE_DEMO = 20;
   const sessionHits = new Map<string, number[]>();
 
@@ -183,7 +183,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     };
   });
 
-  /** Сессия: initData из MAX Bridge → проверка подписи → токен. Без initData — демо-режим. */
+  /** Сессия: initData из MAX Bridge → проверка подписи → токен. Без initData – демо-режим. */
   app.post<{ Body: { initData?: string; demo?: boolean } }>('/api/session', async (req, reply) => {
     const { initData } = req.body ?? {};
     const exp = Math.floor(Date.now() / 1000) + 12 * 3600;
@@ -197,9 +197,9 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       const payload: SessionPayload = { uid, name: u.name, chatId: u.chatId, demo: false, exp };
       return { token: signSession(config.sessionSecret, payload), user: { id: uid, name: u.name, demo: false, chatId: u.chatId }, startParam: r.data.startParam };
     }
-    if (initData && !config.botToken) return reply.code(503).send({ error: 'no_bot_token', message: 'Сервер запущен без токена бота — проверка initData невозможна' });
+    if (initData && !config.botToken) return reply.code(503).send({ error: 'no_bot_token', message: 'Сервер запущен без токена бота: проверка initData невозможна' });
     if (!minuteWindow(sessionHits, `ip:${req.ip}`, SESSIONS_PER_MINUTE_DEMO)) {
-      return reply.code(429).send({ error: 'rate_limited', message: 'Слишком много запросов подряд — подождите минуту.' });
+      return reply.code(429).send({ error: 'rate_limited', message: 'Слишком много запросов подряд: подождите минуту.' });
     }
     const uid = DEMO_UID_BASE - Math.floor(Math.random() * 1_000_000);
     const payload: SessionPayload = { uid, name: null, chatId: null, demo: true, exp };
@@ -328,7 +328,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
 
   /**
    * «Мой штат»: ставки сотрудников против рынка региона.
-   * Демо-сессия считает так же, но ничего не сохраняет — у неё нет строки в users.
+   * Демо-сессия считает так же, но ничего не сохраняет – у неё нет строки в users.
    */
   app.post<{ Body: { positions?: StaffPositionInput[]; inn?: string | null; regionFnsCode?: string | null; forceRefresh?: boolean } }>('/api/staff', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
@@ -373,7 +373,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   /**
    * Плановые проверки ЕРКНМ по ИНН бизнеса плюс контекст по региону и отрасли.
    * ИНН берём из query, затем из профиля пользователя; демо-сессия смотрит ИНН демо-пакета.
-   * Набор ещё не загружен — отвечаем loaded: false, а не ошибкой: он подтягивается фоном.
+   * Набор ещё не загружен – отвечаем loaded: false, а не ошибкой: он подтягивается фоном.
    */
   app.get<{ Querystring: { inn?: string } }>('/api/inspections', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
@@ -383,7 +383,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const demoInn = catalog.packs.find((p) => p.demo)?.demo?.inn ?? null;
     const inn = asked || u?.inn || (s.demo ? demoInn : null);
     // Профиль нужен только ради региона и ОКВЭД контекста: пока набор не загружен, за ним не ходим.
-    // Реестр МСП может быть недоступен — тогда отвечаем по одному ИНН, без регионального контекста.
+    // Реестр МСП может быть недоступен – тогда отвечаем по одному ИНН, без регионального контекста.
     const profile = inn && inspectionsLoaded(deps.market) ? await getProfile(deps.market, inn).catch(() => null) : null;
     return inspectionsForBusiness(deps.market, {
       inn,
@@ -507,7 +507,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   app.post<{ Params: { id: string }; Body: { salary?: number | null; text?: string } }>('/api/cards/:id/vacancy', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     if (demoBlocked(reply, s)) return;
-    if (!deps.hiring || !deps.bot) return reply.code(503).send({ error: 'no_bot', message: 'Сервер запущен без бота — публикация вакансии недоступна' });
+    if (!deps.hiring || !deps.bot) return reply.code(503).send({ error: 'no_bot', message: 'Сервер запущен без бота: публикация вакансии недоступна' });
     const row = getCard<MarketResult>(db, req.params.id);
     if (!row) return reply.code(404).send({ error: 'not_found', message: 'Карточка не найдена' });
     if (!ownsCard(reply, row, s)) return;
@@ -539,7 +539,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
             [Keyboard.button.link('Поделиться в MAX', link)],
             [inboxButton(deps.bot.username, vacancy.id), Keyboard.button.callback('Закрыть вакансию', `vacclose:${vacancy.id}`)],
           ]);
-          const body = [`✅ Вакансия опубликована: ${vacancy.title} — ${r.region.name}`, salary ? `Ставка: от ${salary.toLocaleString('ru-RU')} ₽` : 'Ставка: не указана', '', 'Ссылка для кандидатов:', link].join('\n');
+          const body = [`✅ Вакансия опубликована: ${vacancy.title} – ${r.region.name}`, salary ? `Ставка: от ${salary.toLocaleString('ru-RU')} ₽` : 'Ставка: не указана', '', 'Ссылка для кандидатов:', link, '', 'Что дальше: перешлите ссылку в чаты сотрудников и партнёров, отклики придут сюда и в раздел «Вакансии и отклики».'].join('\n');
           await deps.hiring.bot.api.sendMessageToChat(chatId, body, { attachments: [image.toJson(), keyboard] });
           qrSent = true;
         } catch (err) {
@@ -580,7 +580,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const message = (req.body?.message ?? '').trim();
     const updated = updateResponseStatus<CandidateAnswers>(db, found.response.id, 'invited') ?? found.response;
     if (deps.hiring) {
-      const text = `Вас приглашают на собеседование: ${message || `по вакансии «${found.vacancy.title}» — работодатель свяжется с вами здесь, в MAX.`}`;
+      const text = `Вас приглашают на собеседование: ${message || `по вакансии «${found.vacancy.title}». Работодатель свяжется с вами здесь, в MAX.`}`;
       await sendToUser(deps.hiring, found.response.candidateUserId, text).catch((err) => app.log.warn({ err: String(err) }, 'приглашение кандидату не доставлено'));
     }
     return { response: responseView(updated) };

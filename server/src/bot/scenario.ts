@@ -45,7 +45,7 @@ interface State {
   lastCardId?: string;
   /** Тексты своих должностей по ключу «custom:<slug>»: из ключа текст не восстановить (это хеш). */
   professionTexts?: Record<string, string>;
-  /** Собираемый список штата: строки «должность — ставка». */
+  /** Собираемый список штата: строки «должность – ставка». */
   staffRows?: { title: string; salary: number }[];
   /** Должность, по которой идёт сравнение регионов. */
   regionsProfessionKey?: string;
@@ -57,30 +57,30 @@ interface State {
 }
 
 /**
- * Меню MAX: все команды на месте, но выстроены группами — сначала основное,
+ * Меню MAX: все команды на месте, но выстроены группами – сначала основное,
  * затем дополнительное, в конце настройки и справка. Описания короткие и
  * в словах владельца бизнеса, чтобы список читался сверху вниз.
  */
 const COMMANDS = [
-  { name: 'start', description: 'Начать' },
+  { name: 'start', description: 'Начать: приветствие и что умеет бот' },
   // Основное
-  { name: 'stavka', description: 'Сколько платить — проверить ставку' },
-  { name: 'staff', description: 'Мой штат — кто отстаёт от рынка' },
+  { name: 'stavka', description: 'Сколько платить: проверить ставку' },
+  { name: 'staff', description: 'Мой штат: кто получает меньше рынка' },
   { name: 'vacancies', description: 'Мои вакансии и отклики' },
-  { name: 'checks', description: 'Проверки на год по моему ИНН' },
+  { name: 'checks', description: 'Плановые проверки по моему ИНН' },
   // Ещё
   { name: 'regions', description: 'Сравнить регионы по должности' },
-  { name: 'digest', description: 'Обзор зарплат по моему региону' },
-  { name: 'subs', description: 'Мои подписки на изменения рынка' },
+  { name: 'digest', description: 'Зарплаты по всему моему региону' },
+  { name: 'subs', description: 'Мои подписки: следить за рынком' },
   { name: 'demo', description: 'Показать на готовом примере' },
   // Настройки и справка
   { name: 'profile', description: 'Указать или сменить ИНН бизнеса' },
-  { name: 'help', description: 'Как это работает' },
+  { name: 'help', description: 'Что умеет бот и все команды' },
 ];
 
-/** Сколько регионов сравниваем из чата: больше — и таблица не читается, и ждать дольше минуты. */
+/** Сколько регионов сравниваем из чата: больше – и таблица не читается, и ждать дольше минуты. */
 const BOT_MAX_REGIONS = 4;
-/** Сколько профессий берём в сводку из чата (в API — до MAX_DIGEST_PROFESSIONS). */
+/** Сколько профессий берём в сводку из чата (в API – до MAX_DIGEST_PROFESSIONS). */
 const BOT_DIGEST_PROFESSIONS = Math.min(8, MAX_DIGEST_PROFESSIONS);
 /** Ограничение MAX на длину сообщения. */
 const MAX_MESSAGE_LENGTH = 4000;
@@ -107,8 +107,8 @@ export function splitText(text: string, limit = MAX_MESSAGE_LENGTH): string[] {
 }
 
 /**
- * Строка штата «повар 60000» → должность и ставка. Ставка — последнее число строки,
- * всё до него — название должности («повар 5 разряда — 60 тыс» тоже разбирается).
+ * Строка штата «повар 60000» → должность и ставка. Ставка – последнее число строки,
+ * всё до него – название должности («повар 5 разряда – 60 тыс» тоже разбирается).
  */
 /** Длиннее этого строка штата не бывает; регулярка ниже квадратична по длине, поэтому длинное отбрасываем сразу. */
 const MAX_STAFF_LINE = 200;
@@ -192,7 +192,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
 
   type ReplyExtra = Parameters<Context['reply']>[1];
 
-  /** Длинный текст: режем по 4000 символов и держим паузу — лимит MAX 2 сообщения в секунду на чат. */
+  /** Длинный текст: режем по 4000 символов и держим паузу – лимит MAX 2 сообщения в секунду на чат. */
   const replyLong = async (ctx: Context, text: string, extra?: ReplyExtra): Promise<void> => {
     const parts = splitText(text);
     for (const [i, part] of parts.entries()) {
@@ -201,6 +201,15 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       if (!last) await sleep(MESSAGE_PAUSE_MS);
     }
   };
+
+  /** Приветствие и следом путеводитель «Что умеет бот»: два сообщения с паузой под лимит MAX. */
+  async function sendWelcome(ctx: Context, name: string | null) {
+    await ctx.reply(T.welcomeText(name), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
+    await sleep(MESSAGE_PAUSE_MS);
+    await ctx.reply(T.guideText(), { attachments: [T.guideKeyboard()] });
+  }
+  const sendGuide = (ctx: Context) => ctx.reply(T.guideText(), { attachments: [T.guideKeyboard()] });
+  const sendHelp = (ctx: Context) => replyLong(ctx, T.helpText(), { attachments: [T.guideKeyboard()] });
 
   /** Запоминаем тексты своих должностей: по ключу «custom:<slug>» название не восстановить. */
   const rememberProfessionTexts = (uid: number, items: { key: string; text: string }[]) => {
@@ -228,15 +237,21 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     }
   }
 
-  /** Шаг ИНН пропущен: спрашиваем регион — без него рынок не с чем сравнивать. */
+  /** Шаг ИНН пропущен: спрашиваем регион – без него рынок не с чем сравнивать. */
   async function skipInn(ctx: Context, uid: number) {
     setState(uid, { step: 'region' });
-    await ctx.reply('Хорошо, без ИНН. Напишите регион, например «Санкт-Петербург» или «Татарстан».');
+    await ctx.reply(T.askRegionText('skip'), { attachments: [T.askRegionKeyboard()] });
+  }
+
+  /** Регион нужен до штата или сводки: спрашиваем его и запоминаем, что продолжить. */
+  async function askRegionFor(ctx: Context, uid: number, pending: 'staff' | 'digest') {
+    setState(uid, { step: 'region', pending });
+    await ctx.reply(T.askRegionText('first'), { attachments: [T.askRegionKeyboard()] });
   }
 
   async function handleInn(ctx: Context, uid: number, inn: string) {
     if (!isValidInn(inn)) {
-      await ctx.reply('Похоже, это не ИНН: нужно 10 или 12 цифр. Попробуйте ещё раз или пропустите этот шаг.', { attachments: [T.askInnKeyboard()] });
+      await ctx.reply('Похоже, это не ИНН: нужно 10 или 12 цифр.\n\nЧто дальше: напишите ИНН ещё раз или нажмите «Без ИНН, укажу регион».', { attachments: [T.askInnKeyboard()] });
       return;
     }
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
@@ -255,7 +270,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ctx.reply(T.profileText(profile, pack, region.name, inspectionsProfileLine(checksFor(uid))), { attachments: [T.profileKeyboard()] });
     } catch (err) {
       log.warn({ err: String(err) }, 'profile lookup failed');
-      await ctx.reply(err instanceof MarketError ? err.message : 'Не получилось найти бизнес в реестре МСП. Можно продолжить без ИНН — просто укажите регион.', { attachments: [T.askInnKeyboard()] });
+      await ctx.reply(`${err instanceof MarketError ? err.message : 'Не получилось найти бизнес в реестре МСП.'}\n\nЧто дальше: попробуйте ещё раз или нажмите «Без ИНН, укажу регион».`, { attachments: [T.askInnKeyboard()] });
     }
   }
 
@@ -274,27 +289,31 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const u = getUser(db, uid)!;
     const professionKey = override?.professionKey ?? st.professionKey;
     if (!professionKey) { await startFlow(ctx, uid); return; }
-    if (!override && !u.regionFnsCode && !u.inn) { setState(uid, { step: 'region' }); await ctx.reply('Сначала регион: напишите его название (например, «Санкт-Петербург») или укажите ИНН через /profile.'); return; }
+    if (!override && !u.regionFnsCode && !u.inn) { setState(uid, { step: 'region' }); await ctx.reply(T.askRegionText('first'), { attachments: [T.askRegionKeyboard()] }); return; }
     // Своя должность живёт только текстом в состоянии: без него ядро не знает, что запрашивать у источника.
     const profession = isCustomProfessionKey(professionKey) ? professionByKey(uid, professionKey) : null;
     if (isCustomProfessionKey(professionKey) && !profession) {
       setState(uid, { step: 'profession' });
-      await ctx.reply('Потерял название вашей должности — напишите её ещё раз или выберите из списка.', { attachments: [T.professionKeyboard(packFor(uid))] });
+      await ctx.reply('Потерял название вашей должности.\n\nЧто дальше: напишите её ещё раз или выберите из списка.', { attachments: [T.professionKeyboard(packFor(uid))] });
       return;
     }
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
-    const waiting = await ctx.reply('Считаю: запрашиваю вакансии на «Работе России» и сверяю работодателей с реестром МСП. Обычно это 10–40 секунд…');
+    const waiting = await ctx.reply('Считаю: запрашиваю объявления на «Работе России» и сверяю работодателей с реестром МСП. Обычно это 10–40 секунд, карточка появится в этом сообщении.');
     try {
       const result = await buildMarket(deps.market, { professionKey, profession, regionFnsCode: override ? override.regionFnsCode : (u.regionFnsCode ?? null), inn: override ? override.inn : (u.inn ?? null), offer, maxUserId: uid });
       setState(uid, { step: 'idle', lastCardId: result.cardId });
-      await ctx.api.editMessage(waiting.body.mid, { text: T.cardText(result), attachments: [T.cardKeyboard(result, deps.botUsername)] }).catch(async () => {
-        await ctx.reply(T.cardText(result), { attachments: [T.cardKeyboard(result, deps.botUsername)] });
+      const text = T.cardText(result);
+      const extra = { attachments: [T.cardKeyboard(result, deps.botUsername)] };
+      // Карточка длиннее лимита MAX не редактируется в одно сообщение: отправляем частями.
+      if (text.length > MAX_MESSAGE_LENGTH) { await replyLong(ctx, text, extra); return; }
+      await ctx.api.editMessage(waiting.body.mid, { text, ...extra }).catch(async () => {
+        await ctx.reply(text, extra);
       });
     } catch (err) {
-      const msg = err instanceof MarketError ? err.message : 'Не получилось посчитать рынок — что-то пошло не так.';
+      const msg = err instanceof MarketError ? err.message : 'Не получилось посчитать рынок: что-то пошло не так.';
       log.error({ err: String(err) }, 'market failed');
       setState(uid, { step: 'idle' });
-      await ctx.reply(`${msg} Нажмите «Повторить» или начните заново командой /stavka.`, { attachments: [Keyboard.inlineKeyboard([[Keyboard.button.callback('Повторить', `retry:${offer ?? 'none'}`)]])] });
+      await ctx.reply(`${msg}\n\nЧто дальше: нажмите «Повторить» или начните заново командой /stavka.`, { attachments: [Keyboard.inlineKeyboard([[Keyboard.button.callback('Повторить', `retry:${offer ?? 'none'}`)]])] });
     }
   }
 
@@ -302,27 +321,27 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
 
   /**
    * Должность текстом: сначала каталог пакета, затем подсказки из справочника ОКПДТР,
-   * и в конце — расчёт по названию пользователя (профессия «custom:<slug>»).
+   * и в конце – расчёт по названию пользователя (профессия «custom:<slug>»).
    * Возвращает false, если из текста не вышло ни одной должности.
-   * onlyKnown — для случайной реплики вне шага «должность»: без совпадений в справочниках
+   * onlyKnown – для случайной реплики вне шага «должность»: без совпадений в справочниках
    * не предлагаем считать рынок по чему попало.
    */
   async function handleProfessionText(ctx: Context, uid: number, raw: string, opts: { onlyKnown?: boolean } = {}): Promise<boolean> {
-    // Как в API: должность не длиннее 120 символов — иначе текст запроса к источнику и ответ бота вырастают до отказа MAX.
+    // Как в API: должность не длиннее 120 символов – иначе текст запроса к источнику и ответ бота вырастают до отказа MAX.
     const text = raw.slice(0, MAX_PROFESSION_TEXT).trim();
     if (!text) return false;
     const pack = packFor(uid);
     const known = findProfession(catalog, pack, text);
     if (known) {
       setState(uid, { step: 'salary', professionKey: known.key });
-      await ctx.reply(T.askSalaryText(known.title));
+      await ctx.reply(T.askSalaryText(known.title), { attachments: [T.askSalaryKeyboard()] });
       return true;
     }
     const own = resolveProfession(catalog, pack, text);
     if (!own) return false;
     if (!isCustomProfessionKey(own.key)) {
       setState(uid, { step: 'salary', professionKey: own.key });
-      await ctx.reply(T.askSalaryText(own.title));
+      await ctx.reply(T.askSalaryText(own.title), { attachments: [T.askSalaryKeyboard()] });
       return true;
     }
     const suggestions = suggestProfessions(catalog, text, 3);
@@ -337,22 +356,18 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
 
   async function startStaff(ctx: Context, uid: number) {
     const u = getUser(db, uid);
-    if (!u?.regionFnsCode && !u?.inn) {
-      setState(uid, { step: 'region', pending: 'staff' });
-      await ctx.reply('Сначала регион: напишите его название (например, «Санкт-Петербург») или укажите ИНН через /profile.');
-      return;
-    }
+    if (!u?.regionFnsCode && !u?.inn) { await askRegionFor(ctx, uid, 'staff'); return; }
     setState(uid, { step: 'staff', staffRows: [] });
-    await ctx.reply(T.staffIntroText(regionByFnsCode(catalog, u?.regionFnsCode ?? null)?.name ?? null));
+    await ctx.reply(T.staffIntroText(regionByFnsCode(catalog, u?.regionFnsCode ?? null)?.name ?? null), { attachments: [T.staffInputKeyboard()] });
   }
 
   /** Оценка собранного штата: рынки по каждой должности, текст сводки и кнопка в мини-приложение. */
   async function runStaff(ctx: Context, uid: number) {
     const rows = state(uid).staffRows ?? [];
-    if (!rows.length) { await ctx.reply('Список пуст: пришлите хотя бы одну строку вида «повар 60000».'); return; }
+    if (!rows.length) { await ctx.reply('Список пока пуст.\n\nЧто дальше: пришлите хотя бы одну строку вида «повар 60000», затем нажмите «Посчитать».', { attachments: [T.staffInputKeyboard()] }); return; }
     const u = getUser(db, uid)!;
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
-    await ctx.reply(`Считаю рынок по ${rows.length} ${pluralRu(rows.length, 'должности', 'должностям', 'должностям')}: запрашиваю вакансии и сверяю работодателей с реестром МСП. Это может занять пару минут…`);
+    await ctx.reply(`Считаю рынок по ${rows.length} ${pluralRu(rows.length, 'должности', 'должностям', 'должностям')}: запрашиваю объявления и сверяю работодателей с реестром МСП. Это может занять пару минут, результат придёт сюда.`);
     try {
       const result = await buildStaffAssessment(deps.market, {
         positions: rows.map((r, i) => ({ id: `p${i + 1}`, title: r.title, salary: r.salary })),
@@ -363,10 +378,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       setState(uid, { step: 'idle', staffRows: undefined });
       await replyLong(ctx, result.text, { attachments: [T.staffKeyboard(deps.botUsername)] });
     } catch (err) {
-      const msg = err instanceof MarketError ? err.message : 'Не получилось посчитать штат — что-то пошло не так.';
+      const msg = err instanceof MarketError ? err.message : 'Не получилось посчитать штат: что-то пошло не так.';
       log.error({ err: String(err) }, 'staff failed');
       setState(uid, { step: 'staff' });
-      await ctx.reply(`${msg} Список сохранён — напишите «готово», чтобы повторить.`);
+      await ctx.reply(`${msg}\n\nЧто дальше: список сохранён, нажмите «Посчитать», чтобы повторить.`, { attachments: [T.staffInputKeyboard()] });
     }
   }
 
@@ -388,7 +403,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
 
   async function runRegions(ctx: Context, uid: number, profession: Profession, regions: RegionInfo[], unknown: string[]) {
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
-    await ctx.reply(`Сравниваю «${profession.title}»: ${regions.map((r) => r.name).join(', ')}. Это может занять пару минут…`);
+    await ctx.reply(`Сравниваю «${profession.title}»: ${regions.map((r) => r.name).join(', ')}. Это может занять пару минут, результат придёт сюда.`);
     try {
       const st = state(uid);
       const card = st.lastCardId ? getCard<MarketResult>(db, st.lastCardId) : null;
@@ -402,13 +417,13 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         persist: false,
       });
       setState(uid, { step: 'idle' });
-      const tail = unknown.length ? `\n\nНе узнал регионы: ${unknown.join(', ')}.` : '';
+      const tail = unknown.length ? `\n\nНе узнал регионы: ${unknown.join(', ')}. Напишите их полным названием, например «Ленинградская область», и повторите: /regions.` : '';
       await replyLong(ctx, result.text + tail, { attachments: [T.regionsKeyboard(deps.botUsername)] });
     } catch (err) {
-      const msg = err instanceof MarketError ? err.message : 'Не получилось сравнить регионы — что-то пошло не так.';
+      const msg = err instanceof MarketError ? err.message : 'Не получилось сравнить регионы: что-то пошло не так.';
       log.error({ err: String(err) }, 'regions failed');
       setState(uid, { step: 'regions' });
-      await ctx.reply(`${msg} Пришлите список регионов ещё раз или начните заново: /regions.`);
+      await ctx.reply(`${msg}\n\nЧто дальше: пришлите список регионов ещё раз или начните заново: /regions.`);
     }
   }
 
@@ -417,23 +432,19 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   async function runDigest(ctx: Context, uid: number) {
     const u = getUser(db, uid);
     const region = regionByFnsCode(catalog, u?.regionFnsCode ?? null);
-    if (!region) {
-      setState(uid, { step: 'region', pending: 'digest' });
-      await ctx.reply('Сначала регион: напишите название субъекта РФ (например, «Татарстан») или укажите ИНН через /profile.');
-      return;
-    }
+    if (!region) { await askRegionFor(ctx, uid, 'digest'); return; }
     const pack = packFor(uid);
     const keys = pack.professions.slice(0, BOT_DIGEST_PROFESSIONS).map((p) => p.key);
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
-    await ctx.reply(`Собираю сводку по региону «${region.name}»: ${keys.length} ${pluralRu(keys.length, 'профессия', 'профессии', 'профессий')} пакета «${pack.title}». Это может занять пару минут…`);
+    await ctx.reply(`Собираю сводку по региону «${region.name}»: ${keys.length} ${pluralRu(keys.length, 'должность', 'должности', 'должностей')} отрасли «${pack.title}». Это может занять пару минут, результат придёт сюда.`);
     try {
       const result = await regionDigest(deps.market, region.fnsCode, keys, { persist: false });
       setState(uid, { step: 'idle' });
       await replyLong(ctx, result.text, { attachments: [T.digestKeyboard(deps.botUsername)] });
     } catch (err) {
-      const msg = err instanceof MarketError ? err.message : 'Не получилось собрать сводку — что-то пошло не так.';
+      const msg = err instanceof MarketError ? err.message : 'Не получилось собрать сводку: что-то пошло не так.';
       log.error({ err: String(err) }, 'digest failed');
-      await ctx.reply(`${msg} Попробуйте ещё раз: /digest.`);
+      await ctx.reply(`${msg}\n\nЧто дальше: попробуйте ещё раз через минуту: /digest.`);
     }
   }
 
@@ -459,7 +470,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   };
 
   async function runChecks(ctx: Context, uid: number) {
-    await replyLong(ctx, inspectionsText(checksFor(uid)));
+    await replyLong(ctx, inspectionsText(checksFor(uid)), { attachments: [T.checksKeyboard(deps.botUsername, Boolean(getUser(db, uid)?.inn))] });
   }
 
   /* ---------- отклики и найм ---------- */
@@ -467,6 +478,22 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   // Контекст найма структурно совпадает с контекстом отчёта: та же БД, конфиг и бот.
   const hiring: HiringContext = deps.report;
   const regionNameOf = (code: string) => catalog.regions.find((r) => r.code === code || r.fnsCode === code)?.name ?? code;
+
+  /** /vacancies: список с нумерацией, кнопки «N. Должность» открывают отклики в приложении. */
+  async function showVacancies(ctx: Context, uid: number) {
+    const items = listVacanciesByUser(db, uid);
+    await replyLong(ctx, T.vacanciesListText(items), { attachments: [T.vacanciesKeyboard(deps.botUsername, items)] });
+  }
+
+  /** /subs: подписки с нумерацией, кнопка «Отписаться: N» по каждой. */
+  async function showSubs(ctx: Context, uid: number) {
+    const subs = listUserSubscriptions(db, uid);
+    const items = subs.map((s) => ({
+      id: s.id,
+      title: `${catalog.professions.find((p) => p.key === s.professionKey)?.title ?? state(uid).professionTexts?.[s.professionKey] ?? s.professionKey}, ${regionNameOf(s.regionCode)}`,
+    }));
+    await replyLong(ctx, T.subsText(items), { attachments: [T.subsKeyboard(items)] });
+  }
 
   /** Публикация вакансии из карточки рынка: черновик текста + диплинк + QR. */
   async function publishVacancy(ctx: Context, uid: number, result: MarketResult) {
@@ -494,7 +521,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const image = await hiring.bot.api.uploadImage({ source: qrPath });
       attachments = [image.toJson(), keyboard];
     } catch (err) {
-      log.warn({ err: String(err), vacancyId: vacancy.id }, 'QR вакансии не загрузился — отправляем без картинки');
+      log.warn({ err: String(err), vacancyId: vacancy.id }, 'QR вакансии не загрузился – отправляем без картинки');
     }
     await ctx.reply(body, { attachments: attachments as never });
     return vacancy;
@@ -503,7 +530,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   /** Карточка вакансии кандидату, пришедшему по диплинку `vac_<id>`. */
   async function showVacancyToCandidate(ctx: Context, uid: number, vacancyId: string) {
     const vacancy = getVacancy(db, vacancyId);
-    if (!vacancy) { await ctx.reply('Эта вакансия не найдена — возможно, ссылка устарела. Посмотреть ставки по рынку: /stavka'); return; }
+    if (!vacancy) { await ctx.reply('Эта вакансия не найдена: возможно, ссылка устарела.\n\nЧто дальше: посмотрите, сколько платят по вашей должности в регионе: /stavka'); return; }
     setState(uid, { step: 'idle', vacancyId: vacancy.id, answers: {} });
     await replyLong(ctx, T.candidateVacancyText(vacancy, regionNameOf(vacancy.regionCode)), { attachments: [T.candidateVacancyKeyboard(vacancy)] });
   }
@@ -523,7 +550,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       score,
     });
     setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined });
-    await ctx.reply(T.responseSentText(Boolean(phone)));
+    await ctx.reply(T.responseSentText(Boolean(phone)), { attachments: [T.responseSentKeyboard()] });
     try {
       await sendToUser(hiring, vacancy.maxUserId, responseSummary({ ...response, answers }, vacancy), {
         attachments: [Keyboard.inlineKeyboard([[inboxButton(deps.botUsername, vacancy.id)]])],
@@ -533,7 +560,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     }
   }
 
-  /** Вакансия, по которой кандидат сейчас отвечает; null — шаг устарел. */
+  /** Вакансия, по которой кандидат сейчас отвечает; null – шаг устарел. */
   function applyTarget(uid: number, vacancyId?: string): VacancyRow | null {
     const id = vacancyId ?? state(uid).vacancyId;
     if (!id) return null;
@@ -552,26 +579,26 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   }
 
   /**
-   * Карточка рынка из callback-кнопки. Как в API (ownsCard): чужой карточкой управлять нельзя — она видна
+   * Карточка рынка из callback-кнопки. Как в API (ownsCard): чужой карточкой управлять нельзя – она видна
    * другим в групповом чате и по ссылке /start card_<id>. У анонимных карточек (демо-режим браузера, прогрев кэша)
-   * автора нет: читать и получать PDF можно, публиковать вакансию и подписываться — нет.
+   * автора нет: читать и получать PDF можно, публиковать вакансию и подписываться – нет.
    */
   async function cardFor(ack: (n?: string) => Promise<unknown>, uid: number, cardId: string, access: 'read' | 'manage'): Promise<CardRow<MarketResult> | null> {
     const row = getCard<MarketResult>(db, cardId);
     if (!row) { await ack('Карточка не найдена'); return null; }
     if (row.maxUserId != null && row.maxUserId !== uid) { await ack('Карточка принадлежит другому пользователю'); return null; }
-    if (row.maxUserId == null && access === 'manage') { await ack('Это карточка демо-режима: посчитайте рынок по своему бизнесу — /stavka'); return null; }
+    if (row.maxUserId == null && access === 'manage') { await ack('Это карточка демо-режима: посчитайте рынок по своему бизнесу: /stavka'); return null; }
     return row;
   }
 
   async function sendCardById(ctx: Context, uid: number, cardId: string) {
     const row = getCard<MarketResult>(db, cardId);
-    if (!row) { await ctx.reply('Такой карточки нет — возможно, ссылка устарела. Начните заново: /stavka'); return; }
+    if (!row) { await ctx.reply('Такой карточки нет: возможно, ссылка устарела.\n\nЧто дальше: начните заново: /stavka'); return; }
     await ctx.reply(T.cardText(row.payload), { attachments: [T.cardKeyboard(row.payload, deps.botUsername)] });
     setState(uid, { lastCardId: cardId });
   }
 
-  /** Веб-клиент MAX иногда шлёт `bot_started` дважды за одно открытие ссылки — повтор с тем же payload в течение 90 с игнорируем. */
+  /** Веб-клиент MAX иногда шлёт `bot_started` дважды за одно открытие ссылки – повтор с тем же payload в течение 90 с игнорируем. */
   const recentStarts = new Map<string, number>();
   function isRepeatedStart(uid: number, payload: string | null | undefined): boolean {
     const key = `${uid}:${payload ?? ''}`;
@@ -589,11 +616,11 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (isRepeatedStart(u.maxUserId, payload)) return;
     if (payload && payload.startsWith('card_')) { await sendCardById(ctx, u.maxUserId, payload.slice(5)); return; }
     if (payload && payload.startsWith('vac_')) { await showVacancyToCandidate(ctx, u.maxUserId, payload.slice(4)); return; }
-    await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
+    await sendWelcome(ctx, u.name);
   });
 
   bot.on('bot_added', async (ctx) => {
-    await ctx.reply('Привет! Я «Кадровый радар». Напишите /stavka, чтобы узнать, сколько платят за нужную должность в вашем регионе.').catch(() => undefined);
+    await ctx.reply('Здравствуйте! Я «Кадровый радар»: подскажу, сколько платить сотрудникам.\n\nЧто дальше: напишите /stavka, чтобы узнать, сколько платят за нужную должность в вашем регионе, или /help, чтобы увидеть всё, что умею.').catch(() => undefined);
   });
 
   bot.on('message_callback', async (ctx) => {
@@ -604,6 +631,22 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const cbId = ctx.callback?.callback_id;
     const ack = (notification?: string) => (cbId ? ctx.api.answerOnCallback(cbId, notification ? ({ notification } as never) : {}).catch(() => undefined) : Promise.resolve());
 
+    if (payload === 'guide') { await ack(); await sendGuide(ctx); return; }
+    if (payload === 'help') { await ack(); await sendHelp(ctx); return; }
+    if (payload === 'vacancies') { await ack(); await showVacancies(ctx, uid); return; }
+    if (payload === 'subs') { await ack(); await showSubs(ctx, uid); return; }
+    if (payload === 'staff') { await ack(); await startStaff(ctx, uid); return; }
+    if (payload === 'regions') { await ack(); await startRegions(ctx, uid); return; }
+    if (payload === 'digest') { await ack(); await runDigest(ctx, uid); return; }
+    if (payload === 'checks') { await ack(); await runChecks(ctx, uid); return; }
+    if (payload === 'salary:none') { await ack(); await runMarket(ctx, uid, null); return; }
+    if (payload === 'staff:done') { await ack(); if (state(uid).step !== 'staff') { await startStaff(ctx, uid); return; } await runStaff(ctx, uid); return; }
+    if (payload === 'staff:cancel') {
+      await ack();
+      setState(uid, { step: 'idle', staffRows: undefined });
+      await ctx.reply('Отменил, список очищен.\n\nЧто дальше: вернуться к штату – /staff, проверить одну ставку – кнопка ниже.', { attachments: [T.guideKeyboard()] });
+      return;
+    }
     if (payload === 'inn:new') { await ack(); setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText(), { attachments: [T.askInnKeyboard()] }); return; }
     if (payload === 'inn:skip') { await ack(); await skipInn(ctx, uid); return; }
     if (payload === 'stavka') { await ack(); await startFlow(ctx, uid); return; }
@@ -612,7 +655,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ack();
       const demos = catalog.packs.filter((p) => p.demo);
       if (demos.length <= 1) { await runDemo(ctx, uid, demos[0]?.id); return; }
-      await ctx.reply('Примеры на реальных микропредприятиях из реестра МСП — это чужой бизнес, ваш профиль не меняется. Какой показать?', { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(T.packShortTitle(p), `demo:${p.id}`)]))] });
+      await ctx.reply(T.demoChoiceText(), { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(T.packShortTitle(p), `demo:${p.id}`)]))] });
       return;
     }
     if (payload.startsWith('demo:')) { await ack(); await runDemo(ctx, uid, payload.slice(5)); return; }
@@ -621,10 +664,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ack();
       const key = payload.slice(5);
       const prof = professionByKey(uid, key);
-      if (!prof) { await ctx.reply('Не нашёл такую должность. Выберите из списка или напишите текстом.'); return; }
+      if (!prof) { await ctx.reply('Не нашёл такую должность.\n\nЧто дальше: выберите из списка или напишите название текстом.', { attachments: [T.professionKeyboard(packFor(uid))] }); return; }
       rememberProfessionTexts(uid, [{ key: prof.key, text: prof.query }]);
       setState(uid, { step: 'salary', professionKey: prof.key });
-      await ctx.reply(T.askSalaryText(prof.title));
+      await ctx.reply(T.askSalaryText(prof.title), { attachments: [T.askSalaryKeyboard()] });
       return;
     }
     if (payload.startsWith('retry:')) {
@@ -642,9 +685,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const mid = ctx.messageId ?? `card:${cardId}`;
       const tally = castVote(db, mid, uid, kind);
       const opt = row.payload.card.options.find((o) => o.kind === kind);
-      const summary = row.payload.card.options.map((o) => `${T.OPTION_LABEL[o.kind] ?? o.kind} ${formatRub(o.value)} — ${tally.counts[o.kind] ?? 0}`).join(' · ');
       await ack(opt ? `Учёл ваш голос: ${formatRub(opt.value)}` : 'Голос учтён');
-      await ctx.reply(`Учёл ваш голос${opt ? `: ${T.OPTION_LABEL[opt.kind] ?? opt.kind} ${formatRub(opt.value)}` : ''}. Итог по «${row.payload.profession.title}»: ${summary}. Всего голосов: ${tally.total}.`);
+      await ctx.reply(T.voteText(row.payload.profession.title, opt ?? null, row.payload.card.options, tally.counts, tally.total));
       return;
     }
     if (payload.startsWith('pdf:')) {
@@ -654,10 +696,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ctx.api.sendAction(ctx.chatId!, 'sending_file').catch(() => undefined);
       try {
         const r = await sendReportToChat(deps.report, row.payload, uid, ctx.chatId!);
-        if (r.reused) await ctx.reply('Отчёт по этой карточке уже есть в чате выше (отправлен недавно). Переслать его можно из радара — «Поделиться в MAX».');
+        if (r.reused) await ctx.reply('Отчёт по этой карточке уже есть в чате выше, отправлен недавно.\n\nЧто дальше: переслать его партнёру можно из приложения, кнопка «Поделиться в MAX».');
       } catch (err) {
         log.error({ err: String(err) }, 'report failed');
-        await ctx.reply('Не удалось отправить отчёт. Попробуйте ещё раз через минуту.');
+        await ctx.reply('Не удалось отправить отчёт.\n\nЧто дальше: попробуйте ещё раз через минуту, кнопка «Прислать PDF-отчёт» под карточкой.');
       }
       return;
     }
@@ -667,7 +709,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const r = row.payload;
       upsertSubscription(db, { id: randomUUID(), maxUserId: uid, chatId: ctx.chatId!, packId: r.pack.id, professionKey: r.profession.key, regionCode: r.region.code, offer: r.card.offer?.value ?? null, lastMedian: r.card.stats?.median ?? null });
       await ack('Подписка оформлена');
-      await ctx.reply(`Буду раз в неделю пересчитывать рынок «${r.profession.title}, ${r.region.name}» и писать, если медиана сдвинется больше чем на 5 %. Отписаться: /subs`);
+      await ctx.reply(T.subscribedText(r.profession.title, r.region.name));
       return;
     }
     if (payload.startsWith('unsub:')) {
@@ -684,7 +726,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         await publishVacancy(ctx, uid, row.payload);
       } catch (err) {
         log.error({ err: String(err), cardId }, 'publish vacancy failed');
-        await ctx.reply('Не удалось опубликовать вакансию. Попробуйте ещё раз через минуту.');
+        await ctx.reply('Не удалось опубликовать вакансию.\n\nЧто дальше: попробуйте ещё раз через минуту, кнопка «Опубликовать» под карточкой.');
       }
       return;
     }
@@ -693,7 +735,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const closed = closeVacancy(db, vacancyId, uid);
       if (!closed) { await ack('Вакансия не найдена или она не ваша'); return; }
       await ack('Вакансия закрыта');
-      await ctx.reply(`Вакансия «${closed.title}» закрыта. Новые отклики по ссылке приниматься не будут.`);
+      await ctx.reply(`Вакансия «${closed.title}» закрыта. Новые отклики по ссылке приниматься не будут, кандидатам без ответа я сообщил.\n\nЧто дальше: список вакансий и откликов – /vacancies, новая вакансия – /stavka.`);
       for (const r of listResponsesByVacancy(db, vacancyId)) {
         if (r.status === 'hired' || r.status === 'rejected') continue;
         await sendToUser(hiring, r.candidateUserId, `Вакансия «${closed.title}» закрыта. Спасибо за отклик!`).catch(() => undefined);
@@ -703,12 +745,12 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (payload.startsWith('apply:')) {
       const vacancy = applyTarget(uid, payload.slice(6));
       if (!vacancy) { await ack('Вакансия закрыта или не найдена'); return; }
-      if (vacancy.maxUserId === uid) { await ack(); await ctx.reply('Это ваша вакансия — отклики придут в мини-приложение, раздел «Вакансии и отклики».'); return; }
+      if (vacancy.maxUserId === uid) { await ack(); await ctx.reply('Это ваша вакансия: отклики придут сюда и в приложение, раздел «Вакансии и отклики».', { attachments: [Keyboard.inlineKeyboard([[inboxButton(deps.botUsername, vacancy.id)]])] }); return; }
       const existing = findResponseByCandidate(db, vacancy.id, uid);
       if (existing) {
         await ack('Вы уже откликнулись');
         const label = existing.status === 'invited' ? 'вас пригласили на собеседование' : existing.status === 'hired' ? 'вас приняли' : existing.status === 'rejected' ? 'работодатель отказал' : 'работодатель ещё смотрит отклики';
-        await ctx.reply(`Ваш отклик на «${vacancy.title}» уже отправлен — ${label}. Статус придёт сюда.`);
+        await ctx.reply(`Ваш отклик на «${vacancy.title}» уже отправлен: ${label}.\n\nЧто дальше: ждите ответа здесь, в этом чате.`);
         return;
       }
       await ack();
@@ -733,7 +775,20 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       if (!(await applyInProgress(ack, uid, vacancy))) return;
       await ack(value === 'yes' ? 'Готов' : 'Не готов');
       setState(uid, { step: 'apply_salary', vacancyId: vacancy.id, answers: { ...state(uid).answers, schedule: value === 'yes' } });
-      await ctx.reply(T.askSalaryExpectationText(vacancy));
+      await ctx.reply(T.askSalaryExpectationText(vacancy), { attachments: [T.salaryExpectationKeyboard(vacancy.id)] });
+      return;
+    }
+    if (payload.startsWith('expsal:')) {
+      // Ожидания «как в вакансии» кнопкой: то же, что написать это словами.
+      const [, , vacancyId] = payload.split(':');
+      const vacancy = applyTarget(uid, vacancyId);
+      if (!vacancy) { await ack('Вакансия закрыта или не найдена'); return; }
+      if (!(await applyInProgress(ack, uid, vacancy))) return;
+      const a = state(uid).answers ?? {};
+      if (a.experience === undefined || a.schedule === undefined) { await ack('Начните отклик заново'); return; }
+      await ack('Как в вакансии');
+      setState(uid, { step: 'apply_phone', vacancyId: vacancy.id, answers: { ...a, expectedSalary: null } });
+      await ctx.reply(T.askPhoneText, { attachments: [T.phoneKeyboard(vacancy.id)] });
       return;
     }
     if (payload.startsWith('nophone:')) {
@@ -754,7 +809,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const pack = catalog.packs.find((p) => p.id === r.pack.id)!;
       const salary = r.card.options.find((o) => o.kind === 'median')?.value ?? r.card.offer?.value ?? r.card.stats?.median ?? 0;
       const text = buildVacancyDraft({ card: r.card, profession: r.profession, pack, salary, companyName: r.profile?.name ?? null, cityName: r.region.name });
-      await ctx.reply(`Черновик вакансии (собран из частых формулировок рынка, ставка — медиана):\n\n${text}`);
+      await replyLong(ctx, T.draftText(text), { attachments: [T.draftKeyboard(r, deps.botUsername)] });
       return;
     }
     await ack();
@@ -762,8 +817,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
 
   async function runDemo(ctx: Context, uid: number, packId?: string) {
     const pack = (packId ? catalog.packs.find((p) => p.id === packId && p.demo) : null) ?? catalog.packs.find((p) => p.demo) ?? null;
-    if (!pack?.demo) { await ctx.reply('Демо-пример не настроен.'); return; }
-    await ctx.reply(`Пример: ${pack.demo.note ?? pack.demo.inn}. Должность — «${pack.professions.find((p) => p.key === pack.demo!.profession)?.title}», ставка ${formatRub(pack.demo.salary)}. Ваш собственный профиль не меняется.`);
+    if (!pack?.demo) { await ctx.reply('Готовый пример не настроен.\n\nЧто дальше: проверьте ставку по своему бизнесу: /stavka'); return; }
+    await ctx.reply(T.demoIntroText(pack.demo.note ?? pack.demo.inn, pack.professions.find((p) => p.key === pack.demo!.profession)?.title ?? pack.demo.profession, pack.demo.salary));
     await runMarket(ctx, uid, pack.demo.salary, { inn: pack.demo.inn, regionFnsCode: pack.region?.fnsCode ?? null, professionKey: pack.demo.profession });
   }
 
@@ -773,18 +828,18 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const vacancy = applyTarget(uid);
     const a = st.answers ?? {};
     if (!vacancy || a.experience === undefined || a.schedule === undefined) {
-      await ctx.reply('Спасибо! Сейчас номер не нужен — отклик не начат или вакансия уже закрыта. Открыть вакансию можно по ссылке работодателя.');
+      await ctx.reply('Спасибо! Сейчас номер не нужен: отклик не начат или вакансия уже закрыта.\n\nЧто дальше: откройте вакансию по ссылке работодателя и нажмите «Откликнуться».');
       return;
     }
-    // Пересланный из адресной книги чужой контакт приходит без vcf_info — это не номер кандидата.
+    // Пересланный из адресной книги чужой контакт приходит без vcf_info – это не номер кандидата.
     const vcf = payload.vcf_info ?? '';
     if (!vcf) {
-      await ctx.reply('Нужна кнопка «Поделиться номером» — или «Без номера».', { attachments: [T.phoneKeyboard(vacancy.id)] });
+      await ctx.reply('Это чужой контакт из адресной книги, а нужен ваш номер.\n\nЧто дальше: нажмите «Поделиться номером» или «Без номера».', { attachments: [T.phoneKeyboard(vacancy.id)] });
       return;
     }
     const verified = verifyContactSignature(deps.market.config.botToken ?? '', vcf, payload.hash);
     const phone = phoneFromVcf(vcf) ?? ctx.contactInfo?.tel ?? null;
-    if (!verified) log.warn({ uid, vacancyId: vacancy.id }, 'подпись контакта не сошлась — сохраняем номер как непроверенный');
+    if (!verified) log.warn({ uid, vacancyId: vacancy.id }, 'подпись контакта не сошлась – сохраняем номер как непроверенный');
     await finishResponse(ctx, uid, vacancy, { experience: a.experience, schedule: a.schedule, expectedSalary: a.expectedSalary ?? null }, phone, verified);
   }
 
@@ -801,20 +856,15 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const arg = text.slice(text.indexOf('start') + 5).trim();
       if (arg.startsWith('vac_')) { await showVacancyToCandidate(ctx, uid, arg.slice(4)); return; }
       if (arg.startsWith('card_')) { await sendCardById(ctx, uid, arg.slice(5)); return; }
-      await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
+      await sendWelcome(ctx, u.name);
       return;
     }
-    if (cmd === 'vacancies') {
-      const items = listVacanciesByUser(db, uid);
-      const rows = items.slice(0, 8).map((v) => [inboxButton(deps.botUsername, v.id, `Отклики: ${v.title} (${v.responses})`.slice(0, 60))]);
-      await replyLong(ctx, T.vacanciesListText(items), rows.length ? { attachments: [Keyboard.inlineKeyboard(rows)] } : undefined);
-      return;
-    }
-    if (cmd === 'help') { await ctx.reply(T.helpText()); return; }
+    if (cmd === 'vacancies') { await showVacancies(ctx, uid); return; }
+    if (cmd === 'help') { await sendHelp(ctx); return; }
     if (cmd === 'demo') {
       const demos = catalog.packs.filter((p) => p.demo);
       if (demos.length <= 1) { await runDemo(ctx, uid, demos[0]?.id); return; }
-      await ctx.reply('Примеры на реальных микропредприятиях из реестра МСП — это чужой бизнес, ваш профиль не меняется. Какой показать?', { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(T.packShortTitle(p), `demo:${p.id}`)]))] });
+      await ctx.reply(T.demoChoiceText(), { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(T.packShortTitle(p), `demo:${p.id}`)]))] });
       return;
     }
     if (cmd === 'profile') { setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText(), { attachments: [T.askInnKeyboard()] }); return; }
@@ -823,13 +873,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (cmd === 'regions') { await startRegions(ctx, uid); return; }
     if (cmd === 'digest') { await runDigest(ctx, uid); return; }
     if (cmd === 'checks') { await runChecks(ctx, uid); return; }
-    if (cmd === 'subs') {
-      const subs = listUserSubscriptions(db, uid);
-      if (!subs.length) { await ctx.reply('Подписок пока нет. Их можно оформить из карточки рынка — кнопка «Следить за рынком».'); return; }
-      const rows = subs.map((s) => [Keyboard.button.callback(`Отписаться: ${catalog.professions.find((p) => p.key === s.professionKey)?.title ?? state(uid).professionTexts?.[s.professionKey] ?? s.professionKey}`.slice(0, 60), `unsub:${s.id}`)]);
-      await ctx.reply(`Ваши подписки (${subs.length}): раз в неделю сравниваю медиану и пишу при сдвиге > 5 %.`, { attachments: [Keyboard.inlineKeyboard(rows)] });
-      return;
-    }
+    if (cmd === 'subs') { await showSubs(ctx, uid); return; }
 
     const st = state(uid);
     switch (st.step) {
@@ -840,25 +884,25 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       }
       case 'region': {
         const region = findRegion(catalog, text);
-        if (!region) { await ctx.reply('Не узнал регион. Напишите название субъекта РФ, например «Московская область».'); return; }
+        if (!region) { await ctx.reply('Не узнал регион.\n\nЧто дальше: напишите название региона полностью, например «Московская область» или «Республика Татарстан».', { attachments: [T.askRegionKeyboard()] }); return; }
         updateUser(db, uid, { regionFnsCode: region.fnsCode });
         const pending = st.pending;
         setState(uid, { step: 'profession', pending: undefined });
         if (pending === 'staff') { await startStaff(ctx, uid); return; }
         if (pending === 'digest') { await runDigest(ctx, uid); return; }
         const pack = packFor(uid);
-        await ctx.reply(`Регион: ${region.name}. ${T.askProfessionText(pack)}`, { attachments: [T.professionKeyboard(pack)] });
+        await ctx.reply(`Регион: ${region.name}. Шаг 1 из 3 пройден.\n\n${T.askProfessionText(pack)}`, { attachments: [T.professionKeyboard(pack)] });
         return;
       }
       case 'profession': {
-        if (/^\d[\d\s]{3,8}$/.test(text)) { await ctx.reply('Это похоже на ставку. Сначала напишите должность (например, «повар»), ставку спрошу следующим шагом.'); return; }
+        if (/^\d[\d\s]{3,8}$/.test(text)) { await ctx.reply('Это похоже на ставку, а сейчас шаг 2 из 3: должность.\n\nЧто дальше: напишите должность, например «повар», ставку спрошу следующим шагом.', { attachments: [T.professionKeyboard(packFor(uid))] }); return; }
         if (await handleProfessionText(ctx, uid, text)) return;
-        await ctx.reply('Не понял должность. Выберите кнопкой или напишите название, например «повар», «продавец», «сварщик».', { attachments: [T.professionKeyboard(packFor(uid))] });
+        await ctx.reply('Не понял должность.\n\nЧто дальше: выберите кнопкой или напишите название, например «повар», «продавец», «сварщик».', { attachments: [T.professionKeyboard(packFor(uid))] });
         return;
       }
       case 'staff': {
         const t = normalizeText(text).replace(/[.!…]+$/u, '');
-        if (/^(отмена|стоп|хватит)$/.test(t)) { setState(uid, { step: 'idle', staffRows: undefined }); await ctx.reply('Отменил. Вернуться к штату — /staff.'); return; }
+        if (/^(отмена|стоп|хватит|отменить)$/.test(t)) { setState(uid, { step: 'idle', staffRows: undefined }); await ctx.reply('Отменил, список очищен.\n\nЧто дальше: вернуться к штату – /staff, проверить одну ставку – кнопка ниже.', { attachments: [T.guideKeyboard()] }); return; }
         if (/^(готово|готов|все|посчитать|оценить|конец)$/.test(t)) { await runStaff(ctx, uid); return; }
         const rows = [...(st.staffRows ?? [])];
         const skipped: string[] = [];
@@ -872,8 +916,9 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
           added += 1;
         }
         setState(uid, { step: 'staff', staffRows: rows });
-        if (!added) { await ctx.reply('Не понял строку. Нужен формат «должность ставка», например «повар 60000». Когда закончите — напишите «готово».'); return; }
-        await ctx.reply(T.staffAddedText(added, rows.length, skipped) + (rows.length >= MAX_STAFF_POSITIONS ? `\nЭто максимум за раз (${MAX_STAFF_POSITIONS} строк) — считаю.` : ''));
+        if (!added) { await ctx.reply('Не понял строку. Нужен формат «должность ставка», например «повар 60000».\n\nЧто дальше: пришлите строку ещё раз; когда закончите, нажмите «Посчитать».', { attachments: [T.staffInputKeyboard()] }); return; }
+        const full = rows.length >= MAX_STAFF_POSITIONS;
+        await ctx.reply(T.staffAddedText(added, rows.length, skipped) + (full ? `\nЭто максимум за раз (${MAX_STAFF_POSITIONS} строк), считаю.` : ''), full ? undefined : { attachments: [T.staffInputKeyboard()] });
         if (rows.length >= MAX_STAFF_POSITIONS) { await sleep(MESSAGE_PAUSE_MS); await runStaff(ctx, uid); }
         return;
       }
@@ -881,7 +926,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         const pack = packFor(uid);
         const query = text.slice(0, MAX_PROFESSION_TEXT).trim();
         const prof = findProfession(catalog, pack, query) ?? resolveProfession(catalog, pack, query);
-        if (!prof) { await ctx.reply('Не понял должность. Напишите название, например «повар».'); return; }
+        if (!prof) { await ctx.reply('Не понял должность.\n\nЧто дальше: напишите название, например «повар».'); return; }
         rememberProfessionTexts(uid, [{ key: prof.key, text: prof.query }]);
         setState(uid, { step: 'regions', regionsProfessionKey: prof.key });
         await ctx.reply(T.askRegionsText(prof.title, BOT_MAX_REGIONS));
@@ -891,46 +936,46 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         const profession = st.regionsProfessionKey ? professionByKey(uid, st.regionsProfessionKey) : null;
         if (!profession) { setState(uid, { step: 'regions_prof' }); await ctx.reply(T.askRegionsProfessionText); return; }
         const { regions, unknown } = parseRegionList(catalog, text, BOT_MAX_REGIONS);
-        if (!regions.length) { await ctx.reply('Не узнал ни одного региона. Напишите их через запятую, например «СПб, Татарстан, Москва».'); return; }
+        if (!regions.length) { await ctx.reply('Не узнал ни одного региона.\n\nЧто дальше: напишите их через запятую, например «СПб, Татарстан, Москва».'); return; }
         await runRegions(ctx, uid, profession, regions, unknown);
         return;
       }
       case 'salary': {
         const s = parseSalary(text);
-        if (s === null) { await ctx.reply('Не понял сумму. Напишите число в рублях в месяц, например 45000, или «нет».'); return; }
+        if (s === null) { await ctx.reply('Не понял сумму.\n\nЧто дальше: напишите число в рублях в месяц, например 45000, или нажмите «Пока без ставки».', { attachments: [T.askSalaryKeyboard()] }); return; }
         await runMarket(ctx, uid, s === 'none' ? null : s);
         return;
       }
       case 'apply_exp':
       case 'apply_schedule': {
         const vacancy = applyTarget(uid);
-        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
+        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.\n\nЧто дальше: посмотрите, сколько платят по вашей должности: /stavka'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
         if (st.step === 'apply_exp') await ctx.reply(T.askExperienceText, { attachments: [T.experienceKeyboard(vacancy.id)] });
         else await ctx.reply(T.askScheduleText(vacancy), { attachments: [T.scheduleKeyboard(vacancy.id)] });
         return;
       }
       case 'apply_salary': {
         const vacancy = applyTarget(uid);
-        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
+        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.\n\nЧто дальше: посмотрите, сколько платят по вашей должности: /stavka'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
         const asInVacancy = /^(как в вакансии|как в вакансии\.|как указано|любая|не важно|неважно)$/.test(normalizeText(text));
         const s = asInVacancy ? 'none' : parseSalary(text);
-        if (s === null) { await ctx.reply('Не понял сумму. Напишите число в рублях в месяц, например 60000, или «как в вакансии».'); return; }
+        if (s === null) { await ctx.reply('Не понял сумму.\n\nЧто дальше: напишите число в рублях в месяц, например 60000, или нажмите «Как в вакансии».', { attachments: [T.salaryExpectationKeyboard(vacancy.id)] }); return; }
         setState(uid, { step: 'apply_phone', answers: { ...st.answers, expectedSalary: s === 'none' ? null : s } });
         await ctx.reply(T.askPhoneText, { attachments: [T.phoneKeyboard(vacancy.id)] });
         return;
       }
       case 'apply_phone': {
         const vacancy = applyTarget(uid);
-        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
-        await ctx.reply('Нажмите «Поделиться номером», чтобы работодатель мог позвонить, или «Без номера» — тогда он ответит сообщением в MAX.', { attachments: [T.phoneKeyboard(vacancy.id)] });
+        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.\n\nЧто дальше: посмотрите, сколько платят по вашей должности: /stavka'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
+        await ctx.reply('Остался последний шаг.\n\nЧто дальше: нажмите «Поделиться номером», чтобы работодатель мог позвонить, или «Без номера», тогда он ответит сообщением в MAX.', { attachments: [T.phoneKeyboard(vacancy.id)] });
         return;
       }
       default: {
         const inn = text.replace(/\D/g, '');
         if ((inn.length === 10 || inn.length === 12) && isValidInn(inn)) { await handleInn(ctx, uid, inn); return; }
-        // Регион уже известен — свободный текст считаем должностью (каталог, подсказки ОКПДТР или своя).
+        // Регион уже известен: свободный текст считаем должностью (каталог, подсказки ОКПДТР или своя).
         if (getUser(db, uid)?.regionFnsCode && await handleProfessionText(ctx, uid, text, { onlyKnown: true })) return;
-        await ctx.reply('Чтобы проверить ставку, нажмите /stavka. Справка: /help', { attachments: [T.welcomeKeyboard(deps.botUsername)] });
+        await ctx.reply(T.fallbackText(), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
       }
     }
   });

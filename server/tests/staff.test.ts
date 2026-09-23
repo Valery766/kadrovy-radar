@@ -92,9 +92,12 @@ describe('assessStaff on the real fixture (повар, Санкт-Петербу
   it('renders a Russian summary with the numbers of the report', () => {
     const text = staffText(report, 'Санкт-Петербург');
     expect(text).toContain('Санкт-Петербург');
-    expect(text).toContain('высокий риск'.slice(0, 6));
+    expect(text).toContain('высокий риск ухода');
     expect(text).toContain('Повар горячего цеха');
-    expect(text).toContain('Выход на медиану рынка стоит');
+    expect(text).toContain('фонд вырастет на');
+    expect(text).toContain('из 100 вакансий');
+    expect(text).toContain('Что дальше');
+    expect(text).not.toContain('—');
   });
 
   it('survives an empty market without breaking the summary', () => {

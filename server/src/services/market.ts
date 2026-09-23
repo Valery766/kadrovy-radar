@@ -36,7 +36,7 @@ export class MarketError extends Error {
 
 const hoursAgo = (iso: string) => (Date.now() - Date.parse(iso)) / 3_600_000;
 
-/** ИНН ИП — персональные данные: в журнал попадают только первые четыре цифры (код региона и инспекции). */
+/** ИНН ИП – персональные данные: в журнал попадают только первые четыре цифры (код региона и инспекции). */
 const maskInn = (inn: string) => `${inn.slice(0, 4)}…`;
 
 /** Профиль бизнеса по ИНН с кэшем. */
@@ -49,9 +49,9 @@ export async function getProfile(ctx: MarketContext, inn: string, opts: { forceR
     return profile;
   } catch (err) {
     if (cached) { ctx.log.warn({ inn: maskInn(inn), err: String(err) }, 'rmsp недоступен, отдаём кэш'); return cached.payload; }
-    // Техническая причина — только в лог: пользователю нужен понятный выход, а не «rmsp: HTTP 500».
+    // Техническая причина – только в лог: пользователю нужен понятный выход, а не «rmsp: HTTP 500».
     ctx.log.warn({ inn: maskInn(inn), err: String(err) }, 'rmsp недоступен и кэша нет');
-    throw new MarketError('source_unavailable', 'Реестр МСП ФНС сейчас не отвечает. Можно продолжить без ИНН — просто укажите регион.');
+    throw new MarketError('source_unavailable', 'Реестр МСП ФНС сейчас не отвечает. Можно продолжить без ИНН: просто укажите регион.');
   }
 }
 
@@ -107,7 +107,7 @@ async function enrichEmployers(ctx: MarketContext, vacancies: VacancyRecord[], l
         putBusinessProfile(ctx.db, inn, p, p.fetchedAt);
         profiles.set(inn, p);
       } catch (err) {
-        if (isSourceDown(err) && !sourceDown) { sourceDown = true; ctx.log.warn({ err: String(err), asked: inns.length }, 'rmsp не отвечает — обогащение остальных работодателей пропущено'); }
+        if (isSourceDown(err) && !sourceDown) { sourceDown = true; ctx.log.warn({ err: String(err), asked: inns.length }, 'rmsp не отвечает – обогащение остальных работодателей пропущено'); }
         if (cached) profiles.set(inn, cached.payload);
         else if (!isSourceDown(err)) profiles.set(inn, null);
       }
@@ -127,23 +127,23 @@ export interface MarketRequest {
   professionKey: string;
   /**
    * Готовое описание профессии (свободный ввод): имеет приоритет над professionKey.
-   * Собирается через resolveProfession() — там же формируется ключ «custom:<slug>».
+   * Собирается через resolveProfession() – там же формируется ключ «custom:<slug>».
    */
   profession?: Profession | null;
-  /** Код ФНС региона ("78"); если не задан — берётся из профиля. */
+  /** Код ФНС региона ("78"); если не задан – берётся из профиля. */
   regionFnsCode: string | null;
   inn: string | null;
   offer: number | null;
   maxUserId: number | null;
   forceRefresh?: boolean;
-  /** false — не сохранять карточку в БД (служебные расчёты: сравнение регионов, сводки). */
+  /** false – не сохранять карточку в БД (служебные расчёты: сравнение регионов, сводки). */
   persist?: boolean;
 }
 
 /**
  * Профессия запроса: явно переданный объект → профессия пакета → каталог.
  * Ключ вида «custom:<slug>» без объекта профессии означает, что вызывающая сторона
- * потеряла текст запроса — восстановить его из ключа нельзя (это хеш).
+ * потеряла текст запроса – восстановить его из ключа нельзя (это хеш).
  */
 export function resolveRequestProfession(ctx: MarketContext, pack: Pack, req: Pick<MarketRequest, 'professionKey' | 'profession'>): Profession {
   if (req.profession) return req.profession;
@@ -178,7 +178,7 @@ export async function buildMarket(ctx: MarketContext, req: MarketRequest): Promi
   const cardId = randomUUID();
   const createdAt = new Date().toISOString();
   const rmspNote = profile ? 'профиль бизнеса и категории работодателей' : 'категории работодателей';
-  const rmspGap = enrichment.sourceDown ? `; реестр не ответил вовремя — размер известен у ${enrichment.resolved} из ${enrichment.asked} работодателей` : '';
+  const rmspGap = enrichment.sourceDown ? `; реестр не ответил вовремя – размер известен у ${enrichment.resolved} из ${enrichment.asked} работодателей` : '';
   const sources: SourceBadge[] = [
     { ...SOURCES.trudvsem, fetchedAt: fetched.fetchedAt, note: `${fetched.total} вакансий по запросу «${profession.query}», загружено ${fetched.vacancies.length}` },
     { ...SOURCES.rmsp, fetchedAt: profile?.fetchedAt ?? createdAt, note: rmspNote + rmspGap },

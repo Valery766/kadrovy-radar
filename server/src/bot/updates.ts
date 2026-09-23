@@ -1,6 +1,6 @@
 /**
  * Приём событий MAX: вебхук (боевой режим) или long polling (локальная отладка).
- * Вебхук отвечает 200 сразу после проверки секрета и идемпотентности, обработка — асинхронно.
+ * Вебхук отвечает 200 сразу после проверки секрета и идемпотентности, обработка – асинхронно.
  */
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
@@ -23,7 +23,7 @@ export function updateKey(u: Update): string {
 
 /**
  * Сколько событий сейчас обрабатывается. Вебхук отвечает 200 до обработки, ключ события уже
- * записан — повторной доставки от MAX не будет, поэтому при остановке процесса эти задачи нужно дождаться.
+ * записан – повторной доставки от MAX не будет, поэтому при остановке процесса эти задачи нужно дождаться.
  */
 let inFlight = 0;
 
@@ -65,7 +65,7 @@ export function webhookPath(botToken: string): string {
 export interface WebhookOptions {
   path: string;
   secret: string | null;
-  /** false — бот ещё не подключился к MAX API (обработчики не зарегистрированы): отвечаем 503, MAX повторит доставку. */
+  /** false – бот ещё не подключился к MAX API (обработчики не зарегистрированы): отвечаем 503, MAX повторит доставку. */
   ready?: () => boolean;
 }
 
@@ -110,7 +110,7 @@ export function startPolling(deps: UpdatesDeps): { stop: () => void } {
   const loop = async () => {
     try {
       const subs = await deps.bot.api.getSubscriptions();
-      if (subs.length) { deps.log.warn({ urls: subs.map((s) => s.url) }, 'у бота активен вебхук — long polling недоступен; API и мини-приложение работают'); return; }
+      if (subs.length) { deps.log.warn({ urls: subs.map((s) => s.url) }, 'у бота активен вебхук – long polling недоступен; API и мини-приложение работают'); return; }
     } catch (err) { deps.log.warn({ err: String(err) }, 'getSubscriptions failed'); }
     while (!stopped) {
       try {

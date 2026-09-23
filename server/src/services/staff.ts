@@ -3,7 +3,7 @@
  * (кэш → «Работа России» → реестр МСП) и отдаёт оценку ядра: кто ниже рынка,
  * на сколько и сколько стоит подтянуть всех до медианы.
  */
-import { assessStaff, formatRub, pluralRu, type MarketCard, type Profession, type StaffPosition, type StaffReport } from '../core/index.js';
+import { assessStaff, formatPct, formatRub, pluralRu, sourceNote, type MarketCard, type Profession, type StaffPosition, type StaffReport } from '../core/index.js';
 import { regionByFnsCode, resolveProfession, selectPack, type RegionInfo } from '../packs/loader.js';
 import type { BusinessProfile } from '../integrations/rmsp.js';
 import { SOURCES } from '../integrations/index.js';
@@ -14,7 +14,7 @@ import { mapLimit } from './pool.js';
 const MARKET_CONCURRENCY = 3;
 
 export interface StaffPositionInput {
-  /** Идентификатор строки; если не задан — подставляется порядковый номер. */
+  /** Идентификатор строки; если не задан – подставляется порядковый номер. */
   id?: string;
   title: string;
   salary: number;
@@ -25,7 +25,7 @@ export interface StaffPositionInput {
 export interface StaffRequest {
   positions: StaffPositionInput[];
   inn: string | null;
-  /** Код ФНС региона; если не задан — берётся из профиля по ИНН. */
+  /** Код ФНС региона; если не задан – берётся из профиля по ИНН. */
   regionFnsCode: string | null;
   maxUserId: number | null;
   forceRefresh?: boolean;
@@ -34,7 +34,7 @@ export interface StaffRequest {
 export interface StaffMarketRef {
   professionKey: string;
   professionTitle: string;
-  /** Карточка рынка в БД — можно открыть в мини-приложении. */
+  /** Карточка рынка в БД – можно открыть в мини-приложении. */
   cardId: string | null;
   median: number | null;
   p25: number | null;
@@ -59,7 +59,7 @@ export interface StaffResult {
   createdAt: string;
 }
 
-/** Ограничение вежливости: одна карточка штата — не больше 20 строк. */
+/** Ограничение вежливости: одна карточка штата – не больше 20 строк. */
 export const MAX_STAFF_POSITIONS = 20;
 
 /** Оценка штата: рынки по каждой уникальной должности + расчёт ядра + текст для чата. */
@@ -132,24 +132,60 @@ export async function buildStaffAssessment(ctx: MarketContext, req: StaffRequest
     { ...SOURCES.rmsp, fetchedAt: profile?.fetchedAt ?? createdAt, note: profile ? 'профиль бизнеса и категории работодателей' : 'категории работодателей' },
   ];
 
-  return { report, markets, region, profile, pack: { id: pack.id, title: pack.title, version: pack.version }, sources, text: staffText(report, region.name), createdAt };
+  return { report, markets, region, profile, pack: { id: pack.id, title: pack.title, version: pack.version }, sources, text: staffText(report, region.name, fetchedAt), createdAt };
 }
 
-/** Текст сводки по штату для чата: детерминированный шаблон, без генеративных моделей. */
-export function staffText(report: StaffReport, regionName: string): string {
+/** Текст сводки по штату для чата: детерминированный шаблон простыми словами, без генеративных моделей. */
+export function staffText(report: StaffReport, regionName: string, fetchedAt: string | null = null): string {
   const { summary, positions } = report;
   const lines: string[] = [];
-  lines.push(`Штат и рынок, ${regionName}: ${summary.positions} ${pluralRu(summary.positions, 'должность', 'должности', 'должностей')}, оценено ${summary.assessed}.`);
+  lines.push(`👥 Ваш штат и рынок, ${regionName}: ${summary.positions} ${pluralRu(summary.positions, 'должность', 'должности', 'должностей')}, сравнил с рынком ${summary.assessed}.`);
   if (summary.assessed === 0) {
-    lines.push('Рынок ни по одной должности не набрал вакансий с зарплатой — уточните названия должностей или регион.');
+    lines.push('Рынок ни по одной должности не набрал объявлений с зарплатой, сравнивать не с чем.');
+    lines.push('');
+    lines.push('Что дальше: уточните названия должностей (например, «повар» вместо «повар 5 разряда») или проверьте регион: /profile. Затем повторите: /staff.');
     return lines.join('\n');
   }
-  lines.push(`Ниже 25-го перцентиля (высокий риск ухода): ${summary.highRisk}; ниже медианы: ${summary.mediumRisk}; в рынке: ${summary.inMarket}.`);
-  lines.push(`Фонд оплаты труда по внесённым ставкам — ${formatRub(summary.payroll)} в месяц. Выход на медиану рынка стоит ${formatRub(summary.costToMedian)} в месяц (+${summary.costShare} % к фонду).`);
+  const lagging = summary.highRisk + summary.mediumRisk;
+  lines.push('');
+  // 1. Вывод одной фразой.
+  if (lagging === 0) lines.push('Все сотрудники, по которым есть данные, получают как рынок или больше: переманить их сложнее.');
+  else lines.push(`${lagging} из ${summary.assessed} ${pluralRu(summary.assessed, 'сотрудника', 'сотрудников', 'сотрудников')} получают меньше рынка${summary.highRisk ? `, из них ${summary.highRisk} – заметно меньше: их проще всего переманить` : ''}.`);
+  lines.push('');
+  // 2. Числа с объяснением.
+  lines.push(`Заметно ниже рынка: ${summary.highRisk}. Получают меньше, чем в трёх четвертях вакансий региона (высокий риск ухода).`);
+  lines.push(`Немного ниже рынка: ${summary.mediumRisk}. Получают меньше обычной ставки рынка, но не в самом низу.`);
+  lines.push(`Как рынок или выше: ${summary.inMarket}.`);
+  lines.push(`Фонд оплаты по вашим ставкам: ${formatRub(summary.payroll)} в месяц.`);
+  lines.push(summary.costToMedian > 0
+    ? `Чтобы все получали обычную рыночную ставку, фонд вырастет на ${formatRub(summary.costToMedian)} в месяц (+${formatPct(summary.costShare)} к фонду).`
+    : 'Доплачивать до обычной рыночной ставки никому не нужно.');
   const risky = positions.filter((p) => p.risk === 'high' || p.risk === 'medium').slice(0, 5);
-  for (const p of risky) {
-    lines.push(`• ${p.title}: ${formatRub(p.salary)} против медианы ${formatRub(p.median ?? 0)} — разрыв ${formatRub(p.gapRub)} (${p.gapPct} %)${p.percentile != null ? `, ${p.percentile}-й перцентиль` : ''}.`);
+  if (risky.length) {
+    lines.push('');
+    lines.push('Кого проще переманить, сначала самые отстающие:');
+    for (const p of risky) {
+      const where = p.percentile != null ? ` Получает меньше, чем в ${100 - p.percentile} из 100 вакансий региона.` : '';
+      lines.push(`• ${p.title}: ${formatRub(p.salary)}. Обычная ставка рынка ${formatRub(p.median ?? 0)}, не хватает ${formatRub(p.gapRub)} (${formatPct(p.gapPct)}).${where}`);
+    }
   }
-  if (summary.unknown > 0) lines.push(`Без оценки: ${summary.unknown} — по этим должностям рынок не набрал данных.`);
+  if (summary.unknown > 0) lines.push(`Без оценки: ${summary.unknown}. По этим должностям объявлений с зарплатой не нашлось.`);
+  lines.push('');
+  // 3. Что это значит для вас.
+  const meaning = summary.highRisk > 0
+    ? 'сотрудники с высоким риском ухода получают меньше, чем большинство работодателей региона, конкурентам легко их переманить. Начните с них.'
+    : summary.mediumRisk > 0
+      ? 'отстающие получают немного меньше обычной ставки: риск ухода есть, но небольшой. Поднять их до рынка дешевле, чем искать замену.'
+      : 'ставки в рынке, удержание пока не требует денег. Следите за рынком раз в квартал.';
+  lines.push(`Что это значит для вас: ${meaning}`);
+  lines.push('');
+  // 4. Что дальше.
+  lines.push('Что дальше:');
+  lines.push('1) Откройте «Мой штат в приложении»: там весь список и график по каждой должности.');
+  lines.push('2) Решите, кому поднять ставку первым: начните с тех, кто заметно ниже рынка.');
+  lines.push('3) Проверьте одну должность подробнее: /stavka. Следить за рынком можно кнопкой под её карточкой.');
+  lines.push('');
+  // 5. Источник и дата.
+  lines.push(sourceNote(fetchedAt));
   return lines.join('\n');
 }

@@ -1,7 +1,7 @@
 /**
  * Драйвер Единого реестра субъектов МСП (ФНС России).
- * https://rmsp.nalog.ru/search-proc.json?query={ИНН}&mode=quick — без авторизации, ~30 мс.
- * Пустой data[] для ИНН — не ошибка: организация не является субъектом МСП.
+ * https://rmsp.nalog.ru/search-proc.json?query={ИНН}&mode=quick – без авторизации, ~30 мс.
+ * Пустой data[] для ИНН – не ошибка: организация не является субъектом МСП.
  */
 import type { EmployerProfile, MspCategory } from '../core/types.js';
 import { fetchJson } from './http.js';
@@ -80,7 +80,7 @@ export function mapRow(inn: string, row: RmspRow | undefined): BusinessProfile {
 }
 
 export interface FetchProfileOptions {
-  /** Таймаут одного запроса, мс (по умолчанию 15 с — для профиля пользователя). */
+  /** Таймаут одного запроса, мс (по умолчанию 15 с – для профиля пользователя). */
   timeoutMs?: number;
   /** Число повторов при 5xx/таймауте (по умолчанию 2). */
   retries?: number;

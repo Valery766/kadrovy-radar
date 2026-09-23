@@ -30,15 +30,15 @@ export interface Config {
   inspectionsMaxAgeDays: number;
   /**
    * Чьим заголовкам X-Forwarded-For верить при определении IP клиента (лимиты демо-режима):
-   * список адресов/CIDR через запятую, true — всем (небезопасно без прокси), false — никому.
+   * список адресов/CIDR через запятую, true – всем (небезопасно без прокси), false – никому.
    * По умолчанию только loopback: nginx на том же хосте.
    */
   trustProxy: string | boolean;
 }
 
 /**
- * Пустая строка — это «не задано», а не значение: `.env`, собранный из `.env.example`,
- * приносит в контейнер `ERKNM_YEAR=`, `HOST=` и т. п., и `Number('')` дал бы 0, а `resolve('')` — cwd.
+ * Пустая строка – это «не задано», а не значение: `.env`, собранный из `.env.example`,
+ * приносит в контейнер `ERKNM_YEAR=`, `HOST=` и т. п., и `Number('')` дал бы 0, а `resolve('')` – cwd.
  */
 function str(value: string | undefined): string | undefined {
   const v = value?.trim();
@@ -72,7 +72,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: num(env.PORT, 8080),
     host: str(env.HOST) ?? (str(env.DATA_DIR) === '/data' ? '0.0.0.0' : '127.0.0.1'),
     dataDir: resolve(str(env.DATA_DIR) ?? './data'),
-    // Без секрета (только режим none, локальные запуски) — случайный на время процесса: сессии живут до перезапуска, но подделать их нельзя.
+    // Без секрета (только режим none, локальные запуски) – случайный на время процесса: сессии живут до перезапуска, но подделать их нельзя.
     sessionSecret: weakSecret ? randomBytes(32).toString('hex') : sessionSecret,
     apiBase: str(env.MAX_API_BASE) ?? 'https://platform-api2.max.ru',
     logLevel: str(env.LOG_LEVEL) ?? 'info',
@@ -87,7 +87,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
-/** «true»/«false» → булево, иначе список адресов; пусто — только loopback. */
+/** «true»/«false» → булево, иначе список адресов; пусто – только loopback. */
 function trustProxyOf(value: string | undefined): string | boolean {
   if (value === undefined) return '127.0.0.1,::1';
   if (/^(true|1|yes)$/i.test(value)) return true;
