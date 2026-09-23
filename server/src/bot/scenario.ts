@@ -41,11 +41,14 @@ export function findRegion(catalog: PackCatalog, text: string) {
   if (!t) return null;
   const exact = catalog.regions.find((r) => normalizeText(r.name) === t);
   if (exact) return exact;
-  const starts = catalog.regions.filter((r) => normalizeText(r.name).includes(t) || t.includes(normalizeText(r.name).split(' ')[0]!));
-  if (starts.length === 1) return starts[0]!;
-  const alias: Record<string, string> = { спб: '78', питер: '78', петербург: '78', москва: '77', мск: '77', казань: '16', татарстан: '16', 'нижний': '52', екатеринбург: '66', новосибирск: '54' };
-  for (const [k, code] of Object.entries(alias)) if (t.includes(k)) return catalog.regions.find((r) => r.fnsCode === code) ?? null;
-  return starts[0] ?? null;
+  const alias: Record<string, string> = { спб: '78', питер: '78', петербург: '78', москва: '77', мск: '77', казань: '16', татарстан: '16', екатеринбург: '66', новосибирск: '54' };
+  for (const [k, code] of Object.entries(alias)) if (t === k || t.includes(k)) return catalog.regions.find((r) => r.fnsCode === code) ?? null;
+  if (t.length < 4) return null;
+  const STOP = new Set(['область', 'край', 'республика', 'округ', 'автономный', 'город']);
+  const words = t.split(' ').filter((w) => w.length >= 4 && !STOP.has(w));
+  if (!words.length) return null;
+  const hits = catalog.regions.filter((r) => { const n = normalizeText(r.name); return words.every((w) => n.includes(w)); });
+  return hits.length === 1 ? hits[0]! : null;
 }
 
 export function findProfession(catalog: PackCatalog, pack: Pack, text: string) {
@@ -82,7 +85,9 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const u = ctx.user;
     const uid = u?.user_id ?? 0;
     if (!uid) return null;
-    return upsertUser(db, { maxUserId: uid, name: u?.first_name ?? null, username: u?.username ?? null, chatId: ctx.chatId ?? null });
+    const msg = ctx.message as { recipient?: { chat_type?: string } } | undefined;
+    const isDialog = msg?.recipient?.chat_type ? msg.recipient.chat_type === 'dialog' : ctx.updateType === 'bot_started';
+    return upsertUser(db, { maxUserId: uid, name: u?.first_name ?? null, username: u?.username ?? null, chatId: isDialog ? (ctx.chatId ?? null) : null });
   };
 
   const packFor = (uid: number): Pack => {
@@ -129,14 +134,16 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     }
   }
 
-  async function runMarket(ctx: Context, uid: number, offer: number | null) {
+  async function runMarket(ctx: Context, uid: number, offer: number | null, override?: { inn: string | null; regionFnsCode: string | null; professionKey: string }) {
     const st = state(uid);
     const u = getUser(db, uid)!;
-    if (!st.professionKey) { await startFlow(ctx, uid); return; }
+    const professionKey = override?.professionKey ?? st.professionKey;
+    if (!professionKey) { await startFlow(ctx, uid); return; }
+    if (!override && !u.regionFnsCode && !u.inn) { setState(uid, { step: 'region' }); await ctx.reply('Сначала регион: напишите его название (например, «Санкт-Петербург») или укажите ИНН через /profile.'); return; }
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
-    const waiting = await ctx.reply('Считаю: запрашиваю вакансии на «Работе России» и сверяю работодателей с реестром МСП. Обычно это 10–30 секунд…');
+    const waiting = await ctx.reply('Считаю: запрашиваю вакансии на «Работе России» и сверяю работодателей с реестром МСП. Обычно это 10–40 секунд…');
     try {
-      const result = await buildMarket(deps.market, { professionKey: st.professionKey, regionFnsCode: u.regionFnsCode ?? null, inn: u.inn ?? null, offer, maxUserId: uid });
+      const result = await buildMarket(deps.market, { professionKey, regionFnsCode: override ? override.regionFnsCode : (u.regionFnsCode ?? null), inn: override ? override.inn : (u.inn ?? null), offer, maxUserId: uid });
       setState(uid, { step: 'idle', lastCardId: result.cardId });
       await ctx.api.editMessage(waiting.body.mid, { text: T.cardText(result), attachments: [T.cardKeyboard(result, deps.botUsername)] }).catch(async () => {
         await ctx.reply(T.cardText(result), { attachments: [T.cardKeyboard(result, deps.botUsername)] });
@@ -217,7 +224,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ack('Готовлю PDF…');
       await ctx.api.sendAction(ctx.chatId!, 'sending_file').catch(() => undefined);
       try {
-        await sendReportToChat(deps.report, row.payload, uid, ctx.chatId!);
+        const r = await sendReportToChat(deps.report, row.payload, uid, ctx.chatId!);
+        if (r.reused) await ctx.reply('Отчёт по этой карточке уже есть в чате выше (отправлен недавно). Переслать его можно из радара — «Поделиться в MAX».');
       } catch (err) {
         log.error({ err: String(err) }, 'report failed');
         await ctx.reply('Не удалось отправить отчёт. Попробуйте ещё раз через минуту.');
@@ -257,10 +265,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   async function runDemo(ctx: Context, uid: number, packId?: string) {
     const pack = (packId ? catalog.packs.find((p) => p.id === packId && p.demo) : null) ?? catalog.packs.find((p) => p.demo) ?? null;
     if (!pack?.demo) { await ctx.reply('Демо-пример не настроен.'); return; }
-    updateUser(db, uid, { inn: pack.demo.inn, regionFnsCode: pack.region?.fnsCode ?? undefined, packId: pack.id });
-    setState(uid, { step: 'salary', professionKey: pack.demo.profession });
-    await ctx.reply(`Пример: ${pack.demo.note ?? pack.demo.inn}. Должность — «${pack.professions.find((p) => p.key === pack.demo!.profession)?.title}», ставка ${formatRub(pack.demo.salary)}.`);
-    await runMarket(ctx, uid, pack.demo.salary);
+    await ctx.reply(`Пример: ${pack.demo.note ?? pack.demo.inn}. Должность — «${pack.professions.find((p) => p.key === pack.demo!.profession)?.title}», ставка ${formatRub(pack.demo.salary)}. Ваш собственный профиль не меняется.`);
+    await runMarket(ctx, uid, pack.demo.salary, { inn: pack.demo.inn, regionFnsCode: pack.region?.fnsCode ?? null, professionKey: pack.demo.profession });
   }
 
   bot.on('message_created', async (ctx) => {

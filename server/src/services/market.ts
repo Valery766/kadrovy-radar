@@ -59,9 +59,10 @@ async function getVacancies(ctx: MarketContext, regionCode: string, profession: 
   }
   try {
     const res = await trudvsem.fetchVacancies({ regionCode, text: profession.query, maxRecords: ctx.config.maxVacancyRecords, concurrency: 6 });
-    putVacancyCache(ctx.db, { cacheKey, regionCode, query: profession.query, total: res.total, payload: res.vacancies, fetchedAt: res.fetchedAt });
-    recordVacancySeen(ctx.db, regionCode, professionKey, res.vacancies.map((v) => ({ id: v.id, employerInn: v.employerInn, value: salaryValue(v) })), res.fetchedAt);
-    ctx.log.info({ regionCode, query: profession.query, total: res.total, records: res.vacancies.length, pages: res.pages }, 'trudvsem: выборка обновлена');
+    if (res.failedPages > 0) ctx.log.warn({ regionCode, query: profession.query, failedPages: res.failedPages, pages: res.pages }, 'trudvsem: часть страниц не загрузилась');
+    if (res.failedPages === 0 || !cached) putVacancyCache(ctx.db, { cacheKey, regionCode, query: profession.query, total: res.total, payload: res.vacancies, fetchedAt: res.fetchedAt });
+    if (res.failedPages === 0) recordVacancySeen(ctx.db, regionCode, professionKey, res.vacancies.map((v) => ({ id: v.id, employerInn: v.employerInn, value: salaryValue(v) })), res.fetchedAt);
+    ctx.log.info({ regionCode, query: profession.query, total: res.total, records: res.vacancies.length, pages: res.pages, failedPages: res.failedPages }, 'trudvsem: выборка обновлена');
     return { vacancies: res.vacancies, total: res.total, fetchedAt: res.fetchedAt, cacheHit: false };
   } catch (err) {
     if (cached) { ctx.log.warn({ cacheKey, err: String(err) }, 'trudvsem недоступен, отдаём устаревший кэш'); return { vacancies: cached.payload, total: cached.total, fetchedAt: cached.fetchedAt, cacheHit: true }; }

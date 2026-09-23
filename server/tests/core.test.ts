@@ -34,6 +34,7 @@ describe('stats', () => {
     expect(percentileOf([10, 20, 30, 40], 25)).toBe(50);
     expect(percentileOf([10, 20, 30, 40], 5)).toBe(0);
     expect(percentileOf([10, 20, 30, 40], 100)).toBe(100);
+    expect(percentileOf([10, 20, 20, 20, 30], 20)).toBe(50); // ставка равна медиане — середина, не «ниже»
   });
   it('histogram uses round bucket borders', () => {
     const h = histogram([40000, 45000, 60000, 70000, 90000, 120000]);
@@ -61,7 +62,7 @@ describe('computeMarket on real fixture (повар, Санкт-Петербур
   const card = computeMarket({
     vacancies, profession: povar, regionCode: '7800000000000', regionName: 'Санкт-Петербург',
     offer: 45000, thresholds, requirementPhrases: [
-      { key: 'medbook', label: 'медкнижка', patterns: ['медкниж', 'медицинск\\w* книж', 'санитарн\\w* книж'] },
+      { key: 'medbook', label: 'медкнижка', patterns: ['медкниж', 'медицинск[а-яё]* книж', 'санитарн[а-яё]* книж'] },
       { key: 'exp', label: 'опыт работы', patterns: ['опыт'] },
     ], userCategory: 1, now: new Date('2026-09-23'),
   });
@@ -81,6 +82,8 @@ describe('computeMarket on real fixture (повар, Санкт-Петербур
     expect(card.offer!.percentile).toBeGreaterThanOrEqual(0);
     expect(card.offer!.percentile).toBeLessThanOrEqual(100);
     expect(card.options.map((o) => o.kind)).toEqual(['keep', 'median', 'top']);
+    const high = computeMarket({ vacancies, profession: povar, regionCode: '7800000000000', regionName: 'Санкт-Петербург', offer: 150000, thresholds, requirementPhrases: [], userCategory: null, now: new Date('2026-09-23') });
+    expect(high.options.map((o) => o.kind)).toEqual(['keep']);
     expect(card.options[1]!.value % 1000).toBe(0);
     expect(card.options[2]!.value).toBeGreaterThan(card.options[1]!.value);
     expect(card.verdict).toContain('45 000 ₽');

@@ -41,7 +41,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
     for (const pack of deps.market.catalog.packs) {
       if (!pack.demo || !pack.region) continue;
       try {
-        await buildMarket(deps.market, { professionKey: pack.demo.profession, regionFnsCode: pack.region.fnsCode, inn: pack.demo.inn, offer: pack.demo.salary, maxUserId: null });
+        await buildMarket(deps.market, { professionKey: pack.demo.profession, regionFnsCode: pack.region.fnsCode, inn: pack.demo.inn, offer: pack.demo.salary, maxUserId: null, forceRefresh: true });
         deps.log.info({ pack: pack.id }, 'warm cache ok');
       } catch (err) { deps.log.warn({ pack: pack.id, err: String(err) }, 'warm cache failed'); }
     }

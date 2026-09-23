@@ -96,7 +96,7 @@ export function cardText(r: MarketResult): string {
 export function cardKeyboard(r: MarketResult, botUsername: string) {
   const rows: KeyboardRows = [];
   rows.push([openRadarButton(botUsername, r.cardId)]);
-  if (r.card.options.length) {
+  if (r.card.options.length > 1) {
     rows.push(r.card.options.map((o) => Keyboard.button.callback(`${o.kind === 'keep' ? 'Оставить' : o.kind === 'median' ? 'Медиана' : 'Топ-25 %'} ${Math.round(o.value / 1000)} т.`, `vote:${o.kind}:${r.cardId}`)));
   }
   rows.push([Keyboard.button.callback('PDF-отчёт', `pdf:${r.cardId}`), Keyboard.button.callback('Следить за рынком', `sub:${r.cardId}`)]);

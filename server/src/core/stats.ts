@@ -33,11 +33,12 @@ export function salaryStats(values: number[]): SalaryStats | null {
   };
 }
 
-/** Перцентиль значения: доля выборки строго ниже него, 0–100. */
+/** Перцентиль значения: доля выборки ниже него плюс половина равных (полуранг), 0–100. */
 export function percentileOf(values: number[], x: number): number {
   if (values.length === 0) return NaN;
-  const below = values.filter((v) => v < x).length;
-  return Math.round((100 * below) / values.length);
+  let below = 0; let equal = 0;
+  for (const v of values) { if (v < x) below += 1; else if (v === x) equal += 1; }
+  return Math.round((100 * (below + equal / 2)) / values.length);
 }
 
 /** Гистограмма с «круглыми» границами; ширина корзины подбирается под 6–8 корзин. */

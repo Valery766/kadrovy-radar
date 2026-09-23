@@ -122,7 +122,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (inn && !isValidInn(inn)) return reply.code(400).send({ error: 'inn_invalid', message: 'Некорректный ИНН' });
     try {
       const result = await buildMarket(deps.market, { professionKey, regionFnsCode: b.regionFnsCode ?? null, inn, offer, maxUserId: s.demo ? null : s.uid, forceRefresh: Boolean(b.forceRefresh) && !s.demo });
-      if (!s.demo) updateUser(db, s.uid, { inn: inn ?? undefined, regionFnsCode: result.region.fnsCode, packId: result.pack.id, state: { step: 'idle', professionKey, lastCardId: result.cardId } });
+      if (!s.demo) updateUser(db, s.uid, { regionFnsCode: result.region.fnsCode, packId: result.pack.id, state: { step: 'idle', professionKey, lastCardId: result.cardId } });
       return clientSummary(result);
     } catch (err) { return fail(reply, err); }
   });

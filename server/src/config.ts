@@ -32,15 +32,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const botToken = env.MAX_BOT_TOKEN?.trim() || null;
   if (mode !== 'none' && !botToken) throw new Error('MAX_BOT_TOKEN обязателен для MAX_UPDATES_MODE=webhook|polling');
   if (mode === 'webhook' && !publicUrl.startsWith('https://')) throw new Error('MAX_UPDATES_MODE=webhook требует PUBLIC_URL по https:// (порт 443)');
+  const sessionSecret = env.SESSION_SECRET?.trim() || '';
+  const weakSecret = !sessionSecret || sessionSecret.length < 16 || /change-me/i.test(sessionSecret);
+  if (mode !== 'none' && weakSecret) throw new Error('SESSION_SECRET обязателен в режимах webhook/polling: случайная строка не короче 16 символов (например, openssl rand -hex 32)');
+  if (mode === 'webhook' && !env.MAX_WEBHOOK_SECRET?.trim()) throw new Error('MAX_WEBHOOK_SECRET обязателен в режиме webhook');
   return {
     botToken,
     webhookSecret: env.MAX_WEBHOOK_SECRET?.trim() || null,
     updatesMode: mode,
     publicUrl,
     port: Number(env.PORT ?? 8080),
-    host: env.HOST ?? '0.0.0.0',
+    host: env.HOST ?? (env.DATA_DIR === '/data' ? '0.0.0.0' : '127.0.0.1'),
     dataDir: resolve(env.DATA_DIR ?? './data'),
-    sessionSecret: env.SESSION_SECRET?.trim() || 'dev-session-secret-change-me',
+    sessionSecret: weakSecret ? `dev-${(botToken ?? 'no-token').slice(0, 8)}-${mode}-only-for-local-runs` : sessionSecret,
     apiBase: env.MAX_API_BASE?.trim() || 'https://platform-api2.max.ru',
     logLevel: env.LOG_LEVEL ?? 'info',
     packsDir: resolve(env.PACKS_DIR ?? resolve(import.meta.dirname, '../../packs')),

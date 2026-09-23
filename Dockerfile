@@ -1,6 +1,6 @@
 # Сборка и запуск «Ставки» одним образом: мини-приложение (Vite) + сервер (Node 24, TypeScript).
 # Сборка укладывается в 5 минут без учёта загрузки базового образа (замер в README).
-FROM node:24-bookworm-slim@sha256:5cbc7caba8c2c0f0bca675d1b61b9f2857e1cf1853c6164ee9dd409501a936e7 AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY server/package.json server/
@@ -12,12 +12,13 @@ COPY packs packs
 RUN npm run build -w webapp && npm run build -w server \
  && npm prune --omit=dev --no-audit --no-fund
 
-FROM node:24-bookworm-slim@sha256:5cbc7caba8c2c0f0bca675d1b61b9f2857e1cf1853c6164ee9dd409501a936e7
+FROM node:24-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
 # Сертификаты Минцифры: без них platform-api2.max.ru не открывается с чистой машины.
 COPY server/certs/russian_trusted_root_ca.pem /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
 COPY server/certs/russian_trusted_sub_ca.pem  /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
+RUN chmod 644 /usr/local/share/ca-certificates/*.crt
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
  && update-ca-certificates && rm -rf /var/lib/apt/lists/*
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt

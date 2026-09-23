@@ -14,6 +14,9 @@ describe('bot helpers', () => {
     expect(findRegion(catalog, 'татарстан')?.fnsCode).toBe('16');
     expect(findRegion(catalog, 'Московская область')?.fnsCode).toBe('50');
     expect(findRegion(catalog, 'абракадабра')).toBeNull();
+    expect(findRegion(catalog, 'ок')).toBeNull();
+    expect(findRegion(catalog, 'область')).toBeNull();
+    expect(findRegion(catalog, 'Свердловская')?.fnsCode).toBe('66');
   });
   it('recognises professions from free text within the pack and catalog', () => {
     const pack = selectPack(catalog, { fnsRegionCode: '78', okved: '56.10' });

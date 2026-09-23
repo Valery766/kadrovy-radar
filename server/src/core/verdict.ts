@@ -45,12 +45,15 @@ export function buildVerdict(card: Omit<MarketCard, 'verdict'>, professionTitle:
     parts.push(`Среди работодателей вашего размера (${card.sameSize.label}) медиана — ${formatRub(card.sameSize.median)}.`);
   }
 
-  if (card.offer && card.offer.band !== 'above') {
+  if (card.offer && (card.offer.band === 'low' || card.offer.band === 'below_median')) {
     const median = card.options.find((o) => o.kind === 'median');
     const top = card.options.find((o) => o.kind === 'top');
     if (median && top) {
       parts.push(`При ${formatRub(median.value)} вы окажетесь в верхней половине рынка, при ${formatRub(top.value)} — в верхней четверти.`);
     }
+  } else if (card.offer && card.offer.band === 'market') {
+    const top = card.options.find((o) => o.kind === 'top');
+    if (top) parts.push(`Ставка в рынке; верхняя четверть начинается от ${formatRub(top.value)}.`);
   } else if (card.offer) {
     parts.push('Ставка уже конкурентна: дальше решают условия и скорость ответа кандидатам.');
   }

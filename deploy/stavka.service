@@ -11,6 +11,7 @@ User=user
 WorkingDirectory=/srv/stavka/current
 EnvironmentFile=/srv/stavka/.env
 Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
 Environment=NODE_EXTRA_CA_CERTS=/srv/stavka/current/server/certs/russian_trusted_bundle.pem
 ExecStart=/usr/bin/node /srv/stavka/current/server/dist/main.js
 Restart=always

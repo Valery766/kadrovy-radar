@@ -93,6 +93,8 @@ export interface FetchVacanciesResult {
   total: number;
   vacancies: VacancyRecord[];
   pages: number;
+  /** Страницы, которые не удалось загрузить (выборка неполная). */
+  failedPages: number;
   fetchedAt: string;
 }
 
@@ -118,9 +120,10 @@ export async function fetchVacancies(opts: FetchVacanciesOptions): Promise<Fetch
   const collected: RawVacancy[][] = [first.items];
   const remaining = Array.from({ length: pages - 1 }, (_, i) => i + 1);
   let done = 1;
+  let failedPages = 0;
   for (let i = 0; i < remaining.length; i += concurrency) {
     const batch = remaining.slice(i, i + concurrency);
-    const results = await Promise.all(batch.map((p) => fetcher(opts.regionCode, opts.text, p, limit).then((r) => r.items).catch(() => [])));
+    const results = await Promise.all(batch.map((p) => fetcher(opts.regionCode, opts.text, p, limit).then((r) => r.items).catch(() => { failedPages += 1; return []; })));
     collected.push(...results);
     done += batch.length;
     opts.onProgress?.(done, pages);
@@ -132,5 +135,5 @@ export async function fetchVacancies(opts: FetchVacanciesOptions): Promise<Fetch
     seen.add(raw.id);
     vacancies.push(mapVacancy(raw, opts.regionCode));
   }
-  return { total, vacancies, pages, fetchedAt: new Date().toISOString() };
+  return { total, vacancies, pages, failedPages, fetchedAt: new Date().toISOString() };
 }

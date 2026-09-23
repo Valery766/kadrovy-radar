@@ -113,10 +113,10 @@ function buildOptions(values: number[], offer: number | null, p50: number, p75: 
   if (offer != null) {
     opts.push({ kind: 'keep', value: offer, percentile: percentileOf(values, offer), label: 'Оставить как есть' });
   }
-  const m = Math.max(roundUpThousand(p50 + 1), offer != null ? roundUpThousand(offer + 1) : 0);
+  const m = roundUpThousand(p50 + 1);
   const t = Math.max(roundUpThousand(p75 + 1), m + 1000);
-  opts.push({ kind: 'median', value: m, percentile: percentileOf(values, m), label: 'Выйти на медиану' });
-  opts.push({ kind: 'top', value: t, percentile: percentileOf(values, t), label: 'В верхнюю четверть' });
+  if (offer == null || offer < m) opts.push({ kind: 'median', value: m, percentile: percentileOf(values, m), label: 'Выйти на медиану' });
+  if (offer == null || offer < t) opts.push({ kind: 'top', value: t, percentile: percentileOf(values, t), label: 'В верхнюю четверть' });
   return opts;
 }
 
