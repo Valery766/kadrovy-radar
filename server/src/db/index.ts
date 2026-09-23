@@ -277,7 +277,7 @@ export function listActiveSubscriptions(db: Db): SubscriptionRow[] {
   return (db.prepare('SELECT * FROM subscriptions WHERE active = 1').all() as Record<string, unknown>[]).map(mapSub);
 }
 export function listUserSubscriptions(db: Db, maxUserId: number): SubscriptionRow[] {
-  return (db.prepare('SELECT * FROM subscriptions WHERE active = 1 AND max_user_id = ?').all(maxUserId) as Record<string, unknown>[]).map(mapSub);
+  return (db.prepare('SELECT * FROM subscriptions WHERE active = 1 AND max_user_id = ? ORDER BY created_at DESC LIMIT 20').all(maxUserId) as Record<string, unknown>[]).map(mapSub);
 }
 export function deactivateSubscription(db: Db, id: string, maxUserId: number): boolean {
   const r = db.prepare('UPDATE subscriptions SET active = 0 WHERE id = ? AND max_user_id = ?').run(id, maxUserId);

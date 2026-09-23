@@ -4,7 +4,8 @@
  */
 import type { Bot } from '@maxhub/max-bot-api';
 import type { Db } from '../db/index.js';
-import { listActiveSubscriptions, pruneUpdatesSeen, touchSubscription } from '../db/index.js';
+import { getUser, listActiveSubscriptions, pruneUpdatesSeen, touchSubscription } from '../db/index.js';
+import { isCustomProfessionKey, resolveProfession, selectPack } from '../packs/loader.js';
 import { buildMarket, type MarketContext } from '../services/market.js';
 import { formatRub } from '../core/index.js';
 import { ensureSubscription, type UpdatesDeps } from '../bot/updates.js';
@@ -58,7 +59,15 @@ export function startScheduler(deps: SchedulerDeps): () => void {
       if (now - last < 7 * 86400_000) continue;
       try {
         const region = deps.market.catalog.regions.find((r) => r.code === s.regionCode);
-        const result = await buildMarket(deps.market, { professionKey: s.professionKey, regionFnsCode: region?.fnsCode ?? null, inn: null, offer: s.offer, maxUserId: s.maxUserId, forceRefresh: true });
+        // Своя должность («custom:…») живёт только текстом в состоянии пользователя: без него подписку не пересчитать — помечаем проверенной, чтобы не долбить источник каждый час.
+        let profession;
+        if (isCustomProfessionKey(s.professionKey)) {
+          const text = (getUser(deps.db, s.maxUserId)?.state as { professionTexts?: Record<string, string> } | undefined)?.professionTexts?.[s.professionKey];
+          const pack = selectPack(deps.market.catalog, { fnsRegionCode: region?.fnsCode ?? null, okved: null });
+          profession = text ? resolveProfession(deps.market.catalog, pack, text) ?? undefined : undefined;
+          if (!profession) { touchSubscription(deps.db, s.id, s.lastMedian); continue; }
+        }
+        const result = await buildMarket(deps.market, { professionKey: s.professionKey, profession, regionFnsCode: region?.fnsCode ?? null, inn: null, offer: s.offer, maxUserId: s.maxUserId, forceRefresh: true });
         const median = result.card.stats?.median ?? null;
         const prev = s.lastMedian;
         touchSubscription(deps.db, s.id, median);

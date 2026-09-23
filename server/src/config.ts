@@ -1,5 +1,6 @@
 /** Конфигурация из переменных окружения. Секреты никогда не логируются. */
 import { resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 export type UpdatesMode = 'webhook' | 'polling' | 'none';
 
@@ -44,7 +45,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: Number(env.PORT ?? 8080),
     host: env.HOST ?? (env.DATA_DIR === '/data' ? '0.0.0.0' : '127.0.0.1'),
     dataDir: resolve(env.DATA_DIR ?? './data'),
-    sessionSecret: weakSecret ? `dev-${(botToken ?? 'no-token').slice(0, 8)}-${mode}-only-for-local-runs` : sessionSecret,
+    // Без секрета (только режим none, локальные запуски) — случайный на время процесса: сессии живут до перезапуска, но подделать их нельзя.
+    sessionSecret: weakSecret ? randomBytes(32).toString('hex') : sessionSecret,
     apiBase: env.MAX_API_BASE?.trim() || 'https://platform-api2.max.ru',
     logLevel: env.LOG_LEVEL ?? 'info',
     packsDir: resolve(env.PACKS_DIR ?? resolve(import.meta.dirname, '../../packs')),

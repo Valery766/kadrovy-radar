@@ -230,13 +230,15 @@ export interface ProfessionSuggestion {
  * затем позиции ОКПДТР. Работает офлайн по локальному справочнику, без запросов к источникам.
  */
 export function suggestProfessions(catalog: PackCatalog, text: string, limit = 10): ProfessionSuggestion[] {
-  const q = normalizeText(text);
+  // Текст режем до 64 символов, регулярку компилируем один раз: ниже цикл по 8 тысячам позиций ОКПДТР.
+  const q = normalizeText(text).slice(0, 64);
   if (q.length < 2) return [];
+  const wordStart = new RegExp(`(^|[\\s(-])${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
   const rank = (name: string): number => {
     const n = normalizeText(name);
     if (n === q) return 0;
     if (n.startsWith(q)) return 1;
-    if (new RegExp(`(^|[\\s(-])${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(n)) return 2;
+    if (wordStart.test(n)) return 2;
     return n.includes(q) ? 3 : -1;
   };
   type Scored = ProfessionSuggestion & { score: number; length: number };

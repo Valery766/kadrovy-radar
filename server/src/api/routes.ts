@@ -108,7 +108,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   const professionFrom = (s: SessionPayload, body: ProfessionBody, regionFnsCode: string | null): ResolvedProfession => {
     const pack = selectPack(catalog, { fnsRegionCode: regionFnsCode, okved: null });
     const key = String(body.professionKey ?? '').trim();
-    const text = String(body.professionText ?? '').trim();
+    const text = String(body.professionText ?? '').trim().slice(0, 120);
     const known = key ? professionPool(catalog, pack).find((p) => p.key === key) : undefined;
     if (known) return { ok: true, profession: known };
     if (text) {
@@ -123,6 +123,25 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       return { ok: false, code: 'profession_text_required', message: 'Для своей должности пришлите её название в поле professionText: по ключу текст не восстановить.' };
     }
     return { ok: false, code: 'profession_unknown', message: `Профессия «${key}» не найдена в каталоге` };
+  };
+
+  /**
+   * Тяжёлые маршруты (штат, регионы, сводка) ходят к источникам десятками запросов на один вызов:
+   * не больше HEAVY_PER_MINUTE вызовов в минуту на сессию и HEAVY_CONCURRENT расчётов одновременно на процесс.
+   */
+  const HEAVY_PER_MINUTE = 6;
+  const HEAVY_CONCURRENT = 4;
+  const heavyHits = new Map<number, number[]>();
+  let heavyRunning = 0;
+  const heavyGate = (reply: FastifyReply, s: SessionPayload): boolean => {
+    const now = Date.now();
+    const hits = (heavyHits.get(s.uid) ?? []).filter((t) => now - t < 60_000);
+    if (hits.length >= (s.demo ? 3 : HEAVY_PER_MINUTE)) { void reply.code(429).send({ error: 'rate_limited', message: 'Слишком много тяжёлых расчётов подряд: подождите минуту' }); return false; }
+    if (heavyRunning >= HEAVY_CONCURRENT) { void reply.code(503).send({ error: 'busy', message: 'Сервер занят расчётами по другим запросам: повторите через минуту' }); return false; }
+    hits.push(now);
+    heavyHits.set(s.uid, hits);
+    if (heavyHits.size > 5000) for (const [k, v] of heavyHits) if (!v.some((t) => now - t < 60_000)) heavyHits.delete(k);
+    return true;
   };
 
   app.get('/api/health', async () => ({
@@ -221,6 +240,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (s.demo || !deps.report) return reply.code(400).send({ error: 'demo', message: 'Отправка отчёта в чат доступна только внутри MAX. Откройте приложение из чата с ботом.' });
     const row = getCard<MarketResult>(db, req.params.id);
     if (!row) return reply.code(404).send({ error: 'not_found', message: 'Карточка не найдена' });
+    if (!ownsCard(reply, row, s)) return;
     const u = getUser(db, s.uid);
     const chatId = s.chatId ?? u?.chatId ?? null;
     if (!chatId) return reply.code(400).send({ error: 'no_chat', message: 'Не знаю ваш чат с ботом: напишите боту /start и повторите.' });
@@ -235,6 +255,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (s.demo) return reply.code(400).send({ error: 'demo', message: 'Подписка доступна только внутри MAX' });
     const row = getCard<MarketResult>(db, req.params.id);
     if (!row) return reply.code(404).send({ error: 'not_found', message: 'Карточка не найдена' });
+    if (!ownsCard(reply, row, s)) return;
     const u = getUser(db, s.uid);
     const chatId = s.chatId ?? u?.chatId ?? null;
     if (!chatId) return reply.code(400).send({ error: 'no_chat', message: 'Напишите боту /start, чтобы он мог присылать уведомления.' });
@@ -245,7 +266,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
 
   app.get('/api/subscriptions', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
-    return { subscriptions: s.demo ? [] : listUserSubscriptions(db, s.uid).map((x) => ({ ...x, professionTitle: catalog.professions.find((p) => p.key === x.professionKey)?.title ?? x.professionKey, regionName: catalog.regions.find((r) => r.code === x.regionCode)?.name ?? x.regionCode })) };
+    return { subscriptions: s.demo ? [] : listUserSubscriptions(db, s.uid).map((x) => ({ ...x, professionTitle: catalog.professions.find((p) => p.key === x.professionKey)?.title ?? userState(s.uid).professionTexts?.[x.professionKey] ?? x.professionKey, regionName: catalog.regions.find((r) => r.code === x.regionCode)?.name ?? x.regionCode })) };
   });
 
   app.delete<{ Params: { id: string } }>('/api/subscriptions/:id', async (req, reply) => {
@@ -296,6 +317,8 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const regionFnsCode = (b.regionFnsCode ? String(b.regionFnsCode).trim() : null) || u?.regionFnsCode || null;
     const effectiveInn = inn ?? u?.inn ?? null;
     if (!regionFnsCode && !effectiveInn) return reply.code(400).send({ error: 'region_required', message: 'Укажите регион или ИНН бизнеса: без них рынок не с чем сравнивать' });
+    if (!heavyGate(reply, s)) return;
+    heavyRunning += 1;
     try {
       const result = await buildStaffAssessment(deps.market, {
         positions, inn: effectiveInn, regionFnsCode,
@@ -304,7 +327,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       });
       patchState(s, { staff: result });
       return result;
-    } catch (err) { return fail(reply, err); }
+    } catch (err) { return fail(reply, err); } finally { heavyRunning -= 1; }
   });
 
   /** Последняя сохранённая оценка штата (демо-сессии её не имеют). */
@@ -327,6 +350,8 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const resolved = professionFrom(s, b, codes[0] ?? null);
     if (!resolved.ok) return reply.code(400).send({ error: resolved.code, message: resolved.message });
     const sortBy: RegionSort = b.sortBy === 'affordability' || b.sortBy === 'vacancies' ? b.sortBy : 'median';
+    if (!heavyGate(reply, s)) return;
+    heavyRunning += 1;
     try {
       const result = await compareRegions(deps.market, {
         profession: resolved.profession, regionFnsCodes: codes, offer, sortBy,
@@ -336,21 +361,23 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       });
       rememberProfession(s, resolved.profession);
       return result;
-    } catch (err) { return fail(reply, err); }
+    } catch (err) { return fail(reply, err); } finally { heavyRunning -= 1; }
   });
 
   /** Партнёрская сводка по региону: медианы и выборки по профессиям пакета или по списку ключей. */
   app.get<{ Params: { fnsCode: string }; Querystring: { professions?: string } }>('/api/regions/:fnsCode/digest', async (req, reply) => {
-    if (!auth(req, reply)) return;
+    const s = auth(req, reply); if (!s) return;
     const fnsCode = String(req.params.fnsCode ?? '').trim();
     const region = regionByFnsCode(catalog, fnsCode);
     if (!region) return reply.code(400).send({ error: 'region_unknown', message: `Регион с кодом ФНС ${fnsCode} не найден в справочнике` });
     const asked = String(req.query?.professions ?? '').split(',').map((k) => k.trim()).filter(Boolean);
     const pack = selectPack(catalog, { fnsRegionCode: fnsCode, okved: null });
     const keys = (asked.length ? asked : pack.professions.map((p) => p.key)).slice(0, MAX_DIGEST_PROFESSIONS);
+    if (!heavyGate(reply, s)) return;
+    heavyRunning += 1;
     try {
       return await regionDigest(deps.market, fnsCode, keys, { persist: false });
-    } catch (err) { return fail(reply, err); }
+    } catch (err) { return fail(reply, err); } finally { heavyRunning -= 1; }
   });
 
   /* ---------- отклики и найм ---------- */
@@ -400,6 +427,12 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     return true;
   };
 
+  /** Карточка рынка, которой можно управлять (отчёт, подписка, вакансия): только её автор. Чтение по ссылке остаётся общим. */
+  const ownsCard = (reply: FastifyReply, row: { maxUserId: number | null }, s: SessionPayload): boolean => {
+    if (row.maxUserId != null && row.maxUserId !== s.uid) { void reply.code(403).send({ error: 'forbidden', message: 'Карточка принадлежит другому пользователю' }); return false; }
+    return true;
+  };
+
   /** Вакансия с проверкой прав: только владелец. */
   const ownedVacancy = (reply: FastifyReply, id: string, uid: number): VacancyRow | null => {
     const v = getVacancy(db, id);
@@ -415,6 +448,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (!deps.hiring || !deps.bot) return reply.code(503).send({ error: 'no_bot', message: 'Сервер запущен без бота — публикация вакансии недоступна' });
     const row = getCard<MarketResult>(db, req.params.id);
     if (!row) return reply.code(404).send({ error: 'not_found', message: 'Карточка не найдена' });
+    if (!ownsCard(reply, row, s)) return;
     const r = row.payload;
     const rawSalary = req.body?.salary;
     const salary = rawSalary == null || rawSalary === 0
@@ -424,7 +458,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       return reply.code(400).send({ error: 'salary_invalid', message: 'Ставка должна быть от 1 000 до 5 000 000 ₽ в месяц' });
     }
     const pack = catalog.packs.find((p) => p.id === r.pack.id) ?? catalog.packs.find((p) => !p.region)!;
-    const text = (req.body?.text ?? '').trim() || buildVacancyDraft({ card: r.card, profession: r.profession, pack, salary: salary ?? 0, companyName: r.profile?.name ?? null, cityName: r.region.name });
+    const text = (String(req.body?.text ?? '').trim() || buildVacancyDraft({ card: r.card, profession: r.profession, pack, salary: salary ?? 0, companyName: r.profile?.name ?? null, cityName: r.region.name })).slice(0, 3500);
     try {
       const { vacancy, link } = createVacancyFromCard(deps.hiring, {
         card: { cardId: r.cardId, professionKey: r.profession.key, professionTitle: r.profession.title, regionCode: r.region.code, regionName: r.region.name, employerName: r.profile?.name ?? null },
@@ -537,6 +571,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const s = auth(req, reply); if (!s) return;
     const row = getCard<MarketResult>(db, req.params.id);
     if (!row) return reply.code(404).send({ error: 'not_found', message: 'Карточка не найдена' });
+    if (!ownsCard(reply, row, s)) return;
     const r = row.payload;
     const pack = catalog.packs.find((p) => p.id === r.pack.id) ?? catalog.packs.find((p) => p.region === null)!;
     const salary = Number(req.body?.salary) || r.card.options.find((o) => o.kind === 'median')?.value || r.card.offer?.value || r.card.stats?.median || 0;

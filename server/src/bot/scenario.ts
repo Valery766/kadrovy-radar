@@ -190,7 +190,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   /** Запоминаем тексты своих должностей: по ключу «custom:<slug>» название не восстановить. */
   const rememberProfessionTexts = (uid: number, items: { key: string; text: string }[]) => {
     const texts = { ...state(uid).professionTexts };
-    for (const it of items) if (isCustomProfessionKey(it.key)) texts[it.key] = it.text;
+    for (const it of items) if (isCustomProfessionKey(it.key)) { delete texts[it.key]; texts[it.key] = it.text; }
     setState(uid, { professionTexts: Object.fromEntries(Object.entries(texts).slice(-20)) });
   };
 
@@ -328,7 +328,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (!rows.length) { await ctx.reply('Список пуст: пришлите хотя бы одну строку вида «повар 60000».'); return; }
     const u = getUser(db, uid)!;
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
-    await ctx.reply(`Считаю рынок по ${rows.length} ${pluralRu(rows.length, 'должности', 'должностям', 'должностям')}: запрашиваю вакансии и сверяю работодателей с реестром МСП. Это может занять до минуты…`);
+    await ctx.reply(`Считаю рынок по ${rows.length} ${pluralRu(rows.length, 'должности', 'должностям', 'должностям')}: запрашиваю вакансии и сверяю работодателей с реестром МСП. Это может занять пару минут…`);
     try {
       const result = await buildStaffAssessment(deps.market, {
         positions: rows.map((r, i) => ({ id: `p${i + 1}`, title: r.title, salary: r.salary })),
@@ -364,7 +364,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
 
   async function runRegions(ctx: Context, uid: number, profession: Profession, regions: RegionInfo[], unknown: string[]) {
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
-    await ctx.reply(`Сравниваю «${profession.title}»: ${regions.map((r) => r.name).join(', ')}. Это может занять до минуты…`);
+    await ctx.reply(`Сравниваю «${profession.title}»: ${regions.map((r) => r.name).join(', ')}. Это может занять пару минут…`);
     try {
       const st = state(uid);
       const card = st.lastCardId ? getCard<MarketResult>(db, st.lastCardId) : null;
@@ -401,7 +401,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const pack = packFor(uid);
     const keys = pack.professions.slice(0, BOT_DIGEST_PROFESSIONS).map((p) => p.key);
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
-    await ctx.reply(`Собираю сводку по региону «${region.name}»: ${keys.length} ${pluralRu(keys.length, 'профессия', 'профессии', 'профессий')} пакета «${pack.title}». Это может занять до минуты…`);
+    await ctx.reply(`Собираю сводку по региону «${region.name}»: ${keys.length} ${pluralRu(keys.length, 'профессия', 'профессии', 'профессий')} пакета «${pack.title}». Это может занять пару минут…`);
     try {
       const result = await regionDigest(deps.market, region.fnsCode, keys, { persist: false });
       setState(uid, { step: 'idle' });
@@ -456,7 +456,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const vacancy = getVacancy(db, vacancyId);
     if (!vacancy) { await ctx.reply('Эта вакансия не найдена — возможно, ссылка устарела. Посмотреть ставки по рынку: /stavka'); return; }
     setState(uid, { step: 'idle', vacancyId: vacancy.id, answers: {} });
-    await ctx.reply(T.candidateVacancyText(vacancy, regionNameOf(vacancy.regionCode)), { attachments: [T.candidateVacancyKeyboard(vacancy)] });
+    await replyLong(ctx, T.candidateVacancyText(vacancy, regionNameOf(vacancy.regionCode)), { attachments: [T.candidateVacancyKeyboard(vacancy)] });
   }
 
   /** Сохранение отклика, ответ кандидату и уведомление работодателя. */
@@ -505,7 +505,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const key = `${uid}:${payload ?? ''}`;
     const now = Date.now();
     const last = recentStarts.get(key);
-    if (recentStarts.size > 2000) for (const [k, t] of recentStarts) if (now - t > 90_000) recentStarts.delete(k);
+    for (const [k, t] of recentStarts) if (now - t > 90_000) recentStarts.delete(k);
     recentStarts.set(key, now);
     return last !== undefined && now - last < 90_000;
   }
@@ -720,7 +720,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (cmd === 'vacancies') {
       const items = listVacanciesByUser(db, uid);
       const rows = items.slice(0, 8).map((v) => [inboxButton(deps.botUsername, v.id, `Отклики: ${v.title} (${v.responses})`)]);
-      await ctx.reply(T.vacanciesListText(items), rows.length ? { attachments: [Keyboard.inlineKeyboard(rows)] } : undefined);
+      await replyLong(ctx, T.vacanciesListText(items), rows.length ? { attachments: [Keyboard.inlineKeyboard(rows)] } : undefined);
       return;
     }
     if (cmd === 'help') { await ctx.reply(T.helpText()); return; }
@@ -738,7 +738,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (cmd === 'subs') {
       const subs = listUserSubscriptions(db, uid);
       if (!subs.length) { await ctx.reply('Подписок пока нет. Их можно оформить из карточки рынка — кнопка «Следить за рынком».'); return; }
-      const rows = subs.map((s) => [Keyboard.button.callback(`Отписаться: ${catalog.professions.find((p) => p.key === s.professionKey)?.title ?? s.professionKey}`, `unsub:${s.id}`)]);
+      const rows = subs.map((s) => [Keyboard.button.callback(`Отписаться: ${catalog.professions.find((p) => p.key === s.professionKey)?.title ?? state(uid).professionTexts?.[s.professionKey] ?? s.professionKey}`.slice(0, 60), `unsub:${s.id}`)]);
       await ctx.reply(`Ваши подписки (${subs.length}): раз в неделю сравниваю медиану и пишу при сдвиге > 5 %.`, { attachments: [Keyboard.inlineKeyboard(rows)] });
       return;
     }
@@ -763,12 +763,13 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         return;
       }
       case 'profession': {
+        if (/^\d[\d\s]{3,8}$/.test(text)) { await ctx.reply('Это похоже на ставку. Сначала напишите должность (например, «повар»), ставку спрошу следующим шагом.'); return; }
         if (await handleProfessionText(ctx, uid, text)) return;
         await ctx.reply('Не понял должность. Выберите кнопкой или напишите название, например «повар», «продавец», «сварщик».', { attachments: [T.professionKeyboard(packFor(uid))] });
         return;
       }
       case 'staff': {
-        const t = normalizeText(text);
+        const t = normalizeText(text).replace(/[.!…]+$/u, '');
         if (/^(отмена|стоп|хватит)$/.test(t)) { setState(uid, { step: 'idle', staffRows: undefined }); await ctx.reply('Отменил. Вернуться к штату — /staff.'); return; }
         if (/^(готово|готов|все|посчитать|оценить|конец)$/.test(t)) { await runStaff(ctx, uid); return; }
         const rows = [...(st.staffRows ?? [])];
@@ -779,7 +780,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
           if (rows.length >= MAX_STAFF_POSITIONS) break;
           const parsed = parseStaffLine(line);
           if (!parsed) { skipped.push(line.trim().slice(0, 40)); continue; }
-          rows.push(parsed);
+          rows.push({ ...parsed, title: parsed.title.slice(0, 120) });
           added += 1;
         }
         setState(uid, { step: 'staff', staffRows: rows });

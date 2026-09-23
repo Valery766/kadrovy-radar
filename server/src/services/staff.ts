@@ -93,6 +93,7 @@ export async function buildStaffAssessment(ctx: MarketContext, req: StaffRequest
     offer: null,
     maxUserId: req.maxUserId,
     forceRefresh: req.forceRefresh ?? false,
+    persist: req.maxUserId != null,
   }));
 
   const cards = new Map<string, MarketCard>();
