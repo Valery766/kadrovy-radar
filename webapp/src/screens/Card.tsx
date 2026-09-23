@@ -207,7 +207,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onHo
         <div className="sv-h2">Источники и метод</div>
         {sources.map((s) => <div key={s.id} className="sv-small"><a className="sv-link" href={s.url} onClick={(ev) => { ev.preventDefault(); openUrl(s.url); }}>{s.title}</a> · получено {fmtDate(s.fetchedAt)}{s.note ? ` · ${s.note}` : ''}</div>)}
         <div className="sv-muted sv-small">
-          Факты — заявленные в вакансиях ставки на портале «Работа России» ({fetched.total} по запросу, загружено {fetched.records}). Расчёт — ядро «Ставки»: ставка вакансии = середина вилки; убраны точные дубли и объявления сверх лимита на работодателя ({dropped.map(([k, v]) => `${k}: ${v}`).join(', ') || '0'}); перцентиль = доля вакансий со ставкой ниже вашей. Рекомендация — варианты ставки по медиане и 75-му перцентилю. Пакет контекста: {result.pack.title} v{result.pack.version}.
+          Факты — заявленные в вакансиях ставки на портале «Работа России» ({fetched.total} по запросу, загружено {fetched.records}). Расчёт — ядро «Ставки»: ставка вакансии = середина вилки; убраны точные дубли и объявления сверх лимита на работодателя ({dropped.map(([k, v]) => `${k}: ${v}`).join(', ') || '0'}); перцентиль = доля вакансий со ставкой ниже вашей; крупнейший работодатель даёт {card.sample.topEmployerShare} % выборки. Рекомендация — варианты ставки по медиане и 75-му перцентилю. Пакет контекста: {result.pack.title} v{result.pack.version}.
           {profile?.inRegistry && ` Профиль бизнеса: реестр МСП ФНС, ${fmtDate(profile.fetchedAt)}.`}
         </div>
       </div>

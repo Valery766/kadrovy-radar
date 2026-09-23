@@ -123,7 +123,7 @@ export async function renderMarketPdf(result: MarketResult, opts: { appUrl?: str
   // Источники и метод
   doc.font('B').fontSize(10).fillColor('#111').text('Источники и метод');
   for (const s of result.sources) doc.font('R').fontSize(8.5).fillColor(muted).text(`• ${s.title} — ${s.url} · получено ${fmtDate(s.fetchedAt)}${s.note ? ` · ${s.note}` : ''}`, { width: W });
-  doc.font('R').fontSize(8.5).fillColor(muted).text(`Расчёт: ставка вакансии = середина вилки; точные дубли и объявления одного работодателя сверх лимита исключены (отброшено: ${Object.entries(card.sample.dropped).map(([k, v]) => `${k} ${v}`).join(', ') || '0'}); перцентиль = доля вакансий со ставкой ниже вашей. Это заявленные в вакансиях ставки на государственном портале, а не фактические выплаты. Пакет контекста: ${result.pack.title} v${result.pack.version}.`, { width: W });
+  doc.font('R').fontSize(8.5).fillColor(muted).text(`Расчёт: ставка вакансии = середина вилки; точные дубли и объявления одного работодателя сверх лимита исключены (отброшено: ${Object.entries(card.sample.dropped).map(([k, v]) => `${k} ${v}`).join(', ') || '0'}); перцентиль = доля вакансий со ставкой ниже вашей; крупнейший работодатель даёт ${card.sample.topEmployerShare} % выборки. Это заявленные в вакансиях ставки на государственном портале, а не фактические выплаты. Пакет контекста: ${result.pack.title} v${result.pack.version}.`, { width: W });
   if (opts.appUrl) doc.font('R').fontSize(8.5).fillColor(accent).text(`Открыть карточку в MAX: ${opts.appUrl}`, { width: W });
 
   doc.end();

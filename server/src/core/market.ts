@@ -51,6 +51,13 @@ function uniqueEmployers(vs: VacancyRecord[]): number {
   return new Set(vs.map((v) => v.employerInn ?? `id:${v.id}`)).size;
 }
 
+function topEmployerShare(vs: VacancyRecord[]): number {
+  if (vs.length === 0) return 0;
+  const counts = new Map<string, number>();
+  for (const v of vs) { const k = v.employerInn ?? `id:${v.id}`; counts.set(k, (counts.get(k) ?? 0) + 1); }
+  return Math.round((100 * Math.max(...counts.values())) / vs.length);
+}
+
 function categoryStats(vs: VacancyRecord[]): CategoryStats[] {
   const groups = new Map<string, VacancyRecord[]>();
   for (const v of vs) {
@@ -161,7 +168,7 @@ export function computeMarket(input: MarketInput): MarketCard {
     professionKey: profession.key,
     professionTitle: profession.title,
     regionCode,
-    sample: { fetched: input.vacancies.length, vacancies: kept.length, employers, dropped },
+    sample: { fetched: input.vacancies.length, vacancies: kept.length, employers, topEmployerShare: topEmployerShare(kept), dropped },
     confidence,
     confidenceReason,
     stats,

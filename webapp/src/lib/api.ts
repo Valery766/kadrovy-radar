@@ -49,7 +49,7 @@ export interface Bootstrap {
 export interface SalaryStats { n: number; median: number; p25: number; p75: number; min: number; max: number; mean: number }
 export interface MarketCard {
   professionKey: string; professionTitle: string; regionCode: string;
-  sample: { fetched: number; vacancies: number; employers: number; dropped: Record<string, number> };
+  sample: { fetched: number; vacancies: number; employers: number; topEmployerShare: number; dropped: Record<string, number> };
   confidence: 'ok' | 'low' | 'none'; confidenceReason: string | null;
   stats: SalaryStats | null; fixedShare: number | null; recentMedian: number | null;
   offer: { value: number; percentile: number; band: 'low' | 'below_median' | 'market' | 'above'; shareAbove: number } | null;

@@ -70,6 +70,8 @@ describe('computeMarket on real fixture (повар, Санкт-Петербур
     expect(card.sample.vacancies).toBeGreaterThan(20);
     expect(card.sample.vacancies).toBeLessThan(100);
     expect(card.sample.employers).toBeGreaterThan(10);
+    expect(card.sample.topEmployerShare).toBeGreaterThan(0);
+    expect(card.sample.topEmployerShare).toBeLessThanOrEqual(100);
     expect(Object.values(card.sample.dropped).reduce((a, b) => a + b, 0) + card.sample.vacancies).toBe(100);
   });
   it('produces stats, offer percentile, options and verdict', () => {

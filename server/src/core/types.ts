@@ -189,6 +189,8 @@ export interface MarketCard {
     vacancies: number;
     /** Уникальных работодателей (по ИНН). */
     employers: number;
+    /** Доля вакансий крупнейшего работодателя выборки, % (защита от «рынка одной сети»). */
+    topEmployerShare: number;
     dropped: Record<string, number>;
   };
   confidence: Confidence;
