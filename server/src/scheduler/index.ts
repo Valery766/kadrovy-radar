@@ -1,18 +1,24 @@
 /**
  * Фоновые задачи без внешней очереди: сторож вебхука, прогрев кэша демо-запросов,
- * еженедельная проверка подписок, загрузка плана проверок ЕРКНМ, очистка таблицы идемпотентности.
+ * еженедельная проверка подписок, загрузка плана проверок ЕРКНМ, очистка таблицы идемпотентности,
+ * суточная чистка данных и файлов.
  */
 import type { Bot } from '@maxhub/max-bot-api';
 import type { Db } from '../db/index.js';
-import { getUser, listActiveSubscriptions, pruneUpdatesSeen, touchSubscription } from '../db/index.js';
+import { getMeta, getUser, listActiveSubscriptions, pruneUpdatesSeen, setMeta, touchSubscription } from '../db/index.js';
 import { isCustomProfessionKey, resolveProfession, selectPack } from '../packs/loader.js';
 import { buildMarket, type MarketContext } from '../services/market.js';
 import { describeSyncError, needsSync, syncInspections } from '../services/inspections.js';
+import { runHousekeeping } from '../services/housekeeping.js';
 import { formatRub } from '../core/index.js';
 import { ensureSubscription, type UpdatesDeps } from '../bot/updates.js';
 import { openRadarButton } from '../services/report.js';
 import { Keyboard } from '@maxhub/max-bot-api';
 
+/**
+ * Зависимости планировщика читаются на каждом тике: бот может подключиться к MAX API уже после
+ * старта (main.ts повторяет подключение в фоне), тогда main.ts заполняет bot/updates/webhook в этом же объекте.
+ */
 export interface SchedulerDeps {
   db: Db;
   market: MarketContext;
@@ -29,14 +35,21 @@ const every = (ms: number, fn: () => Promise<void>) => {
   return t;
 };
 
+/** Сколько прошло с отметки в meta; бесконечность, если отметки нет. */
+const sinceMeta = (db: Db, key: string): number => {
+  const v = getMeta(db, key);
+  const t = v ? Date.parse(v) : NaN;
+  return Number.isFinite(t) ? Date.now() - t : Number.POSITIVE_INFINITY;
+};
+
 export function startScheduler(deps: SchedulerDeps): () => void {
   const timers: NodeJS.Timeout[] = [];
 
   // Сторож вебхука: MAX отписывает бота после 8 часов без ответа 200 — проверяем каждые 10 минут.
-  if (deps.updates && deps.webhook) {
-    const { url, secret } = deps.webhook;
-    timers.push(every(10 * 60_000, async () => { await ensureSubscription(deps.updates!, url, secret); }));
-  }
+  timers.push(every(10 * 60_000, async () => {
+    if (!deps.updates || !deps.webhook) return;
+    await ensureSubscription(deps.updates, deps.webhook.url, deps.webhook.secret);
+  }));
 
   // Прогрев кэша для демо-пар из пакетов, чтобы первая карточка у жюри открывалась мгновенно.
   const warm = async () => {
@@ -52,7 +65,17 @@ export function startScheduler(deps: SchedulerDeps): () => void {
   timers.push(every(5 * 3600_000, warm));
 
   // Подписки: раз в час смотрим, кому пора пересчитать (7 дней с последней проверки).
+  // Обход идёт последовательно с обращением к источнику; если он не уложился в час, следующий тик пропускается,
+  // а не запускает второй обход по тем же подпискам (двойные уведомления и двойная нагрузка).
+  let subscriptionsBusy = false;
   timers.push(every(60 * 60_000, async () => {
+    if (!deps.bot || !deps.botUsername) return;
+    if (subscriptionsBusy) { deps.log.warn({}, 'subscription check still running — skipping this hour'); return; }
+    subscriptionsBusy = true;
+    try { await checkSubscriptions(); } finally { subscriptionsBusy = false; }
+  }));
+
+  async function checkSubscriptions() {
     if (!deps.bot || !deps.botUsername) return;
     const now = Date.now();
     for (const s of listActiveSubscriptions(deps.db)) {
@@ -80,7 +103,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
         }
       } catch (err) { deps.log.warn({ sub: s.id, err: String(err) }, 'subscription check failed'); }
     }
-  }));
+  }
 
   // План проверок ЕРКНМ: первая загрузка фоном (старт сервера не ждёт 39 МБ архива).
   // Дальше задача просыпается раз в час, но к источнику идёт, только когда набор не подтверждали
@@ -99,6 +122,25 @@ export function startScheduler(deps: SchedulerDeps): () => void {
   timers.push(every(60 * 60_000, syncChecks));
 
   timers.push(every(6 * 3600_000, async () => { pruneUpdatesSeen(deps.db, new Date(Date.now() - 3 * 86400_000).toISOString()); }));
+
+  // Суточная чистка: кэш вакансий старше 7 дней, анонимные карточки старше 3 дней, наблюдения старше 30 дней,
+  // файлы отчётов и QR старше 14 дней, затем checkpoint WAL; раз в неделю — VACUUM.
+  // Тик часовой, а отметки в meta: пропущенная попытка (открытая транзакция загрузки ЕРКНМ) повторяется через час, а не через сутки.
+  const housekeeping = async () => {
+    if (sinceMeta(deps.db, 'last_cleanup_at') < 24 * 3600_000) return;
+    const vacuum = sinceMeta(deps.db, 'last_vacuum_at') >= 7 * 86400_000;
+    try {
+      const r = runHousekeeping({ db: deps.db, dataDir: deps.market.config.dataDir, vacuum });
+      if (r.skipped) { deps.log.warn({}, 'housekeeping skipped: transaction in progress'); return; }
+      setMeta(deps.db, 'last_cleanup_at', new Date().toISOString());
+      if (r.vacuumed) setMeta(deps.db, 'last_vacuum_at', new Date().toISOString());
+      deps.log.info({ ...r.data, files: r.files, vacuumed: r.vacuumed }, 'housekeeping done');
+    } catch (err) {
+      deps.log.warn({ err: String(err) }, 'housekeeping failed');
+    }
+  };
+  setTimeout(() => { void housekeeping(); }, 90_000).unref();
+  timers.push(every(60 * 60_000, housekeeping));
 
   return () => timers.forEach((t) => clearInterval(t));
 }

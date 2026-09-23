@@ -28,6 +28,12 @@ export interface Config {
   inspectionsYear: number;
   /** Через сколько дней набор ЕРКНМ считается устаревшим и проверяется новая версия. */
   inspectionsMaxAgeDays: number;
+  /**
+   * Чьим заголовкам X-Forwarded-For верить при определении IP клиента (лимиты демо-режима):
+   * список адресов/CIDR через запятую, true — всем (небезопасно без прокси), false — никому.
+   * По умолчанию только loopback: nginx на том же хосте.
+   */
+  trustProxy: string | boolean;
 }
 
 /**
@@ -77,5 +83,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxEmployersToEnrich: num(env.MAX_EMPLOYERS_TO_ENRICH, 60),
     inspectionsYear: num(env.ERKNM_YEAR, new Date().getFullYear()),
     inspectionsMaxAgeDays: num(env.ERKNM_MAX_AGE_DAYS, 7),
+    trustProxy: trustProxyOf(str(env.TRUST_PROXY)),
   };
+}
+
+/** «true»/«false» → булево, иначе список адресов; пусто — только loopback. */
+function trustProxyOf(value: string | undefined): string | boolean {
+  if (value === undefined) return '127.0.0.1,::1';
+  if (/^(true|1|yes)$/i.test(value)) return true;
+  if (/^(false|0|no)$/i.test(value)) return false;
+  return value;
 }

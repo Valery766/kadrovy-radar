@@ -79,10 +79,16 @@ export function mapRow(inn: string, row: RmspRow | undefined): BusinessProfile {
   };
 }
 
-export async function fetchBusinessProfile(inn: string, fetchImpl: typeof fetch = fetch): Promise<BusinessProfile> {
+export interface FetchProfileOptions {
+  /** Таймаут одного запроса, мс (по умолчанию 15 с — для профиля пользователя). */
+  timeoutMs?: number;
+  /** Число повторов при 5xx/таймауте (по умолчанию 2). */
+  retries?: number;
+}
+
+export async function fetchBusinessProfile(inn: string, opts: FetchProfileOptions = {}): Promise<BusinessProfile> {
   const url = `${RMSP_BASE}/search-proc.json?query=${encodeURIComponent(inn)}&mode=quick`;
-  void fetchImpl;
-  const data = await fetchJson<RmspResponse>(url, { source: SOURCE_ID, timeoutMs: 15_000, retries: 2 });
+  const data = await fetchJson<RmspResponse>(url, { source: SOURCE_ID, timeoutMs: opts.timeoutMs ?? 15_000, retries: opts.retries ?? 2 });
   const row = data.data?.find((r) => r.inn === inn) ?? data.data?.[0];
   return mapRow(inn, row);
 }

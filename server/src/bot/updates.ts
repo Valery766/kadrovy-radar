@@ -21,15 +21,40 @@ export function updateKey(u: Update): string {
   return `${u.update_type}:${u.timestamp}:${extra}`;
 }
 
+/**
+ * Сколько событий сейчас обрабатывается. Вебхук отвечает 200 до обработки, ключ события уже
+ * записан — повторной доставки от MAX не будет, поэтому при остановке процесса эти задачи нужно дождаться.
+ */
+let inFlight = 0;
+
+export function pendingUpdates(): number {
+  return inFlight;
+}
+
+/** Ждёт завершения незавершённых обработчиков, но не дольше maxMs; возвращает, сколько осталось. */
+export async function drainUpdates(maxMs: number): Promise<number> {
+  const deadline = Date.now() + maxMs;
+  while (inFlight > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  return inFlight;
+}
+
 /** Прогон одного события через цепочку обработчиков бота. */
 export async function dispatchUpdate(deps: UpdatesDeps, update: Update): Promise<void> {
-  if (!markUpdateSeen(deps.db, updateKey(update))) { deps.log.info({ type: update.update_type }, 'duplicate update skipped'); return; }
-  setMeta(deps.db, 'last_update_at', new Date().toISOString());
-  const ctx = new Context(update, deps.bot.api, deps.bot.botInfo);
+  inFlight += 1;
   try {
-    await deps.bot.middleware()(ctx, () => Promise.resolve());
+    if (!markUpdateSeen(deps.db, updateKey(update))) { deps.log.info({ type: update.update_type }, 'duplicate update skipped'); return; }
+    setMeta(deps.db, 'last_update_at', new Date().toISOString());
+    const ctx = new Context(update, deps.bot.api, deps.bot.botInfo);
+    try {
+      await deps.bot.middleware()(ctx, () => Promise.resolve());
+    } catch (err) {
+      deps.log.error({ err: String(err), type: update.update_type }, 'update handler failed');
+    }
   } catch (err) {
-    deps.log.error({ err: String(err), type: update.update_type }, 'update handler failed');
+    // Ошибка базы до обработчика (диск полон, база закрыта): событие не считается увиденным, MAX доставит его повторно.
+    deps.log.error({ err: String(err), type: update.update_type }, 'update not recorded');
+  } finally {
+    inFlight -= 1;
   }
 }
 
@@ -37,7 +62,14 @@ export function webhookPath(botToken: string): string {
   return `/webhook/${Webhook.generateTokenRelatedHash(botToken).slice(0, 32)}`;
 }
 
-export function registerWebhook(app: FastifyInstance, deps: UpdatesDeps, opts: { path: string; secret: string | null }): void {
+export interface WebhookOptions {
+  path: string;
+  secret: string | null;
+  /** false — бот ещё не подключился к MAX API (обработчики не зарегистрированы): отвечаем 503, MAX повторит доставку. */
+  ready?: () => boolean;
+}
+
+export function registerWebhook(app: FastifyInstance, deps: UpdatesDeps, opts: WebhookOptions): void {
   app.post(opts.path, { config: { rawBody: false }, bodyLimit: 512 * 1024 }, async (req, reply) => {
     const header = req.headers['x-max-bot-api-secret'];
     if (opts.secret) {
@@ -47,6 +79,7 @@ export function registerWebhook(app: FastifyInstance, deps: UpdatesDeps, opts: {
     }
     const update = req.body as Update | undefined;
     if (!update || typeof update !== 'object' || !('update_type' in update)) return reply.code(400).send('Bad Request');
+    if (opts.ready && !opts.ready()) return reply.code(503).send('Bot not ready');
     reply.code(200).send('OK');
     setImmediate(() => { void dispatchUpdate(deps, update); });
   });

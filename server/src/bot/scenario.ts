@@ -4,7 +4,7 @@
  */
 import type { Bot, Context } from '@maxhub/max-bot-api';
 import { Keyboard } from '@maxhub/max-bot-api';
-import type { Db, VacancyRow } from '../db/index.js';
+import type { CardRow, Db, VacancyRow } from '../db/index.js';
 import { castVote, closeVacancy, deactivateSubscription, findResponseByCandidate, getCard, getUser, getVacancy, listResponsesByVacancy, listUserSubscriptions, listVacanciesByUser, putResponse, updateUser, upsertUser, upsertSubscription } from '../db/index.js';
 import { buildMarket, getProfile, MarketError, type MarketContext, type MarketResult } from '../services/market.js';
 import { buildStaffAssessment, MAX_STAFF_POSITIONS } from '../services/staff.js';
@@ -84,6 +84,8 @@ const BOT_MAX_REGIONS = 4;
 const BOT_DIGEST_PROFESSIONS = Math.min(8, MAX_DIGEST_PROFESSIONS);
 /** Ограничение MAX на длину сообщения. */
 const MAX_MESSAGE_LENGTH = 4000;
+/** Свободный текст должности режем, как в API (routes.ts): 120 символов. */
+const MAX_PROFESSION_TEXT = 120;
 /** Пауза между сообщениями: MAX принимает не больше двух сообщений в секунду на чат. */
 const MESSAGE_PAUSE_MS = 600;
 
@@ -108,9 +110,12 @@ export function splitText(text: string, limit = MAX_MESSAGE_LENGTH): string[] {
  * Строка штата «повар 60000» → должность и ставка. Ставка — последнее число строки,
  * всё до него — название должности («повар 5 разряда — 60 тыс» тоже разбирается).
  */
+/** Длиннее этого строка штата не бывает; регулярка ниже квадратична по длине, поэтому длинное отбрасываем сразу. */
+const MAX_STAFF_LINE = 200;
+
 export function parseStaffLine(line: string): { title: string; salary: number } | null {
   const t = line.trim().replace(/\s+/g, ' ');
-  if (!t) return null;
+  if (!t || t.length > MAX_STAFF_LINE) return null;
   const m = /^(.*?)[\s,;:—–-]*((?:\d[\d\s]*)(?:[.,]\d+)?\s*(?:тыс\.?|т\.?\s?р\.?|к|k)?)\s*(?:руб\.?|₽|р\.?)?$/iu.exec(t);
   if (!m) return null;
   const title = (m[1] ?? '').replace(/[,;:—–-]+$/u, '').trim();
@@ -302,7 +307,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
    * onlyKnown — для случайной реплики вне шага «должность»: без совпадений в справочниках
    * не предлагаем считать рынок по чему попало.
    */
-  async function handleProfessionText(ctx: Context, uid: number, text: string, opts: { onlyKnown?: boolean } = {}): Promise<boolean> {
+  async function handleProfessionText(ctx: Context, uid: number, raw: string, opts: { onlyKnown?: boolean } = {}): Promise<boolean> {
+    // Как в API: должность не длиннее 120 символов — иначе текст запроса к источнику и ответ бота вырастают до отказа MAX.
+    const text = raw.slice(0, MAX_PROFESSION_TEXT).trim();
+    if (!text) return false;
     const pack = packFor(uid);
     const known = findProfession(catalog, pack, text);
     if (known) {
@@ -533,6 +541,29 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     return v && v.status === 'open' ? v : null;
   }
 
+  /**
+   * Кнопки шагов отклика (опыт, график, «без номера») относятся к вакансии, по которой отклик начат сейчас:
+   * старая кнопка в предыдущем сообщении не должна переключать отклик на другую вакансию или создавать второй отклик.
+   */
+  async function applyInProgress(ack: (n?: string) => Promise<unknown>, uid: number, vacancy: VacancyRow): Promise<boolean> {
+    if (state(uid).vacancyId !== vacancy.id) { await ack('Начните отклик заново: нажмите «Откликнуться» под вакансией'); return false; }
+    if (findResponseByCandidate(db, vacancy.id, uid)) { await ack('Вы уже откликнулись'); return false; }
+    return true;
+  }
+
+  /**
+   * Карточка рынка из callback-кнопки. Как в API (ownsCard): чужой карточкой управлять нельзя — она видна
+   * другим в групповом чате и по ссылке /start card_<id>. У анонимных карточек (демо-режим браузера, прогрев кэша)
+   * автора нет: читать и получать PDF можно, публиковать вакансию и подписываться — нет.
+   */
+  async function cardFor(ack: (n?: string) => Promise<unknown>, uid: number, cardId: string, access: 'read' | 'manage'): Promise<CardRow<MarketResult> | null> {
+    const row = getCard<MarketResult>(db, cardId);
+    if (!row) { await ack('Карточка не найдена'); return null; }
+    if (row.maxUserId != null && row.maxUserId !== uid) { await ack('Карточка принадлежит другому пользователю'); return null; }
+    if (row.maxUserId == null && access === 'manage') { await ack('Это карточка демо-режима: посчитайте рынок по своему бизнесу — /stavka'); return null; }
+    return row;
+  }
+
   async function sendCardById(ctx: Context, uid: number, cardId: string) {
     const row = getCard<MarketResult>(db, cardId);
     if (!row) { await ctx.reply('Такой карточки нет — возможно, ссылка устарела. Начните заново: /stavka'); return; }
@@ -596,7 +627,14 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ctx.reply(T.askSalaryText(prof.title));
       return;
     }
-    if (payload.startsWith('retry:')) { await ack(); const v = payload.slice(6); await runMarket(ctx, uid, v === 'none' ? null : Number(v)); return; }
+    if (payload.startsWith('retry:')) {
+      const v = payload.slice(6);
+      const offer = v === 'none' ? null : Number(v);
+      if (offer !== null && !(offer >= 1000 && offer <= 5_000_000)) { await ack('Ставка вне диапазона'); return; }
+      await ack();
+      await runMarket(ctx, uid, offer);
+      return;
+    }
     if (payload.startsWith('vote:')) {
       const [, kind, cardId] = payload.split(':');
       const row = cardId ? getCard<MarketResult>(db, cardId) : null;
@@ -610,9 +648,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       return;
     }
     if (payload.startsWith('pdf:')) {
-      const cardId = payload.slice(4);
-      const row = getCard<MarketResult>(db, cardId);
-      if (!row) { await ack('Карточка не найдена'); return; }
+      const row = await cardFor(ack, uid, payload.slice(4), 'read');
+      if (!row) return;
       await ack('Готовлю PDF…');
       await ctx.api.sendAction(ctx.chatId!, 'sending_file').catch(() => undefined);
       try {
@@ -625,9 +662,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       return;
     }
     if (payload.startsWith('sub:')) {
-      const cardId = payload.slice(4);
-      const row = getCard<MarketResult>(db, cardId);
-      if (!row) { await ack('Карточка не найдена'); return; }
+      const row = await cardFor(ack, uid, payload.slice(4), 'manage');
+      if (!row) return;
       const r = row.payload;
       upsertSubscription(db, { id: randomUUID(), maxUserId: uid, chatId: ctx.chatId!, packId: r.pack.id, professionKey: r.profession.key, regionCode: r.region.code, offer: r.card.offer?.value ?? null, lastMedian: r.card.stats?.median ?? null });
       await ack('Подписка оформлена');
@@ -641,8 +677,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     }
     if (payload.startsWith('pub:')) {
       const cardId = payload.slice(4);
-      const row = getCard<MarketResult>(db, cardId);
-      if (!row) { await ack('Карточка не найдена'); return; }
+      const row = await cardFor(ack, uid, cardId, 'manage');
+      if (!row) return;
       await ack('Публикую вакансию…');
       try {
         await publishVacancy(ctx, uid, row.payload);
@@ -684,6 +720,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const [, key, vacancyId] = payload.split(':');
       const vacancy = applyTarget(uid, vacancyId);
       if (!vacancy || !key || !(key in EXPERIENCE_LABEL)) { await ack('Вакансия закрыта или не найдена'); return; }
+      if (!(await applyInProgress(ack, uid, vacancy))) return;
       await ack(EXPERIENCE_LABEL[key as ExperienceKey]);
       setState(uid, { step: 'apply_schedule', vacancyId: vacancy.id, answers: { ...state(uid).answers, experience: key as ExperienceKey } });
       await ctx.reply(T.askScheduleText(vacancy), { attachments: [T.scheduleKeyboard(vacancy.id)] });
@@ -693,6 +730,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const [, value, vacancyId] = payload.split(':');
       const vacancy = applyTarget(uid, vacancyId);
       if (!vacancy) { await ack('Вакансия закрыта или не найдена'); return; }
+      if (!(await applyInProgress(ack, uid, vacancy))) return;
       await ack(value === 'yes' ? 'Готов' : 'Не готов');
       setState(uid, { step: 'apply_salary', vacancyId: vacancy.id, answers: { ...state(uid).answers, schedule: value === 'yes' } });
       await ctx.reply(T.askSalaryExpectationText(vacancy));
@@ -701,6 +739,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (payload.startsWith('nophone:')) {
       const vacancy = applyTarget(uid, payload.slice(8));
       if (!vacancy) { await ack('Вакансия закрыта или не найдена'); return; }
+      if (!(await applyInProgress(ack, uid, vacancy))) return;
       const a = state(uid).answers ?? {};
       if (a.experience === undefined || a.schedule === undefined) { await ack('Начните отклик заново'); return; }
       await ack();
@@ -708,9 +747,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       return;
     }
     if (payload.startsWith('text:')) {
-      const cardId = payload.slice(5);
-      const row = getCard<MarketResult>(db, cardId);
-      if (!row) { await ack('Карточка не найдена'); return; }
+      const row = await cardFor(ack, uid, payload.slice(5), 'read');
+      if (!row) return;
       await ack();
       const r = row.payload;
       const pack = catalog.packs.find((p) => p.id === r.pack.id)!;
@@ -730,7 +768,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   }
 
   /** Вложение «контакт»: проверяем подпись MAX и завершаем отклик. */
-  async function handleContact(ctx: Context, uid: number, payload: { vcf_info: string; hash: string }) {
+  async function handleContact(ctx: Context, uid: number, payload: { vcf_info?: string | null; hash?: string | null }) {
     const st = state(uid);
     const vacancy = applyTarget(uid);
     const a = st.answers ?? {};
@@ -738,8 +776,14 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ctx.reply('Спасибо! Сейчас номер не нужен — отклик не начат или вакансия уже закрыта. Открыть вакансию можно по ссылке работодателя.');
       return;
     }
-    const verified = verifyContactSignature(deps.market.config.botToken ?? '', payload.vcf_info, payload.hash);
-    const phone = phoneFromVcf(payload.vcf_info) ?? ctx.contactInfo?.tel ?? null;
+    // Пересланный из адресной книги чужой контакт приходит без vcf_info — это не номер кандидата.
+    const vcf = payload.vcf_info ?? '';
+    if (!vcf) {
+      await ctx.reply('Нужна кнопка «Поделиться номером» — или «Без номера».', { attachments: [T.phoneKeyboard(vacancy.id)] });
+      return;
+    }
+    const verified = verifyContactSignature(deps.market.config.botToken ?? '', vcf, payload.hash);
+    const phone = phoneFromVcf(vcf) ?? ctx.contactInfo?.tel ?? null;
     if (!verified) log.warn({ uid, vacancyId: vacancy.id }, 'подпись контакта не сошлась — сохраняем номер как непроверенный');
     await finishResponse(ctx, uid, vacancy, { experience: a.experience, schedule: a.schedule, expectedSalary: a.expectedSalary ?? null }, phone, verified);
   }
@@ -835,7 +879,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       }
       case 'regions_prof': {
         const pack = packFor(uid);
-        const prof = findProfession(catalog, pack, text) ?? resolveProfession(catalog, pack, text);
+        const query = text.slice(0, MAX_PROFESSION_TEXT).trim();
+        const prof = findProfession(catalog, pack, query) ?? resolveProfession(catalog, pack, query);
         if (!prof) { await ctx.reply('Не понял должность. Напишите название, например «повар».'); return; }
         rememberProfessionTexts(uid, [{ key: prof.key, text: prof.query }]);
         setState(uid, { step: 'regions', regionsProfessionKey: prof.key });

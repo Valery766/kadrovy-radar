@@ -30,12 +30,33 @@ export interface BuildAppOptions {
   logger?: boolean | object;
 }
 
+/**
+ * В журнал запросов не попадает строка запроса: в ней бывают ИНН (`/api/inspections?inn=…`)
+ * и свободный текст подсказок (`?q=…`), а ИНН ИП — персональные данные.
+ */
+function requestSerializer(req: { method: string; url: string; ip: string }) {
+  const q = req.url.indexOf('?');
+  return { method: req.method, url: q === -1 ? req.url : `${req.url.slice(0, q)}?…`, remoteAddress: req.ip };
+}
+
 export async function buildApp(opts: BuildAppOptions): Promise<AppParts> {
   const { config } = opts;
   const app = Fastify({
-    logger: opts.logger ?? { level: config.logLevel, redact: ['req.headers.authorization', 'req.headers["x-max-bot-api-secret"]'] },
-    trustProxy: true,
+    logger: opts.logger ?? {
+      level: config.logLevel,
+      redact: ['req.headers.authorization', 'req.headers["x-max-bot-api-secret"]'],
+      serializers: { req: requestSerializer },
+    },
+    // X-Forwarded-For принимается только от доверенных прокси (по умолчанию loopback — nginx на том же хосте):
+    // иначе лимиты демо-режима по IP обходились бы одним заголовком.
+    trustProxy: config.trustProxy,
     bodyLimit: 1024 * 1024,
+  });
+  // Защитные заголовки. X-Frame-Options и CSP с frame-ancestors не ставим: мини-приложение живёт в webview/iframe MAX.
+  app.addHook('onRequest', (_req, reply, done) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('referrer-policy', 'no-referrer');
+    done();
   });
   const db = openDb(opts.dbPath ?? join(config.dataDir, 'stavka.db'));
   const catalog = loadCatalog(config.packsDir);

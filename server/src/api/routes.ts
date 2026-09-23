@@ -50,7 +50,8 @@ function clientSummary(r: MarketResult) {
 
 export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   const { db, config, catalog } = deps;
-  const botLink = deps.bot ? `https://max.ru/${deps.bot.username}` : null;
+  // deps.bot читается на каждом запросе: при недоступном MAX API на старте бот подключается позже, в фоне.
+  const botLink = () => (deps.bot ? `https://max.ru/${deps.bot.username}` : null);
 
   const auth = (req: FastifyRequest, reply: FastifyReply): SessionPayload | null => {
     const header = req.headers.authorization;
@@ -126,24 +127,40 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     return { ok: false, code: 'profession_unknown', message: `Профессия «${key}» не найдена в каталоге` };
   };
 
-  /**
-   * Тяжёлые маршруты (штат, регионы, сводка) ходят к источникам десятками запросов на один вызов:
-   * не больше HEAVY_PER_MINUTE вызовов в минуту на сессию и HEAVY_CONCURRENT расчётов одновременно на процесс.
-   */
-  const HEAVY_PER_MINUTE = 6;
-  const HEAVY_CONCURRENT = 4;
-  const heavyHits = new Map<number, number[]>();
-  let heavyRunning = 0;
-  const heavyGate = (reply: FastifyReply, s: SessionPayload): boolean => {
+  /** Скользящее окно «не больше limit попаданий за минуту» по произвольному ключу; true — попадание учтено. */
+  const minuteWindow = (hits: Map<string, number[]>, key: string, limit: number): boolean => {
     const now = Date.now();
-    const hits = (heavyHits.get(s.uid) ?? []).filter((t) => now - t < 60_000);
-    if (hits.length >= (s.demo ? 3 : HEAVY_PER_MINUTE)) { void reply.code(429).send({ error: 'rate_limited', message: 'Слишком много запросов подряд — подождите минуту.' }); return false; }
-    if (heavyRunning >= HEAVY_CONCURRENT) { void reply.code(503).send({ error: 'busy', message: 'Сейчас считаю запросы других пользователей — повторите через минуту.' }); return false; }
-    hits.push(now);
-    heavyHits.set(s.uid, hits);
-    if (heavyHits.size > 5000) for (const [k, v] of heavyHits) if (!v.some((t) => now - t < 60_000)) heavyHits.delete(k);
+    const recent = (hits.get(key) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= limit) return false;
+    recent.push(now);
+    hits.set(key, recent);
+    if (hits.size > 5000) for (const [k, v] of hits) if (!v.some((t) => now - t < 60_000)) hits.delete(k);
     return true;
   };
+
+  /**
+   * Тяжёлые маршруты (карточка, профиль, штат, регионы, сводка) ходят к источникам десятками запросов на один вызов:
+   * не больше HEAVY_PER_MINUTE вызовов в минуту на пользователя и HEAVY_CONCURRENT расчётов одновременно на процесс.
+   * Демо-сессия выдаётся без initData любому, поэтому её ключ — IP-адрес клиента (за nginx — X-Forwarded-For), а не uid.
+   */
+  const HEAVY_PER_MINUTE = 6;
+  const HEAVY_PER_MINUTE_DEMO = 3;
+  const HEAVY_CONCURRENT = 4;
+  const heavyHits = new Map<string, number[]>();
+  let heavyRunning = 0;
+  const heavyGate = (req: FastifyRequest, reply: FastifyReply, s: SessionPayload, opts: { concurrent?: boolean } = {}): boolean => {
+    const key = s.demo ? `ip:${req.ip}` : `uid:${s.uid}`;
+    if (!minuteWindow(heavyHits, key, s.demo ? HEAVY_PER_MINUTE_DEMO : HEAVY_PER_MINUTE)) {
+      void reply.code(429).send({ error: 'rate_limited', message: 'Слишком много запросов подряд — подождите минуту.' });
+      return false;
+    }
+    if (opts.concurrent !== false && heavyRunning >= HEAVY_CONCURRENT) { void reply.code(503).send({ error: 'busy', message: 'Сейчас считаю запросы других пользователей — повторите через минуту.' }); return false; }
+    return true;
+  };
+
+  /** Демо-сессии выдаются без проверки подписи — не больше SESSIONS_PER_MINUTE_DEMO в минуту с одного IP. */
+  const SESSIONS_PER_MINUTE_DEMO = 20;
+  const sessionHits = new Map<string, number[]>();
 
   app.get('/api/health', async () => {
     const inspections = inspectionsForBusiness(deps.market, {});
@@ -181,6 +198,9 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       return { token: signSession(config.sessionSecret, payload), user: { id: uid, name: u.name, demo: false, chatId: u.chatId }, startParam: r.data.startParam };
     }
     if (initData && !config.botToken) return reply.code(503).send({ error: 'no_bot_token', message: 'Сервер запущен без токена бота — проверка initData невозможна' });
+    if (!minuteWindow(sessionHits, `ip:${req.ip}`, SESSIONS_PER_MINUTE_DEMO)) {
+      return reply.code(429).send({ error: 'rate_limited', message: 'Слишком много запросов подряд — подождите минуту.' });
+    }
     const uid = DEMO_UID_BASE - Math.floor(Math.random() * 1_000_000);
     const payload: SessionPayload = { uid, name: null, chatId: null, demo: true, exp };
     return { token: signSession(config.sessionSecret, payload), user: { id: uid, name: null, demo: true, chatId: null }, startParam: null };
@@ -193,7 +213,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const profile = u?.inn ? await getProfile(deps.market, u.inn).catch(() => null) : null;
     const pack = selectPack(catalog, { fnsRegionCode: u?.regionFnsCode ?? profile?.fnsRegionCode ?? null, okved: profile?.okved ?? null });
     return {
-      bot: deps.bot ? { username: deps.bot.username, link: botLink } : null,
+      bot: deps.bot ? { username: deps.bot.username, link: botLink() } : null,
       packs: catalog.packs.map((p) => ({ id: p.id, title: p.title, version: p.version, region: p.region, industry: p.industry, professions: p.professions.map((x) => ({ key: x.key, title: x.title })), demo: p.demo })),
       regions: catalog.regions.map((r) => ({ fnsCode: r.fnsCode, code: r.code, name: r.name, avgSalary: r.avgSalary })),
       professions: catalog.professions.map((x) => ({ key: x.key, title: x.title })),
@@ -211,6 +231,8 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const s = auth(req, reply); if (!s) return;
     const inn = String(req.body?.inn ?? '').replace(/\D/g, '');
     if (!isValidInn(inn)) return reply.code(400).send({ error: 'inn_invalid', message: 'ИНН должен содержать 10 или 12 цифр с верной контрольной суммой' });
+    // Один запрос к реестру МСП, а не десятки: считаем в общем окне, но без места среди параллельных расчётов.
+    if (!heavyGate(req, reply, s, { concurrent: false })) return;
     try {
       const profile = await getProfile(deps.market, inn);
       const region = regionByFnsCode(catalog, profile.fnsRegionCode);
@@ -231,14 +253,18 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (offer != null && (!Number.isFinite(offer) || offer < 1000 || offer > 5_000_000)) return reply.code(400).send({ error: 'offer_invalid', message: 'Ставка должна быть от 1 000 до 5 000 000 ₽ в месяц' });
     const inn = b.inn ? String(b.inn).replace(/\D/g, '') : null;
     if (inn && !isValidInn(inn)) return reply.code(400).send({ error: 'inn_invalid', message: 'Некорректный ИНН' });
+    if (!heavyGate(req, reply, s)) return;
+    heavyRunning += 1;
     try {
+      // Карточка демо-сессии тоже сохраняется: по её id работают «Текст вакансии» и ссылка «Поделиться»;
+      // анонимные карточки живут 3 дня и удаляются суточной чисткой (services/housekeeping.ts).
       const result = await buildMarket(deps.market, { professionKey: resolved.profession.key, profession: resolved.profession, regionFnsCode: b.regionFnsCode ?? null, inn, offer, maxUserId: s.demo ? null : s.uid, forceRefresh: Boolean(b.forceRefresh) && !s.demo });
       if (!s.demo) {
         rememberProfession(s, result.profession);
         updateUser(db, s.uid, { regionFnsCode: b.keepRegion ? undefined : result.region.fnsCode, packId: b.keepRegion ? undefined : result.pack.id, state: { ...userState(s.uid), step: 'idle', professionKey: result.profession.key, lastCardId: result.cardId } });
       }
       return clientSummary(result);
-    } catch (err) { return fail(reply, err); }
+    } catch (err) { return fail(reply, err); } finally { heavyRunning -= 1; }
   });
 
   app.get<{ Params: { id: string } }>('/api/cards/:id', async (req, reply) => {
@@ -331,7 +357,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const regionFnsCode = (b.regionFnsCode ? String(b.regionFnsCode).trim() : null) || u?.regionFnsCode || null;
     const effectiveInn = inn ?? u?.inn ?? null;
     if (!regionFnsCode && !effectiveInn) return reply.code(400).send({ error: 'region_required', message: 'Укажите регион или ИНН бизнеса: без них рынок не с чем сравнивать' });
-    if (!heavyGate(reply, s)) return;
+    if (!heavyGate(req, reply, s)) return;
     heavyRunning += 1;
     try {
       const result = await buildStaffAssessment(deps.market, {
@@ -386,7 +412,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const resolved = professionFrom(s, b, codes[0] ?? null);
     if (!resolved.ok) return reply.code(400).send({ error: resolved.code, message: resolved.message });
     const sortBy: RegionSort = b.sortBy === 'affordability' || b.sortBy === 'vacancies' ? b.sortBy : 'median';
-    if (!heavyGate(reply, s)) return;
+    if (!heavyGate(req, reply, s)) return;
     heavyRunning += 1;
     try {
       const result = await compareRegions(deps.market, {
@@ -409,7 +435,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     const asked = String(req.query?.professions ?? '').split(',').map((k) => k.trim()).filter(Boolean);
     const pack = selectPack(catalog, { fnsRegionCode: fnsCode, okved: null });
     const keys = (asked.length ? asked : pack.professions.map((p) => p.key)).slice(0, MAX_DIGEST_PROFESSIONS);
-    if (!heavyGate(reply, s)) return;
+    if (!heavyGate(req, reply, s)) return;
     heavyRunning += 1;
     try {
       return await regionDigest(deps.market, fnsCode, keys, { persist: false });

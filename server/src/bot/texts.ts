@@ -237,7 +237,7 @@ export function vacanciesListText(items: { title: string; responses: number; new
 
 /** Текст с подсказками, когда должности нет в каталоге: выбор из справочника или расчёт «как есть». */
 export function professionSuggestText(query: string, suggestions: { title: string; source: 'catalog' | 'okpdtr' }[]): string {
-  const lines = [`Должности «${query}» нет в моём списке должностей.`];
+  const lines = [`Должности «${query.slice(0, 80)}» нет в моём списке должностей.`];
   if (suggestions.length) {
     lines.push('Нашёл похожие в государственном справочнике профессий «Работы России» — выберите готовую позицию или считайте по своему названию:');
   } else {

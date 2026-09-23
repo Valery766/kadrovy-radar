@@ -448,16 +448,74 @@ export function updateResponseStatus<A = Record<string, unknown>>(db: Db, id: st
 }
 
 /* ---------- идемпотентность ---------- */
+
+/** Коды SQLite нарушения уникальности: SQLITE_CONSTRAINT_PRIMARYKEY (1555) и SQLITE_CONSTRAINT_UNIQUE (2067). */
+const UNIQUE_VIOLATION = new Set([1555, 2067]);
+
+/** Нарушение первичного ключа или уникального индекса (а не «диск полон» или «база закрыта»). */
+export function isUniqueViolation(err: unknown): boolean {
+  const code = (err as { errcode?: unknown } | null)?.errcode;
+  return typeof code === 'number' && UNIQUE_VIOLATION.has(code);
+}
+
+/**
+ * true — событие новое, false — уже видели. Любая другая ошибка базы (SQLITE_FULL, SQLITE_IOERR)
+ * пробрасывается: иначе бот молча терял бы все события под видом «дубликатов».
+ */
 export function markUpdateSeen(db: Db, updateKey: string): boolean {
   try {
     db.prepare('INSERT INTO updates_seen (update_key, received_at) VALUES (?, ?)').run(updateKey, nowIso());
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    if (isUniqueViolation(err)) return false;
+    throw err;
   }
 }
 export function pruneUpdatesSeen(db: Db, olderThanIso: string): void {
   db.prepare('DELETE FROM updates_seen WHERE received_at < ?').run(olderThanIso);
+}
+
+/* ---------- очистка данных ---------- */
+
+export interface CleanupOptions {
+  now?: Date;
+  /** Кэш выдачи «Работы России» старше стольких дней (по умолчанию 7). */
+  vacancyCacheDays?: number;
+  /** Анонимные карточки (демо-режим, прогрев кэша) старше стольких дней (по умолчанию 3). */
+  anonymousCardDays?: number;
+  /** Наблюдения за вакансиями, не появлявшимися в выдаче столько дней (по умолчанию 30). */
+  vacancySeenDays?: number;
+}
+
+export interface CleanupReport { vacancyCache: number; anonymousCards: number; vacancySeen: number }
+
+/**
+ * Суточная чистка: строки кэша вакансий по мегабайту каждая, анонимные карточки и старые
+ * наблюдения иначе копятся без предела. Карточки пользователей MAX не трогаем — на них
+ * ссылаются отчёты, вакансии и ссылки «Подробный разбор».
+ */
+export function cleanupData(db: Db, opts: CleanupOptions = {}): CleanupReport {
+  const now = (opts.now ?? new Date()).getTime();
+  const before = (days: number) => new Date(now - days * 86400_000).toISOString();
+  const vacancyCache = db.prepare('DELETE FROM vacancy_cache WHERE fetched_at < ?').run(before(opts.vacancyCacheDays ?? 7)).changes;
+  const anonymousCards = db.prepare('DELETE FROM cards WHERE max_user_id IS NULL AND created_at < ?').run(before(opts.anonymousCardDays ?? 3)).changes;
+  const vacancySeen = db.prepare('DELETE FROM vacancy_seen WHERE last_seen < ?').run(before(opts.vacancySeenDays ?? 30)).changes;
+  return { vacancyCache: Number(vacancyCache), anonymousCards: Number(anonymousCards), vacancySeen: Number(vacancySeen) };
+}
+
+/** Сбрасывает WAL в основной файл и обрезает журнал: после массовых DELETE он иначе остаётся большим. */
+export function checkpointWal(db: Db): void {
+  db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+}
+
+/**
+ * VACUUM возвращает освобождённые страницы файловой системе. Внутри транзакции он невозможен
+ * (загрузка ЕРКНМ держит транзакцию между пачками), поэтому в этом случае возвращаем false — вызывающая сторона повторит позже.
+ */
+export function vacuumDb(db: Db): boolean {
+  if ((db as { isTransaction?: boolean }).isTransaction) return false;
+  db.exec('VACUUM');
+  return true;
 }
 
 /* ---------- голосования ---------- */

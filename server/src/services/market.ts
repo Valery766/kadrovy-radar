@@ -36,6 +36,9 @@ export class MarketError extends Error {
 
 const hoursAgo = (iso: string) => (Date.now() - Date.parse(iso)) / 3_600_000;
 
+/** ИНН ИП — персональные данные: в журнал попадают только первые четыре цифры (код региона и инспекции). */
+const maskInn = (inn: string) => `${inn.slice(0, 4)}…`;
+
 /** Профиль бизнеса по ИНН с кэшем. */
 export async function getProfile(ctx: MarketContext, inn: string, opts: { forceRefresh?: boolean } = {}): Promise<BusinessProfile> {
   const cached = getBusinessProfile<BusinessProfile>(ctx.db, inn);
@@ -45,9 +48,9 @@ export async function getProfile(ctx: MarketContext, inn: string, opts: { forceR
     putBusinessProfile(ctx.db, inn, profile, profile.fetchedAt);
     return profile;
   } catch (err) {
-    if (cached) { ctx.log.warn({ inn, err: String(err) }, 'rmsp недоступен, отдаём кэш'); return cached.payload; }
+    if (cached) { ctx.log.warn({ inn: maskInn(inn), err: String(err) }, 'rmsp недоступен, отдаём кэш'); return cached.payload; }
     // Техническая причина — только в лог: пользователю нужен понятный выход, а не «rmsp: HTTP 500».
-    ctx.log.warn({ inn, err: String(err) }, 'rmsp недоступен и кэша нет');
+    ctx.log.warn({ inn: maskInn(inn), err: String(err) }, 'rmsp недоступен и кэша нет');
     throw new MarketError('source_unavailable', 'Реестр МСП ФНС сейчас не отвечает. Можно продолжить без ИНН — просто укажите регион.');
   }
 }
@@ -75,20 +78,39 @@ async function getVacancies(ctx: MarketContext, regionCode: string, profession: 
   }
 }
 
-/** Обогащение работодателей (ИНН → категория МСП, ОКВЭД) с кэшем и ограничением параллелизма. */
-async function enrichEmployers(ctx: MarketContext, vacancies: VacancyRecord[], limit: number): Promise<void> {
+/** Итог обогащения: сколько ИНН получили размер и остановилось ли обогащение из-за молчания реестра. */
+export interface EnrichmentSummary { asked: number; resolved: number; sourceDown: boolean }
+
+/** Таймаут и повторы для обогащения: 60 ИНН × 45 с молчания реестра дали бы 7 минут на карточку, поэтому здесь 5 с без повторов. */
+const ENRICH_FETCH = { timeoutMs: 5_000, retries: 0 } as const;
+
+/** Сетевая ошибка или таймаут (а не ответ источника по конкретному ИНН): дальше реестр не спрашиваем. */
+const isSourceDown = (err: unknown) => err instanceof SourceError && err.status === undefined && err.retryable;
+
+/**
+ * Обогащение работодателей (ИНН → категория МСП, ОКВЭД) с кэшем и ограничением параллелизма.
+ * После первого таймаута или сетевой ошибки остальные ИНН берутся только из кэша: карточка
+ * отдаётся без части размеров, а не висит до 504 у nginx.
+ */
+async function enrichEmployers(ctx: MarketContext, vacancies: VacancyRecord[], limit: number): Promise<EnrichmentSummary> {
   const inns = [...new Set(vacancies.map((v) => v.employerInn).filter((x): x is string => !!x))].slice(0, limit);
   const profiles = new Map<string, BusinessProfile | null>();
   const queue = [...inns];
+  let sourceDown = false;
   const worker = async () => {
     for (let inn = queue.shift(); inn; inn = queue.shift()) {
       const cached = getBusinessProfile<BusinessProfile>(ctx.db, inn);
       if (cached && hoursAgo(cached.fetchedAt) < ctx.config.profileCacheHours) { profiles.set(inn, cached.payload); continue; }
+      if (sourceDown) { if (cached) profiles.set(inn, cached.payload); continue; }
       try {
-        const p = await rmsp.fetchBusinessProfile(inn);
+        const p = await rmsp.fetchBusinessProfile(inn, ENRICH_FETCH);
         putBusinessProfile(ctx.db, inn, p, p.fetchedAt);
         profiles.set(inn, p);
-      } catch { profiles.set(inn, cached?.payload ?? null); }
+      } catch (err) {
+        if (isSourceDown(err) && !sourceDown) { sourceDown = true; ctx.log.warn({ err: String(err), asked: inns.length }, 'rmsp не отвечает — обогащение остальных работодателей пропущено'); }
+        if (cached) profiles.set(inn, cached.payload);
+        else if (!isSourceDown(err)) profiles.set(inn, null);
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(6, inns.length) }, worker));
@@ -97,6 +119,7 @@ async function enrichEmployers(ctx: MarketContext, vacancies: VacancyRecord[], l
     const p = profiles.get(v.employerInn);
     v.employer = p ? { inn: p.inn, name: p.name, category: p.category, okved: p.okved, okvedName: p.okvedName, fnsRegionCode: p.fnsRegionCode, kind: p.kind, registeredAt: p.registeredAt, active: p.active } : null;
   }
+  return { asked: inns.length, resolved: profiles.size, sourceDown };
 }
 
 export interface MarketRequest {
@@ -148,15 +171,17 @@ export async function buildMarket(ctx: MarketContext, req: MarketRequest): Promi
     userCategory: (profile?.category ?? null) as MspCategory | null,
   };
   const { kept } = prepareVacancies(input);
-  await enrichEmployers(ctx, kept, ctx.config.maxEmployersToEnrich);
+  const enrichment = await enrichEmployers(ctx, kept, ctx.config.maxEmployersToEnrich);
   const card = computeMarket(input);
   const closure = card.stats ? closureStats(ctx.db, region.code, profession.key, card.stats.median, fetched.fetchedAt) : null;
 
   const cardId = randomUUID();
   const createdAt = new Date().toISOString();
+  const rmspNote = profile ? 'профиль бизнеса и категории работодателей' : 'категории работодателей';
+  const rmspGap = enrichment.sourceDown ? `; реестр не ответил вовремя — размер известен у ${enrichment.resolved} из ${enrichment.asked} работодателей` : '';
   const sources: SourceBadge[] = [
     { ...SOURCES.trudvsem, fetchedAt: fetched.fetchedAt, note: `${fetched.total} вакансий по запросу «${profession.query}», загружено ${fetched.vacancies.length}` },
-    { ...SOURCES.rmsp, fetchedAt: profile?.fetchedAt ?? createdAt, note: profile ? 'профиль бизнеса и категории работодателей' : 'категории работодателей' },
+    { ...SOURCES.rmsp, fetchedAt: profile?.fetchedAt ?? createdAt, note: rmspNote + rmspGap },
   ];
   const result: MarketResult = {
     cardId, card, pack: { id: pack.id, title: pack.title, version: pack.version }, profession, region, profile, sources,
