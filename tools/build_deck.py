@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SHOTS = ROOT / 'docs' / 'shots'
 BLUE = RGBColor(0x2F, 0x6B, 0xFF); DARK = RGBColor(0x11, 0x18, 0x27); MUTED = RGBColor(0x6B, 0x72, 0x80)
 LIGHT = RGBColor(0xF3, 0xF6, 0xFF); WHITE = RGBColor(0xFF, 0xFF, 0xFF); GREEN = RGBColor(0x1F, 0x9D, 0x55); ORANGE = RGBColor(0xF9, 0x73, 0x16)
-FONT = 'PT Sans'
+FONT = 'Arial'
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--commit', default='<commit hash>')
