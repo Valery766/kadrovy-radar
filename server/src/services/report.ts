@@ -21,6 +21,11 @@ export function cardDeepLink(botUsername: string, cardId: string): string {
   return `https://max.ru/${botUsername}?startapp=card_${cardId}`;
 }
 
+/** Кнопка открытия мини-приложения: web_app — ник бота, к которому привязано приложение; payload → initData.start_param. */
+export function openRadarButton(botUsername: string, cardId: string | null, text = 'Открыть радар') {
+  return Keyboard.button.openApp(text, botUsername, undefined, cardId ? `card_${cardId}` : undefined);
+}
+
 export async function sendReportToChat(ctx: ReportContext, result: MarketResult, userId: number, chatId: number): Promise<{ mid: string; reportId: string; reused: boolean }> {
   const existing = getReportByCard(ctx.db, result.cardId, userId);
   if (existing?.mid && existing.chatId === chatId && Date.now() - Date.parse(existing.createdAt) < 6 * 3600_000) {
@@ -40,7 +45,7 @@ export async function sendReportToChat(ctx: ReportContext, result: MarketResult,
     card.stats ? `Медиана ${formatRub(card.stats.median)}, половина предложений ${formatRub(card.stats.p25)}–${formatRub(card.stats.p75)}; выборка ${card.sample.vacancies} вак. / ${card.sample.employers} работод.` : 'Данных для расчёта не хватило.',
     'Переслать отчёт партнёру или бухгалтеру можно из радара — кнопка «Поделиться в MAX».',
   ].join('\n');
-  const keyboard = Keyboard.inlineKeyboard([[Keyboard.button.link('Открыть радар', cardDeepLink(ctx.botUsername, result.cardId))]]);
+  const keyboard = Keyboard.inlineKeyboard([[openRadarButton(ctx.botUsername, result.cardId)]]);
   const message = await ctx.bot.api.sendMessageToChat(chatId, text, { attachments: [file.toJson(), keyboard] });
   const mid = message.body.mid;
   putReport(ctx.db, { id: reportId, cardId: result.cardId, maxUserId: userId, chatId, mid, filePath });

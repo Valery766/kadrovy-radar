@@ -6,7 +6,7 @@ import { BAND_LABEL, categoryLabel, formatRub, pluralRu } from '../core/index.js
 import type { MarketResult } from '../services/market.js';
 import type { BusinessProfile } from '../integrations/rmsp.js';
 import type { Pack } from '../core/index.js';
-import { cardDeepLink } from '../services/report.js';
+import { openRadarButton } from '../services/report.js';
 
 export const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -22,9 +22,9 @@ export function welcomeText(name: string | null): string {
   ].join('\n');
 }
 
-export function welcomeKeyboard(appUrl: string) {
+export function welcomeKeyboard(botUsername: string) {
   return Keyboard.inlineKeyboard([
-    [Keyboard.button.link('Открыть радар', appUrl)],
+    [openRadarButton(botUsername, null)],
     [Keyboard.button.callback('Ввести ИНН', 'inn:new'), Keyboard.button.callback('Показать на примере', 'demo')],
   ]);
 }
@@ -95,7 +95,7 @@ export function cardText(r: MarketResult): string {
 
 export function cardKeyboard(r: MarketResult, botUsername: string) {
   const rows: KeyboardRows = [];
-  rows.push([Keyboard.button.link('Открыть радар', cardDeepLink(botUsername, r.cardId))]);
+  rows.push([openRadarButton(botUsername, r.cardId)]);
   if (r.card.options.length) {
     rows.push(r.card.options.map((o) => Keyboard.button.callback(`${o.kind === 'keep' ? 'Оставить' : o.kind === 'median' ? 'Медиана' : 'Топ-25 %'} ${Math.round(o.value / 1000)} т.`, `vote:${o.kind}:${r.cardId}`)));
   }

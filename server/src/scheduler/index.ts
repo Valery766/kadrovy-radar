@@ -8,7 +8,7 @@ import { listActiveSubscriptions, pruneUpdatesSeen, touchSubscription } from '..
 import { buildMarket, type MarketContext } from '../services/market.js';
 import { formatRub } from '../core/index.js';
 import { ensureSubscription, type UpdatesDeps } from '../bot/updates.js';
-import { cardDeepLink } from '../services/report.js';
+import { openRadarButton } from '../services/report.js';
 import { Keyboard } from '@maxhub/max-bot-api';
 
 export interface SchedulerDeps {
@@ -65,7 +65,7 @@ export function startScheduler(deps: SchedulerDeps): () => void {
         if (median != null && prev != null && Math.abs(median - prev) / prev >= 0.05) {
           const dir = median > prev ? 'выросла' : 'снизилась';
           await deps.bot.api.sendMessageToChat(s.chatId, `📈 Рынок сдвинулся: медиана «${result.profession.title}, ${result.region.name}» ${dir} с ${formatRub(prev)} до ${formatRub(median)}${s.offer ? `; ваша ставка ${formatRub(s.offer)} теперь — ${result.card.offer?.percentile}-й перцентиль` : ''}.`, {
-            attachments: [Keyboard.inlineKeyboard([[Keyboard.button.link('Открыть радар', cardDeepLink(deps.botUsername, result.cardId))]])],
+            attachments: [Keyboard.inlineKeyboard([[openRadarButton(deps.botUsername, result.cardId)]])],
           });
         }
       } catch (err) { deps.log.warn({ sub: s.id, err: String(err) }, 'subscription check failed'); }

@@ -161,7 +161,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (!u) return;
     const payload = ctx.startPayload;
     if (payload && payload.startsWith('card_')) { await sendCardById(ctx, u.maxUserId, payload.slice(5)); return; }
-    await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.appUrl)] });
+    await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
   });
 
   bot.on('bot_added', async (ctx) => {
@@ -263,7 +263,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const text = (ctx.message?.body?.text ?? '').trim();
     if (!text) return;
     const cmd = /^\/(\w+)/.exec(text)?.[1]?.toLowerCase();
-    if (cmd === 'start') { await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.appUrl)] }); return; }
+    if (cmd === 'start') { await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] }); return; }
     if (cmd === 'help') { await ctx.reply(T.helpText()); return; }
     if (cmd === 'demo') { await runDemo(ctx, uid); return; }
     if (cmd === 'profile') { setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText()); return; }
@@ -312,7 +312,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         const pack = packFor(uid);
         const prof = findProfession(catalog, pack, text);
         if (prof && (getUser(db, uid)?.regionFnsCode)) { setState(uid, { step: 'salary', professionKey: prof.key }); await ctx.reply(T.askSalaryText(prof.title)); return; }
-        await ctx.reply('Чтобы проверить ставку, нажмите /stavka. Справка: /help', { attachments: [T.welcomeKeyboard(deps.appUrl)] });
+        await ctx.reply('Чтобы проверить ставку, нажмите /stavka. Справка: /help', { attachments: [T.welcomeKeyboard(deps.botUsername)] });
       }
     }
   });
