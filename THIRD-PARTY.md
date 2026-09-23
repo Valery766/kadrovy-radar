@@ -1,0 +1,18 @@
+# Сторонние компоненты и лицензии
+
+| Компонент | Версия | Лицензия | Назначение |
+|---|---|---|---|
+| @maxhub/max-bot-api | 0.3.1 | MIT | клиент Bot API MAX |
+| @maxhub/max-ui | 0.5.0 | MIT | React-компоненты в стиле MAX |
+| MAX Bridge (`max-web-app.js`) | CDN st.max.ru | условия платформы MAX | взаимодействие мини-приложения с клиентом MAX |
+| fastify, @fastify/static | 5.x / 8.x | MIT | HTTP-сервер и статика |
+| pdfkit | 0.17 | MIT | PDF-отчёт |
+| yaml | 2.x | ISC | пакеты контекста |
+| zod | 4.x | MIT | валидация |
+| react, react-dom | 19.2.8 | MIT | мини-приложение |
+| vite, @vitejs/plugin-react | 7.x / 5.x | MIT | сборка мини-приложения |
+| typescript, tsx, vitest | 5.x / 4.x / 3.x | Apache-2.0 / MIT / MIT | разработка и тесты |
+| PT Sans (ParaType) | Web | SIL Open Font License 1.1 | шрифт PDF (`server/assets/fonts/OFL.txt`) |
+| Сертификаты Минцифры России | — | публичные корневые сертификаты | доверие к `platform-api2.max.ru` |
+
+Данные: портал «Работа России» (Open API, открытые данные Роструда), Единый реестр субъектов МСП (ФНС России), справочник регионов «Работы России».

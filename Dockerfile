@@ -22,7 +22,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
  && update-ca-certificates && rm -rf /var/lib/apt/lists/*
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 COPY --from=build /app/node_modules node_modules
-COPY --from=build /app/server/node_modules server/node_modules
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/server/package.json server/package.json
 COPY --from=build /app/server/assets server/assets
