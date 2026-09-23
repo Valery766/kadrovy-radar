@@ -155,6 +155,6 @@ describe('тексты бота по словарю', () => {
     expect(labels.length).toBeGreaterThan(30);
     for (const label of labels) expect(label.length, label).toBeLessThanOrEqual(T.MAX_BUTTON_LABEL);
     expect(labels).toContain('Опубликовать 65 тыс.');
-    expect(labels).toContain('Голос: обычная 65 тыс.');
+    expect(labels).toContain('Обычная: 65 тыс.');
   });
 });

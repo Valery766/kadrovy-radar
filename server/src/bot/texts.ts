@@ -323,7 +323,7 @@ export function cardText(r: MarketResult): string {
 
   // 4. Что дальше.
   const next: string[] = [];
-  if (card.options.length > 1) next.push('Голосуйте за ставку кнопкой «Голос: …»: учту голос и покажу итог, в групповом чате соберётся общий.');
+  if (card.options.length > 1) next.push('Голосуйте за ставку кнопками «Моя», «Обычная» или «Верхняя» под сообщением: учту голос и покажу итог, в групповом чате соберётся общий');
   next.push('«Текст вакансии» – готовое объявление на обычную ставку рынка.');
   next.push('«Опубликовать» – ссылка и QR для кандидатов, отклики придут в этот чат.');
   next.push('«Подробный разбор» – распределение ставок, сезонность и кто нанимает; «Прислать PDF-отчёт» – то же одним файлом.');
@@ -343,7 +343,7 @@ export function cardKeyboard(r: MarketResult, botUsername: string) {
   rows.push([openRadarButton(botUsername, r.cardId)]);
   if (r.card.options.length > 1) {
     // Слово «Голос» первым: без него ряд читается как «выбрать ставку», а это голосование.
-    rows.push(r.card.options.map((o) => btn(`Голос: ${OPTION_SHORT[o.kind] ?? o.kind} ${thousands(o.value)}`, `vote:${o.kind}:${r.cardId}`)));
+    rows.push(r.card.options.map((o) => { const w = OPTION_SHORT[o.kind] ?? o.kind; return btn(`${w.charAt(0).toUpperCase()}${w.slice(1)}: ${thousands(o.value)}`, `vote:${o.kind}:${r.cardId}`); }));
   }
   rows.push([btn('Прислать PDF-отчёт', `pdf:${r.cardId}`), btn('Следить за рынком', `sub:${r.cardId}`)]);
   rows.push([btn('Текст вакансии', `text:${r.cardId}`), btn('Другая должность', 'prof:again')]);
