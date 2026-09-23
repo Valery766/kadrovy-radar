@@ -42,6 +42,11 @@ describe('bot helpers', () => {
     expect(parseStaffLine('60000')).toBeNull();
     expect(parseStaffLine('повар 60')).toEqual({ title: 'повар', salary: 60000 }); // «60» — это 60 тысяч
     expect(parseStaffLine('сушист 0')).toBeNull(); // ставка ниже минимальной — строка не принимается
+    // Длинная строка не прогоняется через регулярку: 200 символов — предел, 201 отбрасывается.
+    expect(parseStaffLine(`${'п'.repeat(194)} 60000`)).toEqual({ title: 'п'.repeat(194), salary: 60000 });
+    expect(parseStaffLine(`${'п'.repeat(195)} 60000`)).toBeNull();
+    expect(parseStaffLine(`${'повар '.repeat(60)}60000`)).toBeNull();
+    expect(parseStaffLine('')).toBeNull();
   });
 
   it('parses a region list and reports what it did not recognise', () => {
