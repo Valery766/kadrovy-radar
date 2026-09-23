@@ -178,6 +178,43 @@ export interface PhraseStat {
   share: number;
 }
 
+export interface SeasonalityWeek {
+  /** Номер недели по ISO-8601, например «2026-W15». */
+  week: string;
+  /** Понедельник недели, YYYY-MM-DD. */
+  from: string;
+  /** Воскресенье недели, YYYY-MM-DD. */
+  to: string;
+  count: number;
+  /** Доля недели в выборке, % с одним знаком. */
+  share: number;
+}
+
+export interface SeasonalityMonth {
+  /** Месяц в формате «2026-04». */
+  month: string;
+  /** Читаемая подпись, например «апрель 2026». */
+  label: string;
+  count: number;
+  share: number;
+}
+
+export interface Seasonality {
+  /** Сколько вакансий выборки имеют дату создания. */
+  dated: number;
+  weeks: SeasonalityWeek[];
+  months: SeasonalityMonth[];
+  /** Начало и конец доступного периода наблюдения, YYYY-MM-DD. */
+  from: string | null;
+  to: string | null;
+  /** Неделя пика набора. */
+  peak: SeasonalityWeek | null;
+  /** Месяц пика набора. */
+  peakMonth: SeasonalityMonth | null;
+  /** Во сколько раз пик выше средней недели. */
+  peakRatio: number | null;
+}
+
 export interface MarketCard {
   professionKey: string;
   professionTitle: string;
@@ -215,6 +252,8 @@ export interface MarketCard {
   examples: VacancyExample[];
   requirements: PhraseStat[];
   schedules: { label: string; share: number }[];
+  /** Распределение вакансий по неделям публикации; null — дат в выборке слишком мало. */
+  seasonality?: Seasonality | null;
   /** Готовый текстовый вердикт (детерминированный, по правилам ядра). */
   verdict: string;
 }
@@ -233,4 +272,122 @@ export interface MarketInput {
   regionName: string;
   /** Дата «сегодня» (для расчёта свежих вакансий); по умолчанию — текущая. */
   now?: Date;
+}
+
+/* ────────────────────────── «Штат и удержание» ────────────────────────── */
+
+export interface StaffPosition {
+  /** Идентификатор строки штата (задаёт вызывающая сторона). */
+  id: string;
+  /** Название должности как его написал владелец. */
+  title: string;
+  /** Текущая ставка, ₽/мес до НДФЛ. */
+  salary: number;
+  /** Ключ профессии каталога или «custom:<slug>»; null — профессия не определена. */
+  professionKey?: string | null;
+}
+
+export type StaffRisk = 'high' | 'medium' | 'none' | 'unknown';
+
+export interface StaffAssessment {
+  id: string;
+  title: string;
+  salary: number;
+  professionKey: string | null;
+  professionTitle: string | null;
+  /** Перцентиль ставки на рынке региона (аппроксимация по гистограмме карточки). */
+  percentile: number | null;
+  band: OfferBand | null;
+  median: number | null;
+  p25: number | null;
+  p75: number | null;
+  /** Разрыв до медианы, ₽/мес (0, если ставка не ниже медианы). */
+  gapRub: number;
+  /** Тот же разрыв в процентах от текущей ставки. */
+  gapPct: number;
+  /** high — ниже 25-го перцентиля, medium — ниже медианы, none — в рынке, unknown — нет данных. */
+  risk: StaffRisk;
+  /** Причина, по которой оценка не сделана. */
+  note: string | null;
+}
+
+export interface StaffSummary {
+  positions: number;
+  assessed: number;
+  unknown: number;
+  highRisk: number;
+  mediumRisk: number;
+  inMarket: number;
+  /** Текущий фонд оплаты труда по внесённым позициям, ₽/мес. */
+  payroll: number;
+  /** Сколько стоит подтянуть всех отстающих до медианы, ₽/мес. */
+  costToMedian: number;
+  /** Стоимость подтягивания в процентах от фонда. */
+  costShare: number;
+  /** Медианный перцентиль штата. */
+  medianPercentile: number | null;
+}
+
+export interface StaffReport {
+  /** Позиции, отсортированные от самых отстающих к рыночным. */
+  positions: StaffAssessment[];
+  summary: StaffSummary;
+}
+
+/* ────────────────────────── Сравнение регионов ────────────────────────── */
+
+export type RegionSort = 'median' | 'affordability' | 'vacancies';
+
+export interface RegionMarketInput {
+  /** Двузначный код региона ФНС. */
+  fnsCode: string;
+  /** 13-значный код региона «Работы России», если известен. */
+  regionCode?: string | null;
+  regionName: string;
+  /** Средняя зарплата по региону из справочника, ₽/мес. */
+  avgSalary: number | null;
+  stats: SalaryStats | null;
+  histogram?: HistogramBucket[];
+  vacancies: number;
+  employers: number;
+  confidence?: Confidence | null;
+  /** Причина, по которой регион не посчитан; остальные регионы это не ломает. */
+  error?: string | null;
+}
+
+export interface RegionComparisonRow {
+  fnsCode: string;
+  regionCode: string | null;
+  regionName: string;
+  avgSalary: number | null;
+  median: number | null;
+  p25: number | null;
+  p75: number | null;
+  vacancies: number;
+  employers: number;
+  /** Индекс доступности: медиана профессии ÷ средняя зарплата региона. */
+  affordability: number | null;
+  /** Перцентиль вашей ставки в этом регионе. */
+  offerPercentile: number | null;
+  confidence: Confidence | null;
+  error: string | null;
+  /** Место в таблице после сортировки (1 — первое); 0 у регионов без данных. */
+  rank: number;
+}
+
+export interface RegionComparison {
+  sortBy: RegionSort;
+  rows: RegionComparisonRow[];
+  summary: {
+    regions: number;
+    withData: number;
+    failed: number;
+    /** Код ФНС региона с самой низкой медианой. */
+    cheapest: string | null;
+    mostVacancies: string | null;
+    bestAffordability: string | null;
+    medianMin: number | null;
+    medianMax: number | null;
+    spreadPct: number | null;
+  };
 }

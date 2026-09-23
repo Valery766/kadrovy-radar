@@ -96,6 +96,41 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_subs_unique ON subscriptions(max_user_id, profession_key, region_code);
 
+-- Опубликованные вакансии: карточка вакансии в MAX (диплинк + QR) и её жизненный цикл.
+CREATE TABLE IF NOT EXISTS vacancies (
+  id TEXT PRIMARY KEY,
+  max_user_id INTEGER NOT NULL,
+  card_id TEXT,
+  profession_key TEXT NOT NULL,
+  region_code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  salary INTEGER,
+  text TEXT NOT NULL,
+  employer_name TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL,
+  closed_at TEXT,
+  hired_response_id TEXT,
+  first_response_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_vacancies_user ON vacancies(max_user_id, created_at);
+
+-- Отклики кандидатов: ответы на три вопроса, номер (если поделился) и статус.
+CREATE TABLE IF NOT EXISTS responses (
+  id TEXT PRIMARY KEY,
+  vacancy_id TEXT NOT NULL,
+  candidate_user_id INTEGER NOT NULL,
+  candidate_name TEXT,
+  answers TEXT NOT NULL,
+  phone TEXT,
+  phone_verified INTEGER NOT NULL DEFAULT 0,
+  score INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'new',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_responses_vacancy ON responses(vacancy_id, created_at);
+
 -- Идемпотентность вебхука: MAX может доставить одно событие до 10 раз.
 CREATE TABLE IF NOT EXISTS updates_seen (
   update_key TEXT PRIMARY KEY,
@@ -250,6 +285,126 @@ export function deactivateSubscription(db: Db, id: string, maxUserId: number): b
 }
 export function touchSubscription(db: Db, id: string, lastMedian: number | null): void {
   db.prepare('UPDATE subscriptions SET last_median = ?, last_checked_at = ? WHERE id = ?').run(lastMedian, nowIso(), id);
+}
+
+/* ---------- вакансии и отклики ---------- */
+export type VacancyStatus = 'open' | 'closed';
+export type ResponseStatus = 'new' | 'invited' | 'rejected' | 'hired';
+
+export interface VacancyRow {
+  id: string;
+  maxUserId: number;
+  cardId: string | null;
+  professionKey: string;
+  regionCode: string;
+  title: string;
+  salary: number | null;
+  text: string;
+  employerName: string | null;
+  status: VacancyStatus;
+  createdAt: string;
+  closedAt: string | null;
+  hiredResponseId: string | null;
+  firstResponseAt: string | null;
+}
+
+export interface ResponseRow<A = Record<string, unknown>> {
+  id: string;
+  vacancyId: string;
+  candidateUserId: number;
+  candidateName: string | null;
+  answers: A;
+  phone: string | null;
+  phoneVerified: boolean;
+  score: number;
+  status: ResponseStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function mapVacancy(r: Record<string, unknown>): VacancyRow {
+  return {
+    id: r.id as string, maxUserId: r.max_user_id as number, cardId: r.card_id as string | null,
+    professionKey: r.profession_key as string, regionCode: r.region_code as string, title: r.title as string,
+    salary: r.salary as number | null, text: r.text as string, employerName: r.employer_name as string | null,
+    status: r.status as VacancyStatus, createdAt: r.created_at as string, closedAt: r.closed_at as string | null,
+    hiredResponseId: r.hired_response_id as string | null, firstResponseAt: r.first_response_at as string | null,
+  };
+}
+
+function mapResponse<A>(r: Record<string, unknown>): ResponseRow<A> {
+  return {
+    id: r.id as string, vacancyId: r.vacancy_id as string, candidateUserId: r.candidate_user_id as number,
+    candidateName: r.candidate_name as string | null, answers: JSON.parse(r.answers as string) as A,
+    phone: r.phone as string | null, phoneVerified: (r.phone_verified as number) === 1, score: r.score as number,
+    status: r.status as ResponseStatus, createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+  };
+}
+
+export function putVacancy(db: Db, v: { id: string; maxUserId: number; cardId: string | null; professionKey: string; regionCode: string; title: string; salary: number | null; text: string; employerName: string | null }): VacancyRow {
+  db.prepare('INSERT INTO vacancies (id, max_user_id, card_id, profession_key, region_code, title, salary, text, employer_name, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, \'open\', ?)')
+    .run(v.id, v.maxUserId, v.cardId, v.professionKey, v.regionCode, v.title, v.salary, v.text, v.employerName, nowIso());
+  return getVacancy(db, v.id)!;
+}
+
+export function getVacancy(db: Db, id: string): VacancyRow | null {
+  const r = db.prepare('SELECT * FROM vacancies WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  return r ? mapVacancy(r) : null;
+}
+
+/** Вакансии пользователя с числом откликов (всего и новых) — для списка «Мои вакансии». */
+export function listVacanciesByUser(db: Db, maxUserId: number, limit = 50): (VacancyRow & { responses: number; newResponses: number })[] {
+  const rows = db.prepare(`SELECT v.*,
+      (SELECT COUNT(*) FROM responses r WHERE r.vacancy_id = v.id) AS responses_total,
+      (SELECT COUNT(*) FROM responses r WHERE r.vacancy_id = v.id AND r.status = 'new') AS responses_new
+    FROM vacancies v WHERE v.max_user_id = ? ORDER BY v.created_at DESC LIMIT ?`).all(maxUserId, limit) as Record<string, unknown>[];
+  return rows.map((r) => ({ ...mapVacancy(r), responses: r.responses_total as number, newResponses: r.responses_new as number }));
+}
+
+export function countResponses(db: Db, vacancyId: string): { total: number; fresh: number } {
+  const r = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) AS fresh FROM responses WHERE vacancy_id = ?").get(vacancyId) as { total: number; fresh: number | null };
+  return { total: r.total, fresh: r.fresh ?? 0 };
+}
+
+export function closeVacancy(db: Db, id: string, maxUserId: number, hiredResponseId: string | null = null): VacancyRow | null {
+  const res = db.prepare("UPDATE vacancies SET status = 'closed', closed_at = COALESCE(closed_at, ?), hired_response_id = COALESCE(?, hired_response_id) WHERE id = ? AND max_user_id = ?")
+    .run(nowIso(), hiredResponseId, id, maxUserId);
+  return res.changes > 0 ? getVacancy(db, id) : null;
+}
+
+/** Отметить время первого отклика — метрика «время до первого отклика» (ставится один раз). */
+export function markFirstResponse(db: Db, vacancyId: string, at: string): void {
+  db.prepare('UPDATE vacancies SET first_response_at = COALESCE(first_response_at, ?) WHERE id = ?').run(at, vacancyId);
+}
+
+export function putResponse(db: Db, r: { id: string; vacancyId: string; candidateUserId: number; candidateName: string | null; answers: unknown; phone: string | null; phoneVerified: boolean; score: number }): ResponseRow {
+  const now = nowIso();
+  db.prepare('INSERT INTO responses (id, vacancy_id, candidate_user_id, candidate_name, answers, phone, phone_verified, score, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'new\', ?, ?)')
+    .run(r.id, r.vacancyId, r.candidateUserId, r.candidateName, JSON.stringify(r.answers), r.phone, r.phoneVerified ? 1 : 0, Math.round(r.score), now, now);
+  markFirstResponse(db, r.vacancyId, now);
+  return getResponse(db, r.id)!;
+}
+
+export function getResponse<A = Record<string, unknown>>(db: Db, id: string): ResponseRow<A> | null {
+  const r = db.prepare('SELECT * FROM responses WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  return r ? mapResponse<A>(r) : null;
+}
+
+/** Отклики по вакансии: по убыванию совпадения, при равенстве — раньше пришедшие выше. */
+export function listResponsesByVacancy<A = Record<string, unknown>>(db: Db, vacancyId: string): ResponseRow<A>[] {
+  const rows = db.prepare('SELECT * FROM responses WHERE vacancy_id = ? ORDER BY score DESC, created_at ASC').all(vacancyId) as Record<string, unknown>[];
+  return rows.map((r) => mapResponse<A>(r));
+}
+
+/** Последний отклик кандидата на вакансию — чтобы не плодить дубли при повторном заходе. */
+export function findResponseByCandidate<A = Record<string, unknown>>(db: Db, vacancyId: string, candidateUserId: number): ResponseRow<A> | null {
+  const r = db.prepare('SELECT * FROM responses WHERE vacancy_id = ? AND candidate_user_id = ? ORDER BY created_at DESC LIMIT 1').get(vacancyId, candidateUserId) as Record<string, unknown> | undefined;
+  return r ? mapResponse<A>(r) : null;
+}
+
+export function updateResponseStatus<A = Record<string, unknown>>(db: Db, id: string, status: ResponseStatus): ResponseRow<A> | null {
+  const res = db.prepare('UPDATE responses SET status = ?, updated_at = ? WHERE id = ?').run(status, nowIso(), id);
+  return res.changes > 0 ? getResponse<A>(db, id) : null;
 }
 
 /* ---------- идемпотентность ---------- */

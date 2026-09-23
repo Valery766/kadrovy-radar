@@ -9,12 +9,13 @@ interface Props {
   onProfileSaved: (p: Profile, r: Region | null) => void;
   onStart: (prefill?: { inn?: string | null; regionFnsCode?: string | null }) => void;
   onOpenCard: (id: string) => void;
+  onInbox: () => void;
   onDemo: (pack: PackRef) => void;
 }
 
 const innValid = (s: string) => /^\d{10}$|^\d{12}$/.test(s);
 
-export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpenCard, onDemo }: Props) {
+export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpenCard, onInbox, onDemo }: Props) {
   const [inn, setInn] = useState(boot.user.inn ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +74,12 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
         <div className="sv-muted sv-small">Должность → регион → ваша ставка. Источник вакансий — «Работа России» (Роструд), обновляется при запросе.</div>
         <Button stretched onClick={() => onStart({ inn: profile?.inRegistry ? profile.inn : null, regionFnsCode: region?.fnsCode ?? null })}>Показать рынок</Button>
         {demoPacks.map((p) => <Button key={p.id} stretched variant="secondary" onClick={() => onDemo(p)}>Показать на примере: {p.title}</Button>)}
+      </div>
+
+      <div className="sv-card sv-stack">
+        <div className="sv-h2">3. Найм</div>
+        <div className="sv-muted sv-small">Опубликованные вакансии, отклики кандидатов с баллом совпадения, приглашения и найм. Публикация — из карточки рынка.</div>
+        <Button stretched variant="secondary" onClick={onInbox}>Мои вакансии и отклики</Button>
       </div>
 
       {boot.recentCards.length > 0 && (

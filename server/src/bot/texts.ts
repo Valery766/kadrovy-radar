@@ -6,7 +6,9 @@ import { BAND_LABEL, categoryLabel, formatRub, pluralRu } from '../core/index.js
 import type { MarketResult } from '../services/market.js';
 import type { BusinessProfile } from '../integrations/rmsp.js';
 import type { Pack } from '../core/index.js';
+import type { VacancyRow } from '../db/index.js';
 import { openRadarButton } from '../services/report.js';
+import { inboxButton } from '../services/hiring.js';
 
 export const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -101,7 +103,96 @@ export function cardKeyboard(r: MarketResult, botUsername: string) {
   }
   rows.push([Keyboard.button.callback('PDF-отчёт', `pdf:${r.cardId}`), Keyboard.button.callback('Следить за рынком', `sub:${r.cardId}`)]);
   rows.push([Keyboard.button.callback('Текст вакансии', `text:${r.cardId}`), Keyboard.button.callback('Другая должность', 'prof:again')]);
+  rows.push([Keyboard.button.callback('Опубликовать вакансию', `pub:${r.cardId}`)]);
   return Keyboard.inlineKeyboard(rows);
+}
+
+/* ---------- отклики и найм ---------- */
+
+/** Карточка опубликованной вакансии в чате работодателя: ссылка, QR и действия. */
+export function publishedVacancyText(v: VacancyRow, regionName: string, link: string): string {
+  return [
+    `✅ Вакансия опубликована: ${v.title} — ${regionName}`,
+    v.salary ? `Ставка: от ${formatRub(v.salary)}` : 'Ставка: не указана',
+    '',
+    'Ссылка для кандидатов (перешлите её в чаты сотрудников, партнёров и местные каналы MAX, распечатайте QR для зала):',
+    link,
+    '',
+    'Кандидат откроет бота по ссылке, ответит на три вопроса и сможет поделиться номером. Отклики придут сюда и в мини-приложение.',
+  ].join('\n');
+}
+
+export function publishedVacancyKeyboard(v: VacancyRow, botUsername: string, link: string) {
+  return Keyboard.inlineKeyboard([
+    [Keyboard.button.link('Поделиться в MAX', link)],
+    [inboxButton(botUsername, v.id), Keyboard.button.callback('Закрыть вакансию', `vacclose:${v.id}`)],
+  ]);
+}
+
+/** Карточка вакансии для кандидата, пришедшего по диплинку. */
+export function candidateVacancyText(v: VacancyRow, regionName: string): string {
+  const lines = [
+    `📌 ${v.title} — ${regionName}`,
+    v.employerName ? `Работодатель: ${v.employerName}` : null,
+    v.salary ? `Ставка: от ${formatRub(v.salary)}` : null,
+    '',
+    v.text,
+  ].filter((x): x is string => x !== null);
+  if (v.status === 'closed') lines.push('', '⚠️ Вакансия уже закрыта — откликнуться нельзя.');
+  return lines.join('\n');
+}
+
+export function candidateVacancyKeyboard(v: VacancyRow) {
+  if (v.status === 'closed') return Keyboard.inlineKeyboard([[Keyboard.button.callback('Посмотреть ставки по рынку', 'prof:again')]]);
+  return Keyboard.inlineKeyboard([[Keyboard.button.callback('Откликнуться', `apply:${v.id}`)]]);
+}
+
+export const askExperienceText = 'Вопрос 1 из 3. Какой у вас опыт по этой должности?';
+
+export function experienceKeyboard(vacancyId: string) {
+  return Keyboard.inlineKeyboard([
+    [Keyboard.button.callback('Без опыта', `exp:none:${vacancyId}`), Keyboard.button.callback('До года', `exp:lt1:${vacancyId}`)],
+    [Keyboard.button.callback('1–3 года', `exp:mid:${vacancyId}`), Keyboard.button.callback('3 года и больше', `exp:senior:${vacancyId}`)],
+  ]);
+}
+
+export function askScheduleText(v: VacancyRow): string {
+  const line = /^График:\s*(.+)$/m.exec(v.text)?.[1];
+  return `Вопрос 2 из 3. Готовы работать по графику вакансии${line ? ` (${line})` : ''}?`;
+}
+
+export function scheduleKeyboard(vacancyId: string) {
+  return Keyboard.inlineKeyboard([[Keyboard.button.callback('Да, готов', `sch:yes:${vacancyId}`), Keyboard.button.callback('Нет', `sch:no:${vacancyId}`)]]);
+}
+
+export function askSalaryExpectationText(v: VacancyRow): string {
+  return `Вопрос 3 из 3. На какую ставку рассчитываете? Напишите число в рублях в месяц${v.salary ? ` (в вакансии — от ${formatRub(v.salary)})` : ''} или «как в вакансии».`;
+}
+
+export const askPhoneText = 'Остался последний шаг. Поделитесь номером телефона — работодатель свяжется с вами напрямую. Номер увидит только он, подпись MAX проверяется на сервере.';
+
+export function phoneKeyboard(vacancyId: string) {
+  return Keyboard.inlineKeyboard([
+    [Keyboard.button.requestContact('Поделиться номером')],
+    [Keyboard.button.callback('Без номера', `nophone:${vacancyId}`)],
+  ]);
+}
+
+export function responseSentText(withPhone: boolean): string {
+  return [
+    'Отклик отправлен работодателю. Статус придёт сюда же, в этот чат.',
+    withPhone ? 'Номер передан работодателю.' : 'Номер вы не оставили — работодатель ответит сообщением в MAX.',
+  ].join(' ');
+}
+
+/** Список вакансий работодателя: /vacancies. */
+export function vacanciesListText(items: { title: string; responses: number; newResponses: number; status: string }[]): string {
+  if (!items.length) return 'Опубликованных вакансий пока нет. Получите карточку рынка (/stavka) и нажмите «Опубликовать вакансию».';
+  const lines = [`Ваши вакансии (${items.length}):`];
+  for (const v of items) {
+    lines.push(`• ${v.title} — ${v.status === 'open' ? 'открыта' : 'закрыта'}, откликов ${v.responses}${v.newResponses ? ` (новых ${v.newResponses})` : ''}`);
+  }
+  return lines.join('\n');
 }
 
 export function helpText(): string {

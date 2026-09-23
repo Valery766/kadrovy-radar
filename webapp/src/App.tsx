@@ -7,6 +7,7 @@ import { Home } from './screens/Home';
 import { Query } from './screens/Query';
 import { Card } from './screens/Card';
 import { VacancyText } from './screens/VacancyText';
+import { Inbox } from './screens/Inbox';
 
 type Screen =
   | { name: 'boot' }
@@ -15,6 +16,7 @@ type Screen =
   | { name: 'loading'; label: string }
   | { name: 'card'; result: MarketResult }
   | { name: 'text'; result: MarketResult; salary: number }
+  | { name: 'inbox'; vacancyId: string | null }
   | { name: 'error'; message: string; retry?: () => void };
 
 export function App() {
@@ -46,6 +48,7 @@ export function App() {
         if (sp && sp.startsWith('card_')) {
           try { const r = await api.card(sp.slice(5)); setScreen({ name: 'card', result: r }); return; } catch { /* карточка не найдена — на главную */ }
         }
+        if (sp && sp.startsWith('inbox_')) { setScreen({ name: 'inbox', vacancyId: sp.slice(6) }); return; }
         void b;
         setScreen({ name: 'home' });
       } catch (err) {
@@ -81,6 +84,7 @@ export function App() {
         onProfileSaved={(_p: Profile, _r: Region | null) => void reloadBoot()}
         onStart={(prefill) => go({ name: 'query', prefill })}
         onOpenCard={async (id) => { try { const r = await api.card(id); go({ name: 'card', result: r }); } catch (e) { setScreen({ name: 'error', message: e instanceof ApiError ? e.message : 'Карточка не найдена' }); } }}
+        onInbox={() => go({ name: 'inbox', vacancyId: null })}
         onDemo={(pack) => { if (pack.demo) void runMarket({ inn: pack.demo.inn, regionFnsCode: pack.region?.fnsCode ?? null, professionKey: pack.demo.profession, offer: pack.demo.salary }); }} />;
     case 'query':
       return <Query boot={boot} prefill={screen.prefill} onSubmit={(p) => void runMarket(p)} onBack={back} />;
@@ -96,9 +100,13 @@ export function App() {
         onRecalc={(offer) => void runMarket({ inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode, professionKey: screen.result.profession.key, offer })}
         onAnother={() => go({ name: 'query', prefill: { inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode } })}
         onText={(salary) => go({ name: 'text', result: screen.result, salary })}
+        onOpenInbox={(vacancyId) => go({ name: 'inbox', vacancyId })}
         onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
     case 'text':
       return <VacancyText result={screen.result} salary={screen.salary} onBack={back} />;
+    case 'inbox':
+      return <Inbox boot={boot} notInMax={notInMax} initialVacancyId={screen.vacancyId}
+        onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
     case 'error':
       return <div className="sv-page sv-stack" style={{ paddingTop: 40 }}>
         <div className="sv-title">Не получилось</div>

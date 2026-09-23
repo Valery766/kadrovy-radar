@@ -37,6 +37,7 @@ async function main() {
   if (bot && botInfo) {
     report = { db, config, bot, botUsername: botInfo.username };
     apiDeps.report = report; // маршруты читают deps.report при каждом запросе
+    apiDeps.hiring = { db, config, bot, botUsername: botInfo.username }; // тот же бот пишет кандидатам по действиям из мини-приложения
     registerBot(bot, { db, market, report, catalog, appUrl: `${config.publicUrl}/app/`, botUsername: botInfo.username, log });
   }
 

@@ -45,7 +45,8 @@ describe('api', () => {
     const r = await get('/api/bootstrap', token);
     expect(r.statusCode).toBe(200);
     const b = r.json();
-    expect(b.packs.map((p: { id: string }) => p.id)).toEqual(['generic', 'spb-obschepit', 'tatarstan-roznitsa']);
+    // Пакеты — переменная часть: проверяем наличие базовых, а не точный список.
+    expect(b.packs.map((p: { id: string }) => p.id)).toEqual(expect.arrayContaining(['generic', 'spb-obschepit', 'tatarstan-roznitsa']));
     expect(b.regions.length).toBe(91);
     expect(b.user.demo).toBe(true);
     expect(b.bot.username).toBe('test_bot');

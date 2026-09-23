@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { computeMarket, dedupeVacancies, matchTitle, percentileOf, quantileSorted, histogram, buildVacancyDraft } from '../src/core/index.js';
+import { computeMarket, dedupeVacancies, matchTitle, percentileOf, quantileSorted, histogram, buildVacancyDraft, seasonality, isoWeekLabel } from '../src/core/index.js';
 import type { Pack, Profession, Thresholds, VacancyRecord } from '../src/core/index.js';
 import { mapVacancy, type RawVacancy } from '../src/integrations/trudvsem.js';
 import { parseJsonLenient } from '../src/integrations/http.js';
@@ -109,6 +109,56 @@ describe('computeMarket on real fixture (повар, Санкт-Петербур
     expect(text).toContain('Повар — Санкт-Петербург');
     expect(text).toContain('70 000 ₽');
     expect(text).toContain('официальное оформление');
+  });
+});
+
+describe('seasonality', () => {
+  const at = (day: string): VacancyRecord => ({ ...vacancies[0]!, id: `s-${day}-${Math.random()}`, createdAt: day });
+
+  it('labels ISO weeks', () => {
+    expect(isoWeekLabel(new Date('2026-01-01T00:00:00Z'))).toBe('2026-W01');
+    expect(isoWeekLabel(new Date('2026-09-23T00:00:00Z'))).toBe('2026-W39');
+    // Понедельник и воскресенье одной недели дают одну метку.
+    expect(isoWeekLabel(new Date('2026-04-13T00:00:00Z'))).toBe(isoWeekLabel(new Date('2026-04-19T00:00:00Z')));
+  });
+
+  it('finds the peak hiring week and keeps empty weeks in the window', () => {
+    const list = [
+      ...Array.from({ length: 15 }, () => at('2026-04-15')),
+      ...Array.from({ length: 5 }, () => at('2026-06-10')),
+      ...Array.from({ length: 3 }, () => at('2026-09-16')),
+    ];
+    const s = seasonality(list, { maxWeeks: 30 })!;
+    expect(s).not.toBeNull();
+    expect(s.dated).toBe(23);
+    expect(s.peak!.count).toBe(15);
+    expect(s.peak!.from).toBe('2026-04-13');
+    expect(s.peak!.to).toBe('2026-04-19');
+    expect(s.peakRatio).toBeGreaterThan(1);
+    expect(s.peakMonth!.month).toBe('2026-04');
+    expect(s.weeks.some((w) => w.count === 0)).toBe(true);
+    expect(s.weeks.reduce((acc, w) => acc + w.count, 0)).toBe(23);
+    expect(s.to).toBe('2026-09-20');
+  });
+
+  it('returns null when dates are too few and ignores unparsable ones', () => {
+    expect(seasonality([])).toBeNull();
+    expect(seasonality(Array.from({ length: 5 }, () => at('2026-04-15')))).toBeNull();
+    const broken = Array.from({ length: 25 }, () => ({ ...at('2026-04-15'), createdAt: 'не дата' }));
+    expect(seasonality(broken)).toBeNull();
+  });
+
+  it('is attached to the market card without breaking it', () => {
+    const fresh = computeMarket({
+      vacancies, profession: povar, regionCode: '7800000000000', regionName: 'Санкт-Петербург',
+      offer: null, thresholds, requirementPhrases: [], userCategory: null, now: new Date('2026-09-23'),
+    });
+    expect(fresh.seasonality === null || typeof fresh.seasonality === 'object').toBe(true);
+    if (fresh.seasonality) {
+      expect(fresh.seasonality.dated).toBeGreaterThan(0);
+      expect(fresh.seasonality.peak).not.toBeNull();
+      expect(fresh.seasonality.weeks.reduce((acc, w) => acc + w.count, 0)).toBe(fresh.seasonality.dated);
+    }
   });
 });
 

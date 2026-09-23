@@ -71,6 +71,26 @@ export interface MarketResult {
   createdAt: string;
 }
 
+/* ---------- отклики и найм ---------- */
+export type VacancyStatus = 'open' | 'closed';
+export type ResponseStatus = 'new' | 'invited' | 'rejected' | 'hired';
+
+export interface VacancyView {
+  id: string; cardId: string | null; title: string; professionKey: string; regionCode: string; regionName: string;
+  salary: number | null; text: string; employerName: string | null; status: VacancyStatus;
+  createdAt: string; closedAt: string | null; hiredResponseId: string | null; firstResponseAt: string | null;
+  responses: number; newResponses: number; link: string | null;
+  metrics: { timeToFirstResponseMin: number | null; timeToHireMin: number | null };
+}
+
+export interface CandidateAnswers { experience: 'none' | 'lt1' | 'mid' | 'senior'; schedule: boolean; expectedSalary: number | null }
+
+export interface ResponseView {
+  id: string; vacancyId: string; candidateName: string | null; answers: CandidateAnswers; experienceLabel: string;
+  phone: string | null; phoneVerified: boolean; score: number; maxScore: number; status: ResponseStatus;
+  createdAt: string; updatedAt: string;
+}
+
 export const api = {
   bootstrap: () => request<Bootstrap>('GET', '/api/bootstrap'),
   profile: (inn: string) => request<{ profile: Profile; region: Region | null; pack: { id: string; title: string; professions: ProfessionRef[] } }>('POST', '/api/profile', { inn }),
@@ -81,8 +101,29 @@ export const api = {
   vacancyText: (id: string, salary?: number) => request<{ text: string; salary: number }>('POST', `/api/cards/${encodeURIComponent(id)}/vacancy-text`, { salary }),
   subscriptions: () => request<{ subscriptions: { id: string; professionTitle: string; regionName: string; offer: number | null; lastMedian: number | null }[] }>('GET', '/api/subscriptions'),
   unsubscribe: (id: string) => request<{ ok: boolean }>('DELETE', `/api/subscriptions/${encodeURIComponent(id)}`),
+  publishVacancy: (cardId: string, body: { salary?: number | null; text?: string }) =>
+    request<{ vacancy: VacancyView; link: string; qrSent: boolean }>('POST', `/api/cards/${encodeURIComponent(cardId)}/vacancy`, body),
+  vacancies: () => request<{ vacancies: VacancyView[]; demo: boolean }>('GET', '/api/vacancies'),
+  vacancyResponses: (id: string) => request<{ vacancy: VacancyView; responses: ResponseView[] }>('GET', `/api/vacancies/${encodeURIComponent(id)}/responses`),
+  invite: (responseId: string, message: string) => request<{ response: ResponseView }>('POST', `/api/responses/${encodeURIComponent(responseId)}/invite`, { message }),
+  reject: (responseId: string) => request<{ response: ResponseView }>('POST', `/api/responses/${encodeURIComponent(responseId)}/reject`, {}),
+  hire: (responseId: string) => request<{ response: ResponseView; vacancy: VacancyView }>('POST', `/api/responses/${encodeURIComponent(responseId)}/hire`, {}),
+  closeVacancy: (id: string) => request<{ vacancy: VacancyView }>('POST', `/api/vacancies/${encodeURIComponent(id)}/close`, {}),
 };
 
 export const rub = (v: number) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
 export const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 export const categoryLabel = (c: 0 | 1 | 2 | 3 | null | undefined) => (c === 1 ? 'микропредприятие' : c === 2 ? 'малое предприятие' : c === 3 ? 'среднее предприятие' : 'не МСП');
+
+/** Длительность в минутах → «12 мин», «3 ч 20 мин», «2 дн 4 ч». */
+export const fmtDuration = (minutes: number | null): string => {
+  if (minutes == null) return '—';
+  if (minutes < 60) return `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ч${minutes % 60 ? ` ${minutes % 60} мин` : ''}`;
+  const days = Math.floor(hours / 24);
+  return `${days} дн${hours % 24 ? ` ${hours % 24} ч` : ''}`;
+};
+
+export const responseStatusLabel = (s: ResponseStatus): string =>
+  (s === 'new' ? 'новый' : s === 'invited' ? 'приглашён' : s === 'rejected' ? 'отказ' : 'нанят');

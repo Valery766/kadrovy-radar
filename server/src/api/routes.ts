@@ -4,10 +4,19 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { Db } from '../db/index.js';
-import { deactivateSubscription, getCard, getMeta, getUser, listCardsByUser, listUserSubscriptions, updateUser, upsertSubscription, upsertUser } from '../db/index.js';
+import { Keyboard } from '@maxhub/max-bot-api';
+import type { Db, ResponseRow, VacancyRow } from '../db/index.js';
+import {
+  closeVacancy, countResponses, deactivateSubscription, getCard, getMeta, getResponse, getUser, getVacancy,
+  listCardsByUser, listResponsesByVacancy, listUserSubscriptions, listVacanciesByUser, updateResponseStatus,
+  updateUser, upsertSubscription, upsertUser,
+} from '../db/index.js';
 import { buildMarket, getProfile, MarketError, type MarketContext, type MarketResult } from '../services/market.js';
 import { sendReportToChat, type ReportContext } from '../services/report.js';
+import {
+  createVacancyFromCard, EXPERIENCE_LABEL, inboxButton, MAX_SCORE, renderVacancyQr, sendToUser, timeToFirstResponse,
+  timeToHire, vacancyDeepLink, type CandidateAnswers, type HiringContext,
+} from '../services/hiring.js';
 import { buildVacancyDraft } from '../core/index.js';
 import { isValidInn } from '../integrations/rmsp.js';
 import { regionByFnsCode, selectPack, type PackCatalog } from '../packs/loader.js';
@@ -20,6 +29,8 @@ export interface ApiDeps {
   catalog: PackCatalog;
   market: MarketContext;
   report: ReportContext | null;
+  /** Контекст найма: нужен, чтобы бот писал кандидатам по действиям из мини-приложения. */
+  hiring: HiringContext | null;
   bot: { username: string; userId: number } | null;
   startedAt: number;
 }
@@ -170,6 +181,186 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   app.delete<{ Params: { id: string } }>('/api/subscriptions/:id', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     return { ok: !s.demo && deactivateSubscription(db, req.params.id, s.uid) };
+  });
+
+  /* ---------- отклики и найм ---------- */
+
+  const regionNameOf = (code: string) => catalog.regions.find((r) => r.code === code || r.fnsCode === code)?.name ?? code;
+
+  const vacancyView = (v: VacancyRow & { responses?: number; newResponses?: number }) => ({
+    id: v.id,
+    cardId: v.cardId,
+    title: v.title,
+    professionKey: v.professionKey,
+    regionCode: v.regionCode,
+    regionName: regionNameOf(v.regionCode),
+    salary: v.salary,
+    text: v.text,
+    employerName: v.employerName,
+    status: v.status,
+    createdAt: v.createdAt,
+    closedAt: v.closedAt,
+    hiredResponseId: v.hiredResponseId,
+    firstResponseAt: v.firstResponseAt,
+    responses: v.responses ?? countResponses(db, v.id).total,
+    newResponses: v.newResponses ?? countResponses(db, v.id).fresh,
+    link: deps.bot ? vacancyDeepLink(deps.bot.username, v.id) : null,
+    metrics: { timeToFirstResponseMin: timeToFirstResponse(v), timeToHireMin: timeToHire(v) },
+  });
+
+  const responseView = (r: ResponseRow<CandidateAnswers>) => ({
+    id: r.id,
+    vacancyId: r.vacancyId,
+    candidateName: r.candidateName,
+    answers: r.answers,
+    experienceLabel: EXPERIENCE_LABEL[r.answers.experience] ?? String(r.answers.experience),
+    phone: r.phone,
+    phoneVerified: r.phoneVerified,
+    score: r.score,
+    maxScore: MAX_SCORE,
+    status: r.status,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  });
+
+  /** Демо-сессия (uid < 0) не владеет вакансиями: честное 400 вместо падения. */
+  const demoBlocked = (reply: FastifyReply, s: SessionPayload): boolean => {
+    if (!s.demo && s.uid > 0) return false;
+    void reply.code(400).send({ error: 'demo', message: 'Публикация вакансии и работа с откликами доступны только внутри MAX: откройте приложение из чата с ботом.' });
+    return true;
+  };
+
+  /** Вакансия с проверкой прав: только владелец. */
+  const ownedVacancy = (reply: FastifyReply, id: string, uid: number): VacancyRow | null => {
+    const v = getVacancy(db, id);
+    if (!v) { void reply.code(404).send({ error: 'not_found', message: 'Вакансия не найдена' }); return null; }
+    if (v.maxUserId !== uid) { void reply.code(403).send({ error: 'forbidden', message: 'Вакансия принадлежит другому пользователю' }); return null; }
+    return v;
+  };
+
+  /** Публикация вакансии из карточки: запись, диплинк и карточка с QR в чат работодателя. */
+  app.post<{ Params: { id: string }; Body: { salary?: number | null; text?: string } }>('/api/cards/:id/vacancy', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    if (demoBlocked(reply, s)) return;
+    if (!deps.hiring || !deps.bot) return reply.code(503).send({ error: 'no_bot', message: 'Сервер запущен без бота — публикация вакансии недоступна' });
+    const row = getCard<MarketResult>(db, req.params.id);
+    if (!row) return reply.code(404).send({ error: 'not_found', message: 'Карточка не найдена' });
+    const r = row.payload;
+    const rawSalary = req.body?.salary;
+    const salary = rawSalary == null || rawSalary === 0
+      ? (r.card.options.find((o) => o.kind === 'median')?.value ?? r.card.offer?.value ?? r.card.stats?.median ?? null)
+      : Number(rawSalary);
+    if (salary != null && (!Number.isFinite(salary) || salary < 1000 || salary > 5_000_000)) {
+      return reply.code(400).send({ error: 'salary_invalid', message: 'Ставка должна быть от 1 000 до 5 000 000 ₽ в месяц' });
+    }
+    const pack = catalog.packs.find((p) => p.id === r.pack.id) ?? catalog.packs.find((p) => !p.region)!;
+    const text = (req.body?.text ?? '').trim() || buildVacancyDraft({ card: r.card, profession: r.profession, pack, salary: salary ?? 0, companyName: r.profile?.name ?? null, cityName: r.region.name });
+    try {
+      const { vacancy, link } = createVacancyFromCard(deps.hiring, {
+        card: { cardId: r.cardId, professionKey: r.profession.key, professionTitle: r.profession.title, regionCode: r.region.code, regionName: r.region.name, employerName: r.profile?.name ?? null },
+        maxUserId: s.uid,
+        salary,
+        text,
+      });
+      let qrSent = false;
+      const u = getUser(db, s.uid);
+      const chatId = s.chatId ?? u?.chatId ?? null;
+      if (chatId) {
+        try {
+          const qrPath = await renderVacancyQr(deps.hiring, vacancy.id, link);
+          const image = await deps.hiring.bot.api.uploadImage({ source: qrPath });
+          const keyboard = Keyboard.inlineKeyboard([
+            [Keyboard.button.link('Поделиться в MAX', link)],
+            [inboxButton(deps.bot.username, vacancy.id), Keyboard.button.callback('Закрыть вакансию', `vacclose:${vacancy.id}`)],
+          ]);
+          const body = [`✅ Вакансия опубликована: ${vacancy.title} — ${r.region.name}`, salary ? `Ставка: от ${salary.toLocaleString('ru-RU')} ₽` : 'Ставка: не указана', '', 'Ссылка для кандидатов:', link].join('\n');
+          await deps.hiring.bot.api.sendMessageToChat(chatId, body, { attachments: [image.toJson(), keyboard] });
+          qrSent = true;
+        } catch (err) {
+          app.log.warn({ err: String(err), vacancyId: vacancy.id }, 'карточка вакансии с QR не отправлена в чат');
+        }
+      }
+      return { vacancy: vacancyView(vacancy), link, qrSent };
+    } catch (err) { return fail(reply, err); }
+  });
+
+  app.get('/api/vacancies', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    if (s.demo || s.uid < 0) return { vacancies: [], demo: true };
+    return { vacancies: listVacanciesByUser(db, s.uid).map(vacancyView), demo: false };
+  });
+
+  app.get<{ Params: { id: string } }>('/api/vacancies/:id/responses', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    if (demoBlocked(reply, s)) return;
+    const v = ownedVacancy(reply, req.params.id, s.uid); if (!v) return;
+    return { vacancy: vacancyView(v), responses: listResponsesByVacancy<CandidateAnswers>(db, v.id).map(responseView) };
+  });
+
+  /** Отклик с проверкой прав: владелец вакансии. */
+  const ownedResponse = (reply: FastifyReply, id: string, uid: number): { response: ResponseRow<CandidateAnswers>; vacancy: VacancyRow } | null => {
+    const r = getResponse<CandidateAnswers>(db, id);
+    if (!r) { void reply.code(404).send({ error: 'not_found', message: 'Отклик не найден' }); return null; }
+    const v = getVacancy(db, r.vacancyId);
+    if (!v) { void reply.code(404).send({ error: 'not_found', message: 'Вакансия отклика не найдена' }); return null; }
+    if (v.maxUserId !== uid) { void reply.code(403).send({ error: 'forbidden', message: 'Отклик относится к чужой вакансии' }); return null; }
+    return { response: r, vacancy: v };
+  };
+
+  app.post<{ Params: { id: string }; Body: { message?: string } }>('/api/responses/:id/invite', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    if (demoBlocked(reply, s)) return;
+    const found = ownedResponse(reply, req.params.id, s.uid); if (!found) return;
+    const message = (req.body?.message ?? '').trim();
+    const updated = updateResponseStatus<CandidateAnswers>(db, found.response.id, 'invited') ?? found.response;
+    if (deps.hiring) {
+      const text = `Вас приглашают на собеседование: ${message || `по вакансии «${found.vacancy.title}» — работодатель свяжется с вами здесь, в MAX.`}`;
+      await sendToUser(deps.hiring, found.response.candidateUserId, text).catch((err) => app.log.warn({ err: String(err) }, 'приглашение кандидату не доставлено'));
+    }
+    return { response: responseView(updated) };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/responses/:id/reject', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    if (demoBlocked(reply, s)) return;
+    const found = ownedResponse(reply, req.params.id, s.uid); if (!found) return;
+    const updated = updateResponseStatus<CandidateAnswers>(db, found.response.id, 'rejected') ?? found.response;
+    if (deps.hiring) {
+      await sendToUser(deps.hiring, found.response.candidateUserId, `По вакансии «${found.vacancy.title}» работодатель выбрал другого кандидата. Спасибо за отклик!`)
+        .catch((err) => app.log.warn({ err: String(err) }, 'отказ кандидату не доставлен'));
+    }
+    return { response: responseView(updated) };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/responses/:id/hire', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    if (demoBlocked(reply, s)) return;
+    const found = ownedResponse(reply, req.params.id, s.uid); if (!found) return;
+    const updated = updateResponseStatus<CandidateAnswers>(db, found.response.id, 'hired') ?? found.response;
+    const vacancy = closeVacancy(db, found.vacancy.id, s.uid, found.response.id) ?? found.vacancy;
+    if (deps.hiring) {
+      await sendToUser(deps.hiring, found.response.candidateUserId, `Вы приняты на вакансию «${found.vacancy.title}». Работодатель свяжется с вами для выхода на работу.`)
+        .catch((err) => app.log.warn({ err: String(err) }, 'сообщение о найме не доставлено'));
+      for (const other of listResponsesByVacancy<CandidateAnswers>(db, vacancy.id)) {
+        if (other.id === found.response.id || other.status === 'rejected' || other.status === 'hired') continue;
+        await sendToUser(deps.hiring, other.candidateUserId, `Вакансия «${vacancy.title}» закрыта. Спасибо за отклик!`).catch(() => undefined);
+      }
+    }
+    return { response: responseView(updated), vacancy: vacancyView(vacancy) };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/vacancies/:id/close', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    if (demoBlocked(reply, s)) return;
+    const v = ownedVacancy(reply, req.params.id, s.uid); if (!v) return;
+    const closed = closeVacancy(db, v.id, s.uid) ?? v;
+    if (deps.hiring) {
+      for (const r of listResponsesByVacancy<CandidateAnswers>(db, closed.id)) {
+        if (r.status === 'hired' || r.status === 'rejected') continue;
+        await sendToUser(deps.hiring, r.candidateUserId, `Вакансия «${closed.title}» закрыта. Спасибо за отклик!`).catch(() => undefined);
+      }
+    }
+    return { vacancy: vacancyView(closed) };
   });
 
   app.post<{ Params: { id: string }; Body: { salary?: number } }>('/api/cards/:id/vacancy-text', async (req, reply) => {

@@ -4,10 +4,15 @@
  */
 import type { Bot, Context } from '@maxhub/max-bot-api';
 import { Keyboard } from '@maxhub/max-bot-api';
-import type { Db } from '../db/index.js';
-import { castVote, deactivateSubscription, getCard, getUser, listUserSubscriptions, updateUser, upsertUser, upsertSubscription } from '../db/index.js';
+import type { Db, VacancyRow } from '../db/index.js';
+import { castVote, closeVacancy, deactivateSubscription, findResponseByCandidate, getCard, getUser, getVacancy, listResponsesByVacancy, listUserSubscriptions, listVacanciesByUser, putResponse, updateUser, upsertUser, upsertSubscription } from '../db/index.js';
 import { buildMarket, getProfile, MarketError, type MarketContext, type MarketResult } from '../services/market.js';
 import { sendReportToChat, type ReportContext } from '../services/report.js';
+import {
+  createVacancyFromCard, EXPERIENCE_LABEL, inboxButton, phoneFromVcf, renderVacancyQr, responseSummary,
+  scoreResponse, sendToUser, verifyContactSignature,
+  type CandidateAnswers, type ExperienceKey, type HiringContext,
+} from '../services/hiring.js';
 import { buildVacancyDraft, formatRub, normalizeText, type Pack } from '../core/index.js';
 import { isValidInn } from '../integrations/rmsp.js';
 import { regionByFnsCode, selectPack, type PackCatalog } from '../packs/loader.js';
@@ -24,13 +29,22 @@ export interface BotDeps {
   log: { info: (o: object, msg?: string) => void; warn: (o: object, msg?: string) => void; error: (o: object, msg?: string) => void };
 }
 
-type Step = 'idle' | 'inn' | 'region' | 'profession' | 'salary';
-interface State { step?: Step; professionKey?: string; regionFnsCode?: string | null; lastCardId?: string }
+type Step = 'idle' | 'inn' | 'region' | 'profession' | 'salary' | 'apply_exp' | 'apply_schedule' | 'apply_salary' | 'apply_phone';
+interface State {
+  step?: Step;
+  professionKey?: string;
+  regionFnsCode?: string | null;
+  lastCardId?: string;
+  /** Кандидатский контур: вакансия, по которой идёт отклик, и накопленные ответы. */
+  vacancyId?: string;
+  answers?: Partial<CandidateAnswers>;
+}
 
 const COMMANDS = [
   { name: 'start', description: 'Начать' },
   { name: 'stavka', description: 'Проверить ставку по должности' },
   { name: 'profile', description: 'Указать ИНН бизнеса' },
+  { name: 'vacancies', description: 'Мои вакансии и отклики' },
   { name: 'demo', description: 'Показать на примере' },
   { name: 'subs', description: 'Мои подписки на рынок' },
   { name: 'help', description: 'Как это работает' },
@@ -156,6 +170,85 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     }
   }
 
+  /* ---------- отклики и найм ---------- */
+
+  // Контекст найма структурно совпадает с контекстом отчёта: та же БД, конфиг и бот.
+  const hiring: HiringContext = deps.report;
+  const regionNameOf = (code: string) => catalog.regions.find((r) => r.code === code || r.fnsCode === code)?.name ?? code;
+
+  /** Публикация вакансии из карточки рынка: черновик текста + диплинк + QR. */
+  async function publishVacancy(ctx: Context, uid: number, result: MarketResult) {
+    const pack = catalog.packs.find((p) => p.id === result.pack.id) ?? catalog.packs.find((p) => !p.region)!;
+    const salary = result.card.options.find((o) => o.kind === 'median')?.value ?? result.card.offer?.value ?? result.card.stats?.median ?? null;
+    const text = buildVacancyDraft({ card: result.card, profession: result.profession, pack, salary: salary ?? 0, companyName: result.profile?.name ?? null, cityName: result.region.name });
+    const { vacancy, link } = createVacancyFromCard(hiring, {
+      card: {
+        cardId: result.cardId,
+        professionKey: result.profession.key,
+        professionTitle: result.profession.title,
+        regionCode: result.region.code,
+        regionName: result.region.name,
+        employerName: result.profile?.name ?? null,
+      },
+      maxUserId: uid,
+      salary,
+      text,
+    });
+    const body = T.publishedVacancyText(vacancy, result.region.name, link);
+    const keyboard = T.publishedVacancyKeyboard(vacancy, deps.botUsername, link);
+    let attachments: unknown[] = [keyboard];
+    try {
+      const qrPath = await renderVacancyQr(hiring, vacancy.id, link);
+      const image = await hiring.bot.api.uploadImage({ source: qrPath });
+      attachments = [image.toJson(), keyboard];
+    } catch (err) {
+      log.warn({ err: String(err), vacancyId: vacancy.id }, 'QR вакансии не загрузился — отправляем без картинки');
+    }
+    await ctx.reply(body, { attachments: attachments as never });
+    return vacancy;
+  }
+
+  /** Карточка вакансии кандидату, пришедшему по диплинку `vac_<id>`. */
+  async function showVacancyToCandidate(ctx: Context, uid: number, vacancyId: string) {
+    const vacancy = getVacancy(db, vacancyId);
+    if (!vacancy) { await ctx.reply('Эта вакансия не найдена — возможно, ссылка устарела. Посмотреть ставки по рынку: /stavka'); return; }
+    setState(uid, { step: 'idle', vacancyId: vacancy.id, answers: {} });
+    await ctx.reply(T.candidateVacancyText(vacancy, regionNameOf(vacancy.regionCode)), { attachments: [T.candidateVacancyKeyboard(vacancy)] });
+  }
+
+  /** Сохранение отклика, ответ кандидату и уведомление работодателя. */
+  async function finishResponse(ctx: Context, uid: number, vacancy: VacancyRow, answers: CandidateAnswers, phone: string | null, phoneVerified: boolean) {
+    const u = getUser(db, uid);
+    const score = scoreResponse(vacancy, answers, Boolean(phone));
+    const response = putResponse(db, {
+      id: randomUUID(),
+      vacancyId: vacancy.id,
+      candidateUserId: uid,
+      candidateName: u?.name ?? ctx.user?.first_name ?? null,
+      answers,
+      phone,
+      phoneVerified,
+      score,
+    });
+    setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined });
+    await ctx.reply(T.responseSentText(Boolean(phone)));
+    try {
+      await sendToUser(hiring, vacancy.maxUserId, responseSummary({ ...response, answers }, vacancy), {
+        attachments: [Keyboard.inlineKeyboard([[inboxButton(deps.botUsername, vacancy.id)]])],
+      });
+    } catch (err) {
+      log.warn({ err: String(err), vacancyId: vacancy.id }, 'не удалось уведомить работодателя об отклике');
+    }
+  }
+
+  /** Вакансия, по которой кандидат сейчас отвечает; null — шаг устарел. */
+  function applyTarget(uid: number, vacancyId?: string): VacancyRow | null {
+    const id = vacancyId ?? state(uid).vacancyId;
+    if (!id) return null;
+    const v = getVacancy(db, id);
+    return v && v.status === 'open' ? v : null;
+  }
+
   async function sendCardById(ctx: Context, uid: number, cardId: string) {
     const row = getCard<MarketResult>(db, cardId);
     if (!row) { await ctx.reply('Такой карточки нет — возможно, ссылка устарела. Начните заново: /stavka'); return; }
@@ -168,6 +261,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (!u) return;
     const payload = ctx.startPayload;
     if (payload && payload.startsWith('card_')) { await sendCardById(ctx, u.maxUserId, payload.slice(5)); return; }
+    if (payload && payload.startsWith('vac_')) { await showVacancyToCandidate(ctx, u.maxUserId, payload.slice(4)); return; }
     await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
   });
 
@@ -247,6 +341,74 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ack(ok ? 'Подписка отключена' : 'Подписка не найдена');
       return;
     }
+    if (payload.startsWith('pub:')) {
+      const cardId = payload.slice(4);
+      const row = getCard<MarketResult>(db, cardId);
+      if (!row) { await ack('Карточка не найдена'); return; }
+      await ack('Публикую вакансию…');
+      try {
+        await publishVacancy(ctx, uid, row.payload);
+      } catch (err) {
+        log.error({ err: String(err), cardId }, 'publish vacancy failed');
+        await ctx.reply('Не удалось опубликовать вакансию. Попробуйте ещё раз через минуту.');
+      }
+      return;
+    }
+    if (payload.startsWith('vacclose:')) {
+      const vacancyId = payload.slice(9);
+      const closed = closeVacancy(db, vacancyId, uid);
+      if (!closed) { await ack('Вакансия не найдена или она не ваша'); return; }
+      await ack('Вакансия закрыта');
+      await ctx.reply(`Вакансия «${closed.title}» закрыта. Новые отклики по ссылке приниматься не будут.`);
+      for (const r of listResponsesByVacancy(db, vacancyId)) {
+        if (r.status === 'hired' || r.status === 'rejected') continue;
+        await sendToUser(hiring, r.candidateUserId, `Вакансия «${closed.title}» закрыта. Спасибо за отклик!`).catch(() => undefined);
+      }
+      return;
+    }
+    if (payload.startsWith('apply:')) {
+      const vacancy = applyTarget(uid, payload.slice(6));
+      if (!vacancy) { await ack('Вакансия закрыта или не найдена'); return; }
+      if (vacancy.maxUserId === uid) { await ack(); await ctx.reply('Это ваша вакансия — отклики придут в мини-приложение, кнопка «Отклики».'); return; }
+      const existing = findResponseByCandidate(db, vacancy.id, uid);
+      if (existing) {
+        await ack('Вы уже откликнулись');
+        const label = existing.status === 'invited' ? 'вас пригласили на собеседование' : existing.status === 'hired' ? 'вас приняли' : existing.status === 'rejected' ? 'работодатель отказал' : 'работодатель ещё смотрит отклики';
+        await ctx.reply(`Ваш отклик на «${vacancy.title}» уже отправлен — ${label}. Статус придёт сюда.`);
+        return;
+      }
+      await ack();
+      setState(uid, { step: 'apply_exp', vacancyId: vacancy.id, answers: {} });
+      await ctx.reply(T.askExperienceText, { attachments: [T.experienceKeyboard(vacancy.id)] });
+      return;
+    }
+    if (payload.startsWith('exp:')) {
+      const [, key, vacancyId] = payload.split(':');
+      const vacancy = applyTarget(uid, vacancyId);
+      if (!vacancy || !key || !(key in EXPERIENCE_LABEL)) { await ack('Вакансия закрыта или не найдена'); return; }
+      await ack(EXPERIENCE_LABEL[key as ExperienceKey]);
+      setState(uid, { step: 'apply_schedule', vacancyId: vacancy.id, answers: { ...state(uid).answers, experience: key as ExperienceKey } });
+      await ctx.reply(T.askScheduleText(vacancy), { attachments: [T.scheduleKeyboard(vacancy.id)] });
+      return;
+    }
+    if (payload.startsWith('sch:')) {
+      const [, value, vacancyId] = payload.split(':');
+      const vacancy = applyTarget(uid, vacancyId);
+      if (!vacancy) { await ack('Вакансия закрыта или не найдена'); return; }
+      await ack(value === 'yes' ? 'Готов' : 'Не готов');
+      setState(uid, { step: 'apply_salary', vacancyId: vacancy.id, answers: { ...state(uid).answers, schedule: value === 'yes' } });
+      await ctx.reply(T.askSalaryExpectationText(vacancy));
+      return;
+    }
+    if (payload.startsWith('nophone:')) {
+      const vacancy = applyTarget(uid, payload.slice(8));
+      if (!vacancy) { await ack('Вакансия закрыта или не найдена'); return; }
+      const a = state(uid).answers ?? {};
+      if (a.experience === undefined || a.schedule === undefined) { await ack('Начните отклик заново'); return; }
+      await ack();
+      await finishResponse(ctx, uid, vacancy, { experience: a.experience, schedule: a.schedule, expectedSalary: a.expectedSalary ?? null }, null, false);
+      return;
+    }
     if (payload.startsWith('text:')) {
       const cardId = payload.slice(5);
       const row = getCard<MarketResult>(db, cardId);
@@ -269,14 +431,43 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     await runMarket(ctx, uid, pack.demo.salary, { inn: pack.demo.inn, regionFnsCode: pack.region?.fnsCode ?? null, professionKey: pack.demo.profession });
   }
 
+  /** Вложение «контакт»: проверяем подпись MAX и завершаем отклик. */
+  async function handleContact(ctx: Context, uid: number, payload: { vcf_info: string; hash: string }) {
+    const st = state(uid);
+    const vacancy = applyTarget(uid);
+    const a = st.answers ?? {};
+    if (!vacancy || a.experience === undefined || a.schedule === undefined) {
+      await ctx.reply('Спасибо! Сейчас номер не нужен — отклик не начат или вакансия уже закрыта. Открыть вакансию можно по ссылке работодателя.');
+      return;
+    }
+    const verified = verifyContactSignature(deps.market.config.botToken ?? '', payload.vcf_info, payload.hash);
+    const phone = phoneFromVcf(payload.vcf_info) ?? ctx.contactInfo?.tel ?? null;
+    if (!verified) log.warn({ uid, vacancyId: vacancy.id }, 'подпись контакта не сошлась — сохраняем номер как непроверенный');
+    await finishResponse(ctx, uid, vacancy, { experience: a.experience, schedule: a.schedule, expectedSalary: a.expectedSalary ?? null }, phone, verified);
+  }
+
   bot.on('message_created', async (ctx) => {
     const u = ensureUser(ctx);
     if (!u) return;
     const uid = u.maxUserId;
+    const contact = (ctx.message?.body?.attachments ?? []).find((x) => x.type === 'contact');
+    if (contact) { await handleContact(ctx, uid, contact.payload); return; }
     const text = (ctx.message?.body?.text ?? '').trim();
     if (!text) return;
     const cmd = /^\/(\w+)/.exec(text)?.[1]?.toLowerCase();
-    if (cmd === 'start') { await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] }); return; }
+    if (cmd === 'start') {
+      const arg = text.slice(text.indexOf('start') + 5).trim();
+      if (arg.startsWith('vac_')) { await showVacancyToCandidate(ctx, uid, arg.slice(4)); return; }
+      if (arg.startsWith('card_')) { await sendCardById(ctx, uid, arg.slice(5)); return; }
+      await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
+      return;
+    }
+    if (cmd === 'vacancies') {
+      const items = listVacanciesByUser(db, uid);
+      const rows = items.slice(0, 8).map((v) => [inboxButton(deps.botUsername, v.id, `Отклики: ${v.title} (${v.responses})`)]);
+      await ctx.reply(T.vacanciesListText(items), rows.length ? { attachments: [Keyboard.inlineKeyboard(rows)] } : undefined);
+      return;
+    }
     if (cmd === 'help') { await ctx.reply(T.helpText()); return; }
     if (cmd === 'demo') {
       const demos = catalog.packs.filter((p) => p.demo);
@@ -322,6 +513,30 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         const s = parseSalary(text);
         if (s === null) { await ctx.reply('Не понял сумму. Напишите число в рублях в месяц, например 45000, или «нет».'); return; }
         await runMarket(ctx, uid, s === 'none' ? null : s);
+        return;
+      }
+      case 'apply_exp':
+      case 'apply_schedule': {
+        const vacancy = applyTarget(uid);
+        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
+        if (st.step === 'apply_exp') await ctx.reply(T.askExperienceText, { attachments: [T.experienceKeyboard(vacancy.id)] });
+        else await ctx.reply(T.askScheduleText(vacancy), { attachments: [T.scheduleKeyboard(vacancy.id)] });
+        return;
+      }
+      case 'apply_salary': {
+        const vacancy = applyTarget(uid);
+        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
+        const asInVacancy = /^(как в вакансии|как в вакансии\.|как указано|любая|не важно|неважно)$/.test(normalizeText(text));
+        const s = asInVacancy ? 'none' : parseSalary(text);
+        if (s === null) { await ctx.reply('Не понял сумму. Напишите число в рублях в месяц, например 60000, или «как в вакансии».'); return; }
+        setState(uid, { step: 'apply_phone', answers: { ...st.answers, expectedSalary: s === 'none' ? null : s } });
+        await ctx.reply(T.askPhoneText, { attachments: [T.phoneKeyboard(vacancy.id)] });
+        return;
+      }
+      case 'apply_phone': {
+        const vacancy = applyTarget(uid);
+        if (!vacancy) { await ctx.reply('Вакансия уже закрыта или ссылка устарела.'); setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined }); return; }
+        await ctx.reply('Нажмите «Поделиться номером», чтобы работодатель мог позвонить, или «Без номера» — тогда он ответит сообщением в MAX.', { attachments: [T.phoneKeyboard(vacancy.id)] });
         return;
       }
       default: {

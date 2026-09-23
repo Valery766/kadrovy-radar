@@ -59,3 +59,22 @@ export function histogram(values: number[], buckets = 8): HistogramBucket[] {
   }
   return result;
 }
+
+/**
+ * Перцентиль значения по гистограмме (когда исходный массив ставок уже не хранится —
+ * например, в готовой карточке рынка). Внутри корзины распределение считается равномерным,
+ * поэтому результат — детерминированная линейная аппроксимация, а не новая статистика.
+ */
+export function percentileFromHistogram(buckets: HistogramBucket[], x: number): number | null {
+  const total = buckets.reduce((s, b) => s + b.count, 0);
+  if (total === 0) return null;
+  let below = 0;
+  for (const b of buckets) {
+    if (x >= b.to) { below += b.count; continue; }
+    if (x <= b.from) break;
+    const width = b.to - b.from;
+    below += width > 0 ? (b.count * (x - b.from)) / width : b.count / 2;
+    break;
+  }
+  return Math.round((100 * below) / total);
+}

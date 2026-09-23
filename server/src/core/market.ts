@@ -7,6 +7,7 @@ import { histogram, median, percentileOf, salaryStats } from './stats.js';
 import { phraseStats, scheduleStats } from './requirements.js';
 import { bandOf, buildVerdict } from './verdict.js';
 import { roundUpThousand } from './text.js';
+import { seasonality } from './seasonality.js';
 
 export const CATEGORY_LABEL: Record<string, string> = {
   '1': 'микропредприятия',
@@ -182,6 +183,7 @@ export function computeMarket(input: MarketInput): MarketCard {
     examples: stats ? pickExamples(kept, stats.median) : [],
     requirements: phraseStats(kept, input.requirementPhrases),
     schedules: scheduleStats(kept),
+    seasonality: seasonality(kept),
   };
   return { ...base, verdict: buildVerdict(base, profession.title, regionName) };
 }

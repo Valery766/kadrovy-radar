@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@maxhub/max-ui';
-import { api, ApiError, categoryLabel, fmtDate, rub, type Bootstrap, type MarketResult } from '../lib/api';
+import { api, ApiError, categoryLabel, fmtDate, rub, type Bootstrap, type MarketResult, type VacancyView } from '../lib/api';
 import { haptic, shareLink, shareMid, webApp } from '../lib/bridge';
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   onRecalc: (offer: number | null) => void;
   onAnother: () => void;
   onText: (salary: number) => void;
+  onOpenInbox: (vacancyId: string) => void;
   onHome: () => void;
 }
 
@@ -35,13 +36,36 @@ function Scale({ stats, offer }: { stats: NonNullable<MarketResult['card']['stat
   );
 }
 
-export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onHome }: Props) {
+export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOpenInbox, onHome }: Props) {
   const { card, profession, region, profile, sources, fetched, closure } = result;
   const [selected, setSelected] = useState<string>(card.options.find((o) => o.kind === 'median')?.kind ?? 'keep');
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
   const [mid, setMid] = useState<string | null>(null);
+  const [vacancy, setVacancy] = useState<VacancyView | null>(null);
+  const [pubNote, setPubNote] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
   const selectedOpt = card.options.find((o) => o.kind === selected) ?? card.options[0] ?? null;
+
+  const publish = async () => {
+    setPubNote(null); setBusy('publish');
+    try {
+      const r = await api.publishVacancy(result.cardId, { salary: selectedOpt?.value ?? null });
+      setVacancy(r.vacancy);
+      haptic('success');
+      setPubNote({ kind: 'info', text: r.qrSent ? 'Вакансия опубликована: карточка с QR-кодом отправлена в ваш чат с ботом.' : 'Вакансия опубликована. Ссылку можно скопировать ниже.' });
+    } catch (e) { setPubNote({ kind: 'error', text: e instanceof ApiError ? e.message : 'Не удалось опубликовать вакансию' }); haptic('error'); }
+    finally { setBusy(null); }
+  };
+
+  const shareVacancy = async () => {
+    if (!vacancy?.link) return;
+    const text = `Вакансия: ${profession.title}, ${region.name}${vacancy.salary ? ` — от ${rub(vacancy.salary)}` : ''}. Откликнуться в MAX:`;
+    const r = await shareLink(text, vacancy.link);
+    if (r !== 'shared') {
+      try { await navigator.clipboard.writeText(`${text} ${vacancy.link}`); setPubNote({ kind: 'info', text: 'Ссылка на вакансию скопирована.' }); }
+      catch { setPubNote({ kind: 'info', text: vacancy.link }); }
+    }
+  };
 
   const sendReport = async () => {
     setNote(null); setBusy('report');
@@ -127,6 +151,25 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onHo
           </div>
         </div>
       )}
+
+      <div className="sv-card sv-stack">
+        <div className="sv-h2">Опубликовать вакансию</div>
+        <div className="sv-muted sv-small">
+          Бот пришлёт карточку вакансии со ссылкой и QR-кодом: перешлите её в чаты сотрудников, партнёров и местные каналы MAX или распечатайте QR. Кандидат ответит на три вопроса прямо в мессенджере, отклики придут сюда.
+        </div>
+        {pubNote && <div className={`sv-banner ${pubNote.kind === 'error' ? 'sv-banner--error' : 'sv-banner--info'}`}>{pubNote.text}</div>}
+        {vacancy?.link && <div className="sv-muted sv-small">Ссылка для кандидатов: {vacancy.link}</div>}
+        <div className="sv-actions">
+          {!vacancy && (
+            <Button stretched onClick={publish} loading={busy === 'publish'} disabled={busy !== null || notInMax}>
+              Опубликовать вакансию{selectedOpt ? ` на ${rub(selectedOpt.value)}` : ''}
+            </Button>
+          )}
+          {vacancy && <Button stretched onClick={shareVacancy}>Поделиться в MAX</Button>}
+          {vacancy && <Button stretched variant="secondary" onClick={() => onOpenInbox(vacancy.id)}>Открыть отклики</Button>}
+        </div>
+        {notInMax && !vacancy && <div className="sv-muted sv-small">Публикация доступна внутри MAX: откройте приложение из чата с ботом.</div>}
+      </div>
 
       {card.histogram.length > 1 && (
         <div className="sv-card">

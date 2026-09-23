@@ -9,6 +9,7 @@ import { loadCatalog, type PackCatalog } from './packs/loader.js';
 import { registerApi, type ApiDeps } from './api/routes.js';
 import type { MarketContext } from './services/market.js';
 import type { ReportContext } from './services/report.js';
+import type { HiringContext } from './services/hiring.js';
 
 export interface AppParts {
   app: FastifyInstance;
@@ -23,6 +24,7 @@ export interface BuildAppOptions {
   config: Config;
   dbPath?: string;
   report?: ReportContext | null;
+  hiring?: HiringContext | null;
   bot?: { username: string; userId: number } | null;
   webDist?: string;
   logger?: boolean | object;
@@ -39,7 +41,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<AppParts> {
   const catalog = loadCatalog(config.packsDir);
   const market: MarketContext = { db, config, catalog, log: app.log };
 
-  const apiDeps: ApiDeps = { db, config, catalog, market, report: opts.report ?? null, bot: opts.bot ?? null, startedAt: Date.now() };
+  const apiDeps: ApiDeps = { db, config, catalog, market, report: opts.report ?? null, hiring: opts.hiring ?? null, bot: opts.bot ?? null, startedAt: Date.now() };
   registerApi(app, apiDeps);
 
   const webDist = opts.webDist ?? resolve(import.meta.dirname, '../../webapp/dist');

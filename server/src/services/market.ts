@@ -11,7 +11,7 @@ import { rmsp, trudvsem, SOURCES, SourceError } from '../integrations/index.js';
 import type { BusinessProfile } from '../integrations/rmsp.js';
 import type { Config } from '../config.js';
 import type { PackCatalog, RegionInfo } from '../packs/loader.js';
-import { regionByFnsCode, selectPack } from '../packs/loader.js';
+import { isCustomProfessionKey, regionByFnsCode, selectPack } from '../packs/loader.js';
 
 export interface MarketContext { db: Db; config: Config; catalog: PackCatalog; log: { info: (o: object, msg?: string) => void; warn: (o: object, msg?: string) => void } }
 
@@ -96,13 +96,37 @@ async function enrichEmployers(ctx: MarketContext, vacancies: VacancyRecord[], l
 }
 
 export interface MarketRequest {
+  /** Ключ профессии каталога либо «custom:<slug>» для свободного ввода. */
   professionKey: string;
+  /**
+   * Готовое описание профессии (свободный ввод): имеет приоритет над professionKey.
+   * Собирается через resolveProfession() — там же формируется ключ «custom:<slug>».
+   */
+  profession?: Profession | null;
   /** Код ФНС региона ("78"); если не задан — берётся из профиля. */
   regionFnsCode: string | null;
   inn: string | null;
   offer: number | null;
   maxUserId: number | null;
   forceRefresh?: boolean;
+  /** false — не сохранять карточку в БД (служебные расчёты: сравнение регионов, сводки). */
+  persist?: boolean;
+}
+
+/**
+ * Профессия запроса: явно переданный объект → профессия пакета → каталог.
+ * Ключ вида «custom:<slug>» без объекта профессии означает, что вызывающая сторона
+ * потеряла текст запроса — восстановить его из ключа нельзя (это хеш).
+ */
+export function resolveRequestProfession(ctx: MarketContext, pack: Pack, req: Pick<MarketRequest, 'professionKey' | 'profession'>): Profession {
+  if (req.profession) return req.profession;
+  const found = pack.professions.find((p) => p.key === req.professionKey)
+    ?? ctx.catalog.professions.find((p) => p.key === req.professionKey);
+  if (found) return found;
+  if (isCustomProfessionKey(req.professionKey)) {
+    throw new MarketError('profession_unknown', 'Для своей должности передайте поле profession (название и текст запроса), а не только ключ');
+  }
+  throw new MarketError('profession_unknown', `Профессия «${req.professionKey}» не найдена в каталоге`);
 }
 
 export async function buildMarket(ctx: MarketContext, req: MarketRequest): Promise<MarketResult> {
@@ -111,8 +135,7 @@ export async function buildMarket(ctx: MarketContext, req: MarketRequest): Promi
   const region = regionByFnsCode(ctx.catalog, regionFns);
   if (!region) throw new MarketError('region_unknown', 'Не удалось определить регион: укажите его вручную');
   const pack: Pack = selectPack(ctx.catalog, { fnsRegionCode: region.fnsCode, okved: profile?.okved ?? null });
-  const profession = pack.professions.find((p) => p.key === req.professionKey) ?? ctx.catalog.professions.find((p) => p.key === req.professionKey);
-  if (!profession) throw new MarketError('profession_unknown', `Профессия «${req.professionKey}» не найдена в каталоге`);
+  const profession = resolveRequestProfession(ctx, pack, req);
 
   const fetched = await getVacancies(ctx, region.code, profession, profession.key, req.forceRefresh ?? false);
   const input = {
@@ -135,6 +158,8 @@ export async function buildMarket(ctx: MarketContext, req: MarketRequest): Promi
     cardId, card, pack: { id: pack.id, title: pack.title, version: pack.version }, profession, region, profile, sources,
     fetched: { total: fetched.total, records: fetched.vacancies.length, cacheHit: fetched.cacheHit, fetchedAt: fetched.fetchedAt }, closure, createdAt,
   };
-  putCard(ctx.db, { id: cardId, maxUserId: req.maxUserId, inn: req.inn, packId: pack.id, professionKey: profession.key, regionCode: region.code, offer: req.offer, payload: result });
+  if (req.persist !== false) {
+    putCard(ctx.db, { id: cardId, maxUserId: req.maxUserId, inn: req.inn, packId: pack.id, professionKey: profession.key, regionCode: region.code, offer: req.offer, payload: result });
+  }
   return result;
 }
