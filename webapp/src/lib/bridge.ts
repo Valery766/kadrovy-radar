@@ -11,7 +11,13 @@ export interface MaxWebApp {
   getViewportSize?: () => Promise<{ width: string; height: string }>;
   ready?: () => void;
   HapticFeedback?: { notificationOccurred: (t: 'success' | 'error' | 'warning') => Promise<unknown> };
+  /** Тема мессенджера. Появилась не во всех сборках клиента, поэтому необязательное поле. */
+  colorScheme?: ColorScheme;
+  onEvent?: (event: string, cb: (payload: unknown) => void) => void;
+  offEvent?: (event: string, cb: (payload: unknown) => void) => void;
 }
+
+export type ColorScheme = 'light' | 'dark';
 
 declare global { interface Window { WebApp?: MaxWebApp } }
 
@@ -26,6 +32,40 @@ export function insideMax(): boolean {
 
 export function platform(): string {
   return webApp()?.platform ?? 'browser';
+}
+
+const isScheme = (v: unknown): v is ColorScheme => v === 'light' || v === 'dark';
+
+/** Параметр запуска MAX: клиент кладёт их в hash и дублирует в sessionStorage. */
+function launchParam(key: string): string | null {
+  try {
+    const fromHash = new URLSearchParams(window.location.hash.replace(/^#/, '')).get(key);
+    return fromHash ?? window.sessionStorage.getItem(key);
+  } catch { return null; }
+}
+
+/**
+ * Тема оформления от MAX: поле моста или параметр запуска.
+ * Если мессенджер тему не сообщает, возвращаем null — тогда MAX UI следит за
+ * системной темой сам (matchMedia), в том числе при переключении на ходу.
+ */
+export function colorScheme(): ColorScheme | null {
+  const fromBridge = webApp()?.colorScheme;
+  if (isScheme(fromBridge)) return fromBridge;
+  const fromLaunch = launchParam('WebAppColorScheme') ?? launchParam('WebAppTheme');
+  return isScheme(fromLaunch) ? fromLaunch : null;
+}
+
+/** Подписка на смену темы в MAX. Вне MAX и на старых клиентах — пустая отписка. */
+export function onColorSchemeChange(cb: (scheme: ColorScheme) => void): () => void {
+  const w = webApp();
+  if (!w?.onEvent || !w.offEvent) return () => undefined;
+  const handler = (payload: unknown) => {
+    const next = typeof payload === 'string' ? payload : (payload as { colorScheme?: unknown } | null)?.colorScheme;
+    if (isScheme(next)) cb(next);
+  };
+  w.onEvent('themeChanged', handler);
+  return () => w.offEvent?.('themeChanged', handler);
 }
 
 /** Параметр запуска: из initData (start_param) или из query ?card= при открытии в браузере. */

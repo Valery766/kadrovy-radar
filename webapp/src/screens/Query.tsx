@@ -9,6 +9,8 @@ export interface MarketQuery {
   professionKey?: string;
   professionText?: string;
   offer?: number | null;
+  /** Регион запроса разовый: не перезаписывать домашний регион профиля. */
+  keepRegion?: boolean;
 }
 
 interface Props {

@@ -9,8 +9,12 @@ import { haptic, shareLink } from '../lib/bridge';
 interface Props {
   boot: Bootstrap;
   notInMax: boolean;
-  /** Открыть сразу инбокс этой вакансии (диплинк `inbox_<id>`). */
-  initialVacancyId?: string | null;
+  /** Открытая вакансия: null — список. Экран инбокса, диплинк `inbox_<id>`. */
+  vacancyId: string | null;
+  onSelectVacancy: (id: string) => void;
+  /** Назад к списку вакансий (кнопка «Все вакансии»). */
+  onVacancies: () => void;
+  onBack: () => void;
   onHome: () => void;
 }
 
@@ -21,9 +25,8 @@ const STATUS_CLASS: Record<ResponseView['status'], string> = {
   hired: 'sv-badge sv-badge--ok',
 };
 
-export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
+export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, onVacancies, onBack, onHome }: Props) {
   const [vacancies, setVacancies] = useState<VacancyView[] | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(initialVacancyId ?? null);
   const [vacancy, setVacancy] = useState<VacancyView | null>(null);
   const [responses, setResponses] = useState<ResponseView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +51,8 @@ export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
   useEffect(() => { if (!demo) void loadList(); else setVacancies([]); }, [demo, loadList]);
   useEffect(() => { if (selectedId && !demo) void loadVacancy(selectedId); }, [selectedId, demo, loadVacancy]);
 
-  const act = async (key: string, fn: () => Promise<unknown>, okText: string) => {
+  /** Возвращает true при успехе: вызывающий решает, закрывать ли форму. */
+  const act = async (key: string, fn: () => Promise<unknown>, okText: string): Promise<boolean> => {
     setBusy(key); setNote(null);
     try {
       await fn();
@@ -56,9 +60,11 @@ export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
       setNote({ kind: 'info', text: okText });
       if (selectedId) await loadVacancy(selectedId);
       await loadList();
+      return true;
     } catch (e) {
       haptic('error');
       setNote({ kind: 'error', text: e instanceof ApiError ? e.message : 'Действие не выполнилось' });
+      return false;
     } finally { setBusy(null); }
   };
 
@@ -81,7 +87,10 @@ export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
           <div className="sv-h2">Как это выглядит внутри MAX</div>
           <div className="sv-muted sv-small">Кандидат открывает ссылку вида max.ru/бот?start=vac_… → отвечает на три вопроса (опыт, готовность к графику, ожидания по ставке) → делится номером кнопкой MAX. Отклик попадает сюда с баллом совпадения; кнопки «Пригласить», «Отказать», «Нанят» отправляют кандидату сообщение от бота.</div>
         </div>
-        <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
+        <div className="sv-actions">
+          <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
+          <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
+        </div>
       </div>
     );
   }
@@ -104,7 +113,9 @@ export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
           <div className="sv-card">
             <div className="sv-list">
               {vacancies.map((v) => (
-                <div key={v.id} className="sv-item" role="button" onClick={() => setSelectedId(v.id)}>
+                <div key={v.id} className="sv-item" role="button" tabIndex={0}
+                  onClick={() => onSelectVacancy(v.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectVacancy(v.id); } }}>
                   <div>
                     <div className="sv-item__title">{v.title} — {v.regionName}</div>
                     <div className="sv-item__sub">{v.status === 'open' ? 'открыта' : 'закрыта'} · {fmtDate(v.createdAt)}{v.salary ? ` · от ${rub(v.salary)}` : ''}</div>
@@ -116,7 +127,10 @@ export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
             <div className="sv-muted sv-small" style={{ marginTop: 8 }}>Справа — число откликов, в скобках новые.</div>
           </div>
         )}
-        <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
+        <div className="sv-actions">
+          <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
+          <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
+        </div>
       </div>
     );
   }
@@ -142,7 +156,7 @@ export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
           </div>
           {vacancy.link && <div className="sv-muted sv-small">Ссылка для кандидатов: {vacancy.link}</div>}
           <div className="sv-actions">
-            <Button stretched variant="secondary" onClick={() => void shareVacancy(vacancy)}>Поделиться в MAX</Button>
+            <Button stretched variant="secondary" disabled={!vacancy.link} onClick={() => void shareVacancy(vacancy)}>Поделиться в MAX</Button>
             {vacancy.status === 'open' && (
               <Button stretched variant="ghost" loading={busy === 'close'} disabled={busy !== null}
                 onClick={() => void act('close', () => api.closeVacancy(vacancy.id), 'Вакансия закрыта, кандидатам отправлено уведомление.')}>Закрыть вакансию</Button>
@@ -184,7 +198,8 @@ export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
                 placeholder="Например: ждём вас завтра в 11:00, Невский 20, спросить Ольгу" />
               <div className="sv-actions">
                 <Button stretched loading={busy === `invite:${r.id}`} disabled={busy !== null}
-                  onClick={() => void act(`invite:${r.id}`, () => api.invite(r.id, inviteText), 'Приглашение отправлено кандидату в MAX.').then(() => { setInviteFor(null); setInviteText(''); })}>Отправить приглашение</Button>
+                  onClick={() => void act(`invite:${r.id}`, () => api.invite(r.id, inviteText), 'Приглашение отправлено кандидату в MAX.')
+                    .then((ok) => { if (ok) { setInviteFor(null); setInviteText(''); } })}>Отправить приглашение</Button>
                 <Button stretched variant="ghost" onClick={() => { setInviteFor(null); setInviteText(''); }}>Отмена</Button>
               </div>
             </div>
@@ -212,7 +227,7 @@ export function Inbox({ boot, notInMax, initialVacancyId, onHome }: Props) {
       </div>
 
       <div className="sv-actions">
-        <Button stretched variant="ghost" onClick={() => { setSelectedId(null); setVacancy(null); setResponses(null); setNote(null); }}>Все вакансии</Button>
+        <Button stretched variant="ghost" onClick={() => { setVacancy(null); setResponses(null); setNote(null); onVacancies(); }}>Все вакансии</Button>
         <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
       </div>
     </div>

@@ -170,6 +170,43 @@ export interface RegionsResult {
   createdAt: string;
 }
 
+/* ---------- плановые проверки (ЕРКНМ) ---------- */
+export type InspectionKind = 'labor' | 'sanitary' | 'fire' | 'other';
+
+export interface InspectionView {
+  erpId: string;
+  /** Формулировка вида надзора из реестра, как есть. */
+  kindControl: string | null;
+  kind: InspectionKind;
+  kindLabel: string;
+  kindKnm: string | null;
+  startDate: string | null;
+  stopDate: string | null;
+  status: string | null;
+  organization: string | null;
+  prosecutorOffice: string | null;
+  address: string | null;
+  regionName: string | null;
+  subjectName: string | null;
+  mspCode: string | null;
+}
+
+export interface InspectionsResult {
+  /** false — набор плана проверок ещё не загружен (подтягивается фоном). */
+  loaded: boolean;
+  inn: string | null;
+  own: InspectionView[];
+  context: {
+    region: { fnsCode: string; code: string; name: string } | null;
+    okved2: string | null;
+    scope: 'region_okved' | 'region' | 'none';
+    byKind: Record<InspectionKind, number>;
+    total: number;
+  };
+  dataset: { year: number; version: string; records: number; withRegion: number; loadedAt: string } | null;
+  sources: SourceBadge[];
+}
+
 /* ---------- сводка по региону (партнёрам) ---------- */
 export interface RegionDigestRow {
   professionKey: string; professionTitle: string;
@@ -186,13 +223,14 @@ export interface RegionDigestResult {
 export const api = {
   bootstrap: () => request<Bootstrap>('GET', '/api/bootstrap'),
   profile: (inn: string) => request<{ profile: Profile; region: Region | null; pack: { id: string; title: string; professions: ProfessionRef[] } }>('POST', '/api/profile', { inn }),
-  market: (p: { inn?: string | null; regionFnsCode?: string | null; professionKey?: string; professionText?: string; offer?: number | null; forceRefresh?: boolean }) => request<MarketResult>('POST', '/api/market', p),
+  market: (p: { inn?: string | null; regionFnsCode?: string | null; professionKey?: string; professionText?: string; offer?: number | null; forceRefresh?: boolean; keepRegion?: boolean }) => request<MarketResult>('POST', '/api/market', p),
   suggestProfessions: (q: string, limit = 8) => request<{ suggestions: ProfessionSuggestion[] }>('GET', `/api/professions/suggest?q=${encodeURIComponent(q)}&limit=${limit}`),
   staff: (p: { positions: StaffPositionInput[]; inn?: string | null; regionFnsCode?: string | null }) => request<StaffResult>('POST', '/api/staff', p),
   staffLast: () => request<{ report: StaffResult | null }>('GET', '/api/staff'),
   compareRegions: (p: { professionKey?: string; professionText?: string; regionFnsCodes: string[]; offer?: number | null; sortBy?: RegionSort }) => request<RegionsResult>('POST', '/api/regions/compare', p),
   regionDigest: (fnsCode: string, professionKeys?: string[]) =>
     request<RegionDigestResult>('GET', `/api/regions/${encodeURIComponent(fnsCode)}/digest${professionKeys?.length ? `?professions=${encodeURIComponent(professionKeys.join(','))}` : ''}`),
+  inspections: (inn?: string | null) => request<InspectionsResult>('GET', `/api/inspections${inn ? `?inn=${encodeURIComponent(inn)}` : ''}`),
   card: (id: string) => request<MarketResult>('GET', `/api/cards/${encodeURIComponent(id)}`),
   report: (id: string) => request<{ mid: string; chatType: 'DIALOG' | 'CHAT'; reused: boolean }>('POST', `/api/cards/${encodeURIComponent(id)}/report`),
   subscribe: (id: string) => request<{ subscription: { id: string } }>('POST', `/api/cards/${encodeURIComponent(id)}/subscribe`),

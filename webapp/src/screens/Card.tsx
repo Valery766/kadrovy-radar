@@ -12,6 +12,7 @@ interface Props {
   onText: (salary: number) => void;
   onOpenInbox: (vacancyId: string) => void;
   onCompareRegions: () => void;
+  onBack: () => void;
   onHome: () => void;
 }
 
@@ -73,7 +74,7 @@ function Scale({ stats, offer }: { stats: NonNullable<MarketResult['card']['stat
   );
 }
 
-export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOpenInbox, onCompareRegions, onHome }: Props) {
+export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOpenInbox, onCompareRegions, onBack, onHome }: Props) {
   const { card, profession, region, profile, sources, fetched, closure } = result;
   const [selected, setSelected] = useState<string>(card.options.find((o) => o.kind === 'median')?.kind ?? 'keep');
   const [busy, setBusy] = useState<string | null>(null);
@@ -202,7 +203,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
               Опубликовать вакансию{selectedOpt ? ` на ${rub(selectedOpt.value)}` : ''}
             </Button>
           )}
-          {vacancy && <Button stretched onClick={shareVacancy}>Поделиться в MAX</Button>}
+          {vacancy && <Button stretched disabled={!vacancy.link} onClick={shareVacancy}>Поделиться в MAX</Button>}
           {vacancy && <Button stretched variant="secondary" onClick={() => onOpenInbox(vacancy.id)}>Открыть отклики</Button>}
         </div>
         {notInMax && !vacancy && <div className="sv-muted sv-small">Публикация доступна внутри MAX: откройте приложение из чата с ботом.</div>}
@@ -293,6 +294,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
           <Button stretched variant="secondary" onClick={shareCardLink}>Поделиться ссылкой на карточку</Button>
           <Button stretched variant="secondary" onClick={subscribe} loading={busy === 'sub'} disabled={busy !== null || notInMax}>Следить за рынком (раз в неделю)</Button>
           <Button stretched variant="ghost" onClick={onAnother}>Другая должность</Button>
+          <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
           <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
         </div>
         {notInMax && <div className="sv-muted sv-small">Отправка в чат и подписка работают внутри MAX: откройте приложение из чата с ботом.</div>}

@@ -1,12 +1,21 @@
 /* Стили мини-приложения поверх MAX UI: только то, чего в библиотеке нет (шкала, гистограмма, плашки). */
 :root {
-  --sv-accent: var(--text-themed, #2f6bff);
-  --sv-card: var(--background-card, #fff);
-  --sv-muted: var(--text-tertiary, #8a8f98);
   --sv-ok: #1f9d55;
   --sv-warn: #d97706;
   --sv-bad: #dc2626;
   --sv-radius: 14px;
+}
+/*
+ * Палитра max-ui (--background-card, --text-themed, --text-tertiary и прочие)
+ * объявлена на обёртке MaxUI, а не на :root, поэтому свои переменные объявляем
+ * там же — иначе в тёмной теме они остаются светлыми фолбэками.
+ */
+#root > * {
+  --sv-accent: var(--text-themed, #2f6bff);
+  --sv-card: var(--background-card, #fff);
+  --sv-muted: var(--text-tertiary, #8a8f98);
+  --sv-hover: var(--states-background-hovered-transparent, rgba(47,107,255,.06));
+  min-height: 100dvh;
 }
 html, body { margin: 0; padding: 0; }
 #root { min-height: 100dvh; }
@@ -26,7 +35,7 @@ html, body { margin: 0; padding: 0; }
 .sv-scale { position: relative; height: 44px; margin: 10px 0 4px; }
 .sv-scale__bar { position: absolute; left: 0; right: 0; top: 18px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #f87171 0%, #fbbf24 35%, #34d399 60%, #60a5fa 100%); opacity: .85; }
 .sv-scale__tick { position: absolute; top: 30px; font-size: 11px; color: var(--sv-muted); transform: translateX(-50%); white-space: nowrap; }
-.sv-scale__marker { position: absolute; top: 6px; width: 4px; height: 32px; background: #111; border-radius: 2px; transform: translateX(-50%); box-shadow: 0 0 0 2px #fff; }
+.sv-scale__marker { position: absolute; top: 6px; width: 4px; height: 32px; background: var(--text-primary, #111); border-radius: 2px; transform: translateX(-50%); box-shadow: 0 0 0 2px var(--sv-card, #fff); }
 .sv-hist { display: flex; align-items: flex-end; gap: 4px; height: 96px; margin-top: 8px; }
 .sv-hist__col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
 .sv-hist__bar { width: 100%; background: var(--sv-accent); border-radius: 4px 4px 0 0; opacity: .85; }
@@ -65,13 +74,13 @@ html, body { margin: 0; padding: 0; }
 .sv-suggest { display: flex; flex-direction: column; border: 1px solid rgba(128,128,128,.25); border-radius: 12px; overflow: hidden; }
 .sv-suggest__item { display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; padding: 10px 12px; background: transparent; border: 0; border-top: 1px solid rgba(128,128,128,.15); color: inherit; font: inherit; cursor: pointer; }
 .sv-suggest__item:first-child { border-top: 0; }
-.sv-suggest__item:hover { background: rgba(47,107,255,.06); }
+.sv-suggest__item:hover { background: var(--sv-hover, rgba(47,107,255,.06)); }
 .sv-chip { border: 1.5px solid rgba(47,107,255,.25); border-radius: 999px; padding: 6px 12px; background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
 .sv-chip--active { border-color: var(--sv-accent); background: rgba(47,107,255,.10); color: var(--sv-accent); }
 .sv-linkbtn { display: inline-block; margin-top: 2px; padding: 6px 0; background: transparent; border: 0; font: inherit; font-size: 12px; cursor: pointer; }
 
 /* Штат: строка редактора «должность + ставка + удалить» */
-.sv-staff-row { display: grid; grid-template-columns: 1fr 110px 36px; gap: 8px; align-items: center; }
+.sv-staff-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 36px; gap: 8px; align-items: center; }
 .sv-iconbtn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(128,128,128,.3); background: transparent; color: var(--sv-muted); font-size: 20px; line-height: 1; cursor: pointer; }
 
 /* Таблицы штата и регионов */
@@ -96,9 +105,3 @@ html, body { margin: 0; padding: 0; }
 .sv-hist--weeks .sv-hist__bar { border-radius: 2px 2px 0 0; }
 .sv-hist__bar--peak { background: #f97316; opacity: 1; }
 .sv-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--sv-muted); margin: 4px 0 6px; }
-
-@media (prefers-color-scheme: dark) {
-  :root { --sv-card: var(--background-card, #1f2126); }
-  .sv-scale__marker { box-shadow: 0 0 0 2px #1f2126; }
-  .sv-suggest__item:hover { background: rgba(47,107,255,.14); }
-}

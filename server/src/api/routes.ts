@@ -14,6 +14,7 @@ import {
 import { buildMarket, getProfile, MarketError, type MarketContext, type MarketResult } from '../services/market.js';
 import { buildStaffAssessment, MAX_STAFF_POSITIONS, type StaffPositionInput, type StaffResult } from '../services/staff.js';
 import { compareRegions, MAX_REGIONS } from '../services/regions.js';
+import { inspectionsForBusiness, inspectionsLoaded } from '../services/inspections.js';
 import { MAX_DIGEST_PROFESSIONS, regionDigest } from '../services/region-digest.js';
 import { sendReportToChat, type ReportContext } from '../services/report.js';
 import {
@@ -144,15 +145,26 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     return true;
   };
 
-  app.get('/api/health', async () => ({
-    ok: true,
-    uptimeSec: Math.round((Date.now() - deps.startedAt) / 1000),
-    updatesMode: config.updatesMode,
-    bot: deps.bot ? { username: deps.bot.username } : null,
-    lastUpdateAt: getMeta(db, 'last_update_at'),
-    webhookCheckedAt: getMeta(db, 'webhook_checked_at'),
-    packs: catalog.packs.map((p) => p.id),
-  }));
+  app.get('/api/health', async () => {
+    const inspections = inspectionsForBusiness(deps.market, {});
+    return {
+      ok: true,
+      uptimeSec: Math.round((Date.now() - deps.startedAt) / 1000),
+      updatesMode: config.updatesMode,
+      bot: deps.bot ? { username: deps.bot.username } : null,
+      lastUpdateAt: getMeta(db, 'last_update_at'),
+      webhookCheckedAt: getMeta(db, 'webhook_checked_at'),
+      packs: catalog.packs.map((p) => p.id),
+      inspections: {
+        loaded: inspections.loaded,
+        year: config.inspectionsYear,
+        version: inspections.dataset?.version ?? null,
+        records: inspections.dataset?.records ?? 0,
+        withRegion: inspections.dataset?.withRegion ?? 0,
+        loadedAt: inspections.dataset?.loadedAt ?? null,
+      },
+    };
+  });
 
   /** Сессия: initData из MAX Bridge → проверка подписи → токен. Без initData — демо-режим. */
   app.post<{ Body: { initData?: string; demo?: boolean } }>('/api/session', async (req, reply) => {
@@ -190,6 +202,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       sources: [
         { id: 'trudvsem', title: '«Работа России» (Роструд)', url: 'https://trudvsem.ru/opendata/api', kind: 'live' },
         { id: 'rmsp', title: 'Единый реестр субъектов МСП (ФНС России)', url: 'https://rmsp.nalog.ru/', kind: 'live' },
+        { id: 'erknm', title: 'Единый реестр контрольных (надзорных) мероприятий (Генпрокуратура)', url: 'https://proverki.gov.ru/portal/public-open-data', kind: 'dataset' },
       ],
     };
   });
@@ -207,7 +220,8 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     } catch (err) { return fail(reply, err); }
   });
 
-  app.post<{ Body: { inn?: string | null; regionFnsCode?: string | null; professionKey?: string; professionText?: string; offer?: number | null; forceRefresh?: boolean } }>('/api/market', async (req, reply) => {
+  // keepRegion: запрос по чужому региону (сравнение регионов) не меняет домашний регион профиля.
+  app.post<{ Body: { inn?: string | null; regionFnsCode?: string | null; professionKey?: string; professionText?: string; offer?: number | null; forceRefresh?: boolean; keepRegion?: boolean } }>('/api/market', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     const b = req.body ?? {};
     const u = s.demo ? null : getUser(db, s.uid);
@@ -221,7 +235,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       const result = await buildMarket(deps.market, { professionKey: resolved.profession.key, profession: resolved.profession, regionFnsCode: b.regionFnsCode ?? null, inn, offer, maxUserId: s.demo ? null : s.uid, forceRefresh: Boolean(b.forceRefresh) && !s.demo });
       if (!s.demo) {
         rememberProfession(s, result.profession);
-        updateUser(db, s.uid, { regionFnsCode: result.region.fnsCode, packId: result.pack.id, state: { ...userState(s.uid), step: 'idle', professionKey: result.profession.key, lastCardId: result.cardId } });
+        updateUser(db, s.uid, { regionFnsCode: b.keepRegion ? undefined : result.region.fnsCode, packId: b.keepRegion ? undefined : result.pack.id, state: { ...userState(s.uid), step: 'idle', professionKey: result.profession.key, lastCardId: result.cardId } });
       }
       return clientSummary(result);
     } catch (err) { return fail(reply, err); }
@@ -328,6 +342,28 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
       patchState(s, { staff: result });
       return result;
     } catch (err) { return fail(reply, err); } finally { heavyRunning -= 1; }
+  });
+
+  /**
+   * Плановые проверки ЕРКНМ по ИНН бизнеса плюс контекст по региону и отрасли.
+   * ИНН берём из query, затем из профиля пользователя; демо-сессия смотрит ИНН демо-пакета.
+   * Набор ещё не загружен — отвечаем loaded: false, а не ошибкой: он подтягивается фоном.
+   */
+  app.get<{ Querystring: { inn?: string } }>('/api/inspections', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    const asked = String(req.query?.inn ?? '').replace(/\D/g, '');
+    if (asked && !isValidInn(asked)) return reply.code(400).send({ error: 'inn_invalid', message: 'ИНН должен содержать 10 или 12 цифр с верной контрольной суммой' });
+    const u = s.demo ? null : getUser(db, s.uid);
+    const demoInn = catalog.packs.find((p) => p.demo)?.demo?.inn ?? null;
+    const inn = asked || u?.inn || (s.demo ? demoInn : null);
+    // Профиль нужен только ради региона и ОКВЭД контекста: пока набор не загружен, за ним не ходим.
+    // Реестр МСП может быть недоступен — тогда отвечаем по одному ИНН, без регионального контекста.
+    const profile = inn && inspectionsLoaded(deps.market) ? await getProfile(deps.market, inn).catch(() => null) : null;
+    return inspectionsForBusiness(deps.market, {
+      inn,
+      regionFnsCode: u?.regionFnsCode ?? profile?.fnsRegionCode ?? null,
+      okved: profile?.okved ?? null,
+    });
   });
 
   /** Последняя сохранённая оценка штата (демо-сессии её не имеют). */

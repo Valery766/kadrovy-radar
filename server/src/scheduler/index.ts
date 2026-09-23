@@ -1,12 +1,13 @@
 /**
  * Фоновые задачи без внешней очереди: сторож вебхука, прогрев кэша демо-запросов,
- * еженедельная проверка подписок, очистка таблицы идемпотентности.
+ * еженедельная проверка подписок, загрузка плана проверок ЕРКНМ, очистка таблицы идемпотентности.
  */
 import type { Bot } from '@maxhub/max-bot-api';
 import type { Db } from '../db/index.js';
 import { getUser, listActiveSubscriptions, pruneUpdatesSeen, touchSubscription } from '../db/index.js';
 import { isCustomProfessionKey, resolveProfession, selectPack } from '../packs/loader.js';
 import { buildMarket, type MarketContext } from '../services/market.js';
+import { describeSyncError, needsSync, syncInspections } from '../services/inspections.js';
 import { formatRub } from '../core/index.js';
 import { ensureSubscription, type UpdatesDeps } from '../bot/updates.js';
 import { openRadarButton } from '../services/report.js';
@@ -80,6 +81,22 @@ export function startScheduler(deps: SchedulerDeps): () => void {
       } catch (err) { deps.log.warn({ sub: s.id, err: String(err) }, 'subscription check failed'); }
     }
   }));
+
+  // План проверок ЕРКНМ: первая загрузка фоном (старт сервера не ждёт 39 МБ архива).
+  // Дальше задача просыпается раз в час, но к источнику идёт, только когда набор не подтверждали
+  // больше ERKNM_MAX_AGE_DAYS (по умолчанию 7 дней) — то есть проверка версии раз в неделю.
+  // Часовой шаг нужен для повтора: если сайт реестра недоступен, следующая попытка будет через час, а не через неделю.
+  const syncChecks = async () => {
+    if (!needsSync(deps.market)) return;
+    try {
+      const r = await syncInspections(deps.market);
+      if (r.status === 'loaded') deps.log.info({ version: r.dataset?.version, records: r.dataset?.records, withRegion: r.dataset?.withRegion }, 'erknm: план проверок обновлён');
+    } catch (err) {
+      deps.log.warn({ err: describeSyncError(err) }, 'erknm: не удалось обновить план проверок — сервис отвечает по последнему загруженному набору');
+    }
+  };
+  setTimeout(() => { void syncChecks(); }, 20_000).unref();
+  timers.push(every(60 * 60_000, syncChecks));
 
   timers.push(every(6 * 3600_000, async () => { pruneUpdatesSeen(deps.db, new Date(Date.now() - 3 * 86400_000).toISOString()); }));
 

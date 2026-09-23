@@ -39,10 +39,11 @@ export function ProfessionPicker({ quick, value, onChange, label = 'Должно
 
   useEffect(() => {
     const q = query.trim();
-    if (!open || q.length < 2) { setSuggestions(null); setBusy(false); return; }
-    setBusy(true);
+    // Номер поднимаем до раннего выхода: иначе ответ на стёртый запрос перекроет пустое состояние.
     const id = seq.current + 1;
     seq.current = id;
+    if (!open || q.length < 2) { setSuggestions(null); setBusy(false); return; }
+    setBusy(true);
     const timer = setTimeout(() => {
       api.suggestProfessions(q, 8)
         .then((r) => { if (seq.current === id) { setSuggestions(r.suggestions); setError(null); } })

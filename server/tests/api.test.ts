@@ -17,10 +17,12 @@ const post = (url: string, body: unknown, token?: string) => parts.app.inject({ 
 const get = (url: string, token?: string) => parts.app.inject({ method: 'GET', url, headers: token ? { authorization: `Bearer ${token}` } : {} });
 
 describe('api', () => {
-  it('reports health and packs', async () => {
+  it('reports health, packs and the state of the inspections dataset', async () => {
     const r = await get('/api/health');
     expect(r.statusCode).toBe(200);
     expect(r.json().packs).toContain('spb-obschepit');
+    // Набор ЕРКНМ подтягивается фоном: в тестах его нет, и это не ошибка.
+    expect(r.json().inspections).toMatchObject({ loaded: false, year: expect.any(Number), version: null, records: 0 });
   });
   it('issues a demo session without initData and rejects requests without a session', async () => {
     const r = await post('/api/session', {});
@@ -59,6 +61,22 @@ describe('api', () => {
     expect((await get('/api/cards/nope', token)).statusCode).toBe(404);
     expect((await post('/api/cards/nope/report', {}, token)).statusCode).toBe(400);
   });
+  it('answers «дата ещё не загружена» on /api/inspections instead of failing', async () => {
+    expect((await get('/api/inspections')).statusCode).toBe(401);
+    const token = (await post('/api/session', {})).json().token as string;
+    const r = await get('/api/inspections', token);
+    expect(r.statusCode).toBe(200);
+    const b = r.json();
+    expect(b.loaded).toBe(false);
+    expect(b.own).toEqual([]);
+    expect(b.context).toMatchObject({ scope: 'none', total: 0, byKind: { labor: 0, sanitary: 0, fire: 0, other: 0 } });
+    // Демо-сессия смотрит ИНН демо-пакета (какого именно — зависит от порядка пакетов).
+    const demoInns = (await get('/api/bootstrap', token)).json().packs.filter((p: { demo: unknown }) => p.demo).map((p: { demo: { inn: string } }) => p.demo.inn);
+    expect(demoInns).toContain(b.inn);
+    expect((await get('/api/inspections?inn=123', token)).statusCode).toBe(400);
+    expect((await get('/api/inspections?inn=1601000159', token)).json().inn).toBe('1601000159');
+  });
+
   it('returns 404 JSON for unknown routes', async () => {
     const r = await get('/api/unknown');
     expect(r.statusCode).toBe(404);

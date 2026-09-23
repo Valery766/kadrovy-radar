@@ -137,6 +137,46 @@ CREATE TABLE IF NOT EXISTS updates_seen (
   received_at TEXT NOT NULL
 );
 
+-- Плановые КНМ из ЕРКНМ (Генпрокуратура): одна строка на пару «мероприятие × субъект».
+CREATE TABLE IF NOT EXISTS inspections (
+  id TEXT PRIMARY KEY,
+  dataset_year INTEGER NOT NULL,
+  erp_id TEXT NOT NULL,
+  inn TEXT,
+  ogrn TEXT,
+  subject_name TEXT,
+  subject_type TEXT,
+  msp_code TEXT,
+  okved TEXT,
+  okved2 TEXT,
+  kind TEXT NOT NULL,
+  kind_control TEXT,
+  kind_knm TEXT,
+  type_name TEXT,
+  status TEXT,
+  start_date TEXT,
+  stop_date TEXT,
+  organization TEXT,
+  prosecutor_office TEXT,
+  address TEXT,
+  region_code TEXT,
+  region_fns_code TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_inspections_inn ON inspections(inn);
+CREATE INDEX IF NOT EXISTS idx_inspections_context ON inspections(region_code, okved2, kind);
+
+-- Версия загруженного набора ЕРКНМ: по ней решаем, нужна ли перезаливка.
+-- loaded_at — когда набор загружен или последний раз подтверждён как актуальный.
+CREATE TABLE IF NOT EXISTS inspection_datasets (
+  year INTEGER PRIMARY KEY,
+  dataset_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  records INTEGER NOT NULL,
+  with_region INTEGER NOT NULL,
+  loaded_at TEXT NOT NULL
+);
+
 -- Голосования в чате по вариантам ставки (message mid → выбор участника).
 CREATE TABLE IF NOT EXISTS votes (
   mid TEXT NOT NULL,
@@ -429,6 +469,168 @@ export function castVote(db: Db, mid: string, maxUserId: number, optionKind: str
   let total = 0;
   for (const r of rows) { counts[r.option_kind] = r.n; total += r.n; }
   return { counts, total };
+}
+
+/* ---------- плановые проверки (ЕРКНМ) ---------- */
+
+export type InspectionKindKey = 'labor' | 'sanitary' | 'fire' | 'other';
+
+export interface InspectionRow {
+  id: string;
+  year: number;
+  erpId: string;
+  inn: string | null;
+  ogrn: string | null;
+  subjectName: string | null;
+  subjectType: string | null;
+  mspCode: string | null;
+  okved: string | null;
+  okved2: string | null;
+  kind: InspectionKindKey;
+  kindControl: string | null;
+  kindKnm: string | null;
+  typeName: string | null;
+  status: string | null;
+  startDate: string | null;
+  stopDate: string | null;
+  organization: string | null;
+  prosecutorOffice: string | null;
+  address: string | null;
+  regionCode: string | null;
+  regionFnsCode: string | null;
+}
+
+export interface InspectionDatasetRow {
+  year: number;
+  datasetId: string;
+  /** Дата версии набора из имени файла, «2026-09-23». */
+  version: string;
+  fileName: string;
+  records: number;
+  withRegion: number;
+  /** Когда набор загружен или последний раз подтверждён как актуальный. */
+  loadedAt: string;
+}
+
+function mapInspection(r: Record<string, unknown>): InspectionRow {
+  return {
+    id: r.id as string, year: r.dataset_year as number, erpId: r.erp_id as string,
+    inn: r.inn as string | null, ogrn: r.ogrn as string | null, subjectName: r.subject_name as string | null,
+    subjectType: r.subject_type as string | null, mspCode: r.msp_code as string | null,
+    okved: r.okved as string | null, okved2: r.okved2 as string | null,
+    kind: r.kind as InspectionKindKey, kindControl: r.kind_control as string | null, kindKnm: r.kind_knm as string | null,
+    typeName: r.type_name as string | null, status: r.status as string | null,
+    startDate: r.start_date as string | null, stopDate: r.stop_date as string | null,
+    organization: r.organization as string | null, prosecutorOffice: r.prosecutor_office as string | null,
+    address: r.address as string | null, regionCode: r.region_code as string | null, regionFnsCode: r.region_fns_code as string | null,
+  };
+}
+
+const INSPECTION_COLUMNS = 'id, dataset_year, erp_id, inn, ogrn, subject_name, subject_type, msp_code, okved, okved2, kind, kind_control, kind_knm, type_name, status, start_date, stop_date, organization, prosecutor_office, address, region_code, region_fns_code';
+
+const STAGING_SCHEMA = `CREATE TABLE IF NOT EXISTS inspections_staging (${INSPECTION_COLUMNS.split(', ').map((c) => (c === 'id' ? 'id TEXT PRIMARY KEY' : c === 'dataset_year' ? 'dataset_year INTEGER' : `${c} TEXT`)).join(', ')})`;
+
+export interface InspectionsLoader {
+  add(row: InspectionRow): void;
+  /** Переносит подготовленные строки в рабочую таблицу и записывает версию набора. */
+  commit(dataset: Omit<InspectionDatasetRow, 'records' | 'withRegion' | 'loadedAt'>): InspectionDatasetRow;
+  abort(): void;
+}
+
+/**
+ * Потоковая загрузка набора: строки копятся в промежуточной таблице пачками, а в рабочую
+ * переносятся одной короткой транзакцией. Так в памяти не лежит весь набор, а читатели
+ * не видят половину загрузки и не ждут её (перезаливка идемпотентна: повтор даёт тот же результат).
+ */
+export function beginInspectionsLoad(db: Db, year: number, batchSize = 1000): InspectionsLoader {
+  db.exec('DROP TABLE IF EXISTS inspections_staging');
+  db.exec(STAGING_SCHEMA);
+  const insert = db.prepare(`INSERT OR REPLACE INTO inspections_staging (${INSPECTION_COLUMNS}) VALUES (${'?, '.repeat(21)}?)`);
+  let inBatch = 0;
+  let records = 0;
+  let withRegion = 0;
+  let open = false;
+  const begin = () => { if (!open) { db.prepare('BEGIN').run(); open = true; } };
+  const flush = () => { if (open) { db.prepare('COMMIT').run(); open = false; inBatch = 0; } };
+  return {
+    add(r) {
+      begin();
+      insert.run(r.id, year, r.erpId, r.inn, r.ogrn, r.subjectName, r.subjectType, r.mspCode, r.okved, r.okved2,
+        r.kind, r.kindControl, r.kindKnm, r.typeName, r.status, r.startDate, r.stopDate, r.organization, r.prosecutorOffice,
+        r.address, r.regionCode, r.regionFnsCode);
+      records += 1;
+      if (r.regionCode) withRegion += 1;
+      inBatch += 1;
+      if (inBatch >= batchSize) flush();
+    },
+    commit(dataset) {
+      flush();
+      const loadedAt = nowIso();
+      db.prepare('BEGIN').run();
+      try {
+        db.prepare('DELETE FROM inspections WHERE dataset_year = ?').run(dataset.year);
+        db.prepare(`INSERT OR REPLACE INTO inspections (${INSPECTION_COLUMNS}) SELECT ${INSPECTION_COLUMNS} FROM inspections_staging`).run();
+        db.prepare('INSERT OR REPLACE INTO inspection_datasets (year, dataset_id, version, file_name, records, with_region, loaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(dataset.year, dataset.datasetId, dataset.version, dataset.fileName, records, withRegion, loadedAt);
+        db.prepare('COMMIT').run();
+      } catch (e) {
+        db.prepare('ROLLBACK').run();
+        throw e;
+      }
+      // Промежуточную таблицу убираем: её страницы возвращаются в файл базы и переиспользуются следующей загрузкой.
+      db.exec('DROP TABLE IF EXISTS inspections_staging');
+      return { ...dataset, records, withRegion, loadedAt };
+    },
+    abort() {
+      if (open) { db.prepare('ROLLBACK').run(); open = false; }
+      db.exec('DROP TABLE IF EXISTS inspections_staging');
+    },
+  };
+}
+
+/** Перезаливка готового массива записей — удобна в тестах и для небольших наборов. */
+export function replaceInspections(db: Db, dataset: Omit<InspectionDatasetRow, 'records' | 'withRegion' | 'loadedAt'>, rows: readonly InspectionRow[]): InspectionDatasetRow {
+  const loader = beginInspectionsLoad(db, dataset.year);
+  try {
+    for (const r of rows) loader.add(r);
+    return loader.commit(dataset);
+  } catch (e) {
+    loader.abort();
+    throw e;
+  }
+}
+
+export function getInspectionDataset(db: Db, year: number): InspectionDatasetRow | null {
+  const r = db.prepare('SELECT * FROM inspection_datasets WHERE year = ?').get(year) as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return { year: r.year as number, datasetId: r.dataset_id as string, version: r.version as string, fileName: r.file_name as string, records: r.records as number, withRegion: r.with_region as number, loadedAt: r.loaded_at as string };
+}
+
+/** Набор проверен и оказался актуальным: сдвигаем отметку, чтобы не ходить к источнику каждый час. */
+export function touchInspectionDataset(db: Db, year: number, at: string = nowIso()): void {
+  db.prepare('UPDATE inspection_datasets SET loaded_at = ? WHERE year = ?').run(at, year);
+}
+
+/** Плановые КНМ по ИНН субъекта: ближайшие сверху. */
+export function inspectionsByInn(db: Db, inn: string, year: number, limit = 20): InspectionRow[] {
+  const rows = db.prepare('SELECT * FROM inspections WHERE inn = ? AND dataset_year = ? ORDER BY COALESCE(start_date, \'9999\') ASC LIMIT ?').all(inn, year, limit) as Record<string, unknown>[];
+  return rows.map(mapInspection);
+}
+
+/** Счётчики КНМ по видам надзора для контекста: регион и (при наличии) раздел ОКВЭД. */
+export function inspectionCounts(db: Db, year: number, filter: { regionCode?: string | null; okved2?: string | null }): { byKind: Record<InspectionKindKey, number>; total: number } {
+  const where = ['dataset_year = ?'];
+  const args: (string | number)[] = [year];
+  if (filter.regionCode) { where.push('region_code = ?'); args.push(filter.regionCode); }
+  if (filter.okved2) { where.push('okved2 = ?'); args.push(filter.okved2); }
+  const rows = db.prepare(`SELECT kind, COUNT(*) AS n FROM inspections WHERE ${where.join(' AND ')} GROUP BY kind`).all(...args) as { kind: string; n: number }[];
+  const byKind: Record<InspectionKindKey, number> = { labor: 0, sanitary: 0, fire: 0, other: 0 };
+  let total = 0;
+  for (const r of rows) {
+    if (r.kind === 'labor' || r.kind === 'sanitary' || r.kind === 'fire' || r.kind === 'other') byKind[r.kind] = r.n;
+    total += r.n;
+  }
+  return { byKind, total };
 }
 
 export function getMeta(db: Db, key: string): string | null {

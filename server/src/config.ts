@@ -24,6 +24,10 @@ export interface Config {
   maxVacancyRecords: number;
   /** Сколько работодателей обогащать через ФНС на одну карточку. */
   maxEmployersToEnrich: number;
+  /** Год плана проверок ЕРКНМ (по умолчанию текущий). */
+  inspectionsYear: number;
+  /** Через сколько дней набор ЕРКНМ считается устаревшим и проверяется новая версия. */
+  inspectionsMaxAgeDays: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -54,5 +58,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     profileCacheHours: Number(env.PROFILE_CACHE_HOURS ?? 24 * 30),
     maxVacancyRecords: Number(env.MAX_VACANCY_RECORDS ?? 2000),
     maxEmployersToEnrich: Number(env.MAX_EMPLOYERS_TO_ENRICH ?? 60),
+    inspectionsYear: Number(env.ERKNM_YEAR ?? new Date().getFullYear()),
+    inspectionsMaxAgeDays: Number(env.ERKNM_MAX_AGE_DAYS ?? 7),
   };
 }

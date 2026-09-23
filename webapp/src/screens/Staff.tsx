@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@maxhub/max-ui';
 import {
   api, ApiError, fmtDate, rub, staffRiskClass, staffRiskLabel,
@@ -11,17 +11,17 @@ interface Row { id: string; title: string; salary: string }
 interface Props {
   boot: Bootstrap;
   onOpenCard: (cardId: string) => void;
+  onBack: () => void;
   onHome: () => void;
 }
 
-const emptyRow = (i: number): Row => ({ id: `p${i}`, title: '', salary: '' });
-
-/** Строки редактора из сохранённой оценки: порядок отчёта — от самых отстающих. */
-const rowsFromResult = (r: StaffResult): Row[] =>
-  r.report.positions.map((p, i) => ({ id: p.id || `p${i + 1}`, title: p.title, salary: String(p.salary) }));
-
-export function Staff({ boot, onOpenCard, onHome }: Props) {
-  const [rows, setRows] = useState<Row[]>([emptyRow(1), emptyRow(2), emptyRow(3)]);
+export function Staff({ boot, onOpenCard, onBack, onHome }: Props) {
+  // Сквозной счётчик строк: номер по длине списка давал бы дубли после удаления середины.
+  const nextId = useRef(0);
+  const newRow = (title = '', salary = ''): Row => ({ id: `p${(nextId.current += 1)}`, title, salary });
+  /** Строки редактора из сохранённой оценки: порядок отчёта — от самых отстающих. */
+  const rowsFromResult = (r: StaffResult): Row[] => r.report.positions.map((p) => newRow(p.title, String(p.salary)));
+  const [rows, setRows] = useState<Row[]>(() => [newRow(), newRow(), newRow()]);
   const [regionFns, setRegionFns] = useState<string>(boot.user.regionFnsCode ?? '78');
   const [result, setResult] = useState<StaffResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +40,7 @@ export function Staff({ boot, onOpenCard, onHome }: Props) {
   }, []);
 
   const setRow = (id: string, patch: Partial<Row>) => setRows((cur) => cur.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  const addRow = () => setRows((cur) => (cur.length >= 20 ? cur : [...cur, emptyRow(cur.length + 1)]));
+  const addRow = () => setRows((cur) => (cur.length >= 20 ? cur : [...cur, newRow()]));
   const removeRow = (id: string) => setRows((cur) => (cur.length > 1 ? cur.filter((r) => r.id !== id) : cur));
 
   const assess = async () => {
@@ -93,7 +93,7 @@ export function Staff({ boot, onOpenCard, onHome }: Props) {
           <div key={r.id} className="sv-staff-row">
             <Input placeholder={i === 0 ? 'повар' : 'должность'} value={r.title} onChange={(e) => setRow(r.id, { title: e.target.value })} />
             <Input inputMode="numeric" placeholder="60000" value={r.salary} onChange={(e) => setRow(r.id, { salary: e.target.value })} />
-            <button type="button" className="sv-iconbtn" title="Удалить строку" onClick={() => removeRow(r.id)}>×</button>
+            <button type="button" className="sv-iconbtn" title="Удалить строку" aria-label="Удалить строку" onClick={() => removeRow(r.id)}>×</button>
           </div>
         ))}
         {error && <div className="sv-banner sv-banner--error">{error}</div>}
@@ -104,14 +104,14 @@ export function Staff({ boot, onOpenCard, onHome }: Props) {
         <div className="sv-muted sv-small">Не больше 20 строк за раз. Ставка — оклад в месяц до вычета НДФЛ.</div>
       </div>
 
-      {busy && !result && (
+      {busy && (
         <div className="sv-card sv-stack">
           <div className="sv-center"><Spinner /></div>
           <div className="sv-center sv-muted sv-small">Считаю рынок по каждой должности: вакансии «Работы России» и размеры работодателей из реестра МСП.</div>
         </div>
       )}
 
-      {result && (
+      {result && !busy && (
         <>
           <div className="sv-card sv-stack">
             <div className="sv-h2">Что получилось</div>
@@ -165,7 +165,10 @@ export function Staff({ boot, onOpenCard, onHome }: Props) {
         </>
       )}
 
-      <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
+      <div className="sv-actions">
+        <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
+        <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
+      </div>
     </div>
   );
 }

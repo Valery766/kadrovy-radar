@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<PLAN xmlns="https://proverki.gov.ru/opendata/3.0/20220115" ID="2026099001" YEAR="2026" FILE_NAME="data-20260923-structure-20220115-plan-2026099001.xml" FILE_DATE_CREATE="2026-09-23T12:59:06.281820Z">
+    <INSPECTION CLASSIFICATION="КНМ" CREATION_SOURCE="Создано через ФГИС «Единый реестр контрольных (надзорных) мероприятий»" STATUS="Ожидает проведения" STATUS_KEY="TYPE_WAITING" ERPID="11111111111111111111" KO_LEVEL="FEDERAL" IS_CHECKLISTS_USED="true" TYPE_NAME="Плановое КНМ" START_DATE="2026-02-02" STOP_DATE="2026-02-13" DURATION_DAYS="10">
+        <PROSECUTOR_OFFICE NAME="Прокуратура Республики Татарстан"/>
+        <KIND_CONTROL DICT_ID="1f27d942-a52e-11eb-bcbc-0242ac130002" VALUE="Федеральный государственный контроль (надзор) за соблюдением трудового законодательства и иных нормативных правовых актов, содержащих нормы трудового права"/>
+        <KIND_KNM DICT_ID="d2ec803a-a53e-11eb-bcbc-0242ac130002" VALUE="Выездная проверка"/>
+        <SUBJECT INN="1601000159" OGRN="1021607550000" NAME="АГРЫЗСКОЕ РАЙОННОЕ ПОТРЕБИТЕЛЬСКОЕ ОБЩЕСТВО" MSP_CODE="Малое предприятие" TYPE="ЮЛ" GUID="aaaa0001-0000-0000-0000-000000000001">
+            <OKVEDS CODE="47.11" NAME="Торговля розничная преимущественно пищевыми продуктами"/>
+            <OKVEDS CODE="56.10" NAME="Деятельность ресторанов"/>
+        </SUBJECT>
+        <OBJECT ADDRESS="422230, Респ Татарстан, г Агрыз, ул Карла Маркса, д 1" GUID="bbbb0001-0000-0000-0000-000000000001">
+            <OBJECT_TYPE VALUE="Деятельность и действия"/>
+            <RISK_CATEGORY VALUE="средний риск"/>
+        </OBJECT>
+        <INSPECTOR INSPECTOR_FULL_NAME="Иванов Иван Иванович" GUID="cccc0001-0000-0000-0000-000000000001">
+            <INSPECTOR_POSITION VALUE="государственный инспектор труда"/>
+        </INSPECTOR>
+        <EVENT GUID="dddd0001-0000-0000-0000-000000000001" START_DATE="2026-02-02" STOP_DATE="2026-02-13">
+            <EVENT VALUE="Истребование документов"/>
+        </EVENT>
+        <KNO_ORGANIZATION DICT_ID="af002594-a4f0-11eb-bcbc-0242ac130002" VALUE="ГОСУДАРСТВЕННАЯ ИНСПЕКЦИЯ ТРУДА В РЕСПУБЛИКЕ ТАТАРСТАН"/>
+        <DECISION FIO_SIGNER="Петров Пётр Петрович"/>
+    </INSPECTION>
+    <INSPECTION CLASSIFICATION="КНМ" STATUS="Завершено" STATUS_KEY="TYPE_COMPLETED" ERPID="22222222222222222222" KO_LEVEL="FEDERAL" TYPE_NAME="Плановое КНМ" START_DATE="2026-05-04" STOP_DATE="2026-05-15" DURATION_DAYS="10">
+        <PROSECUTOR_OFFICE NAME="Прокуратура города Санкт-Петербурга"/>
+        <KIND_CONTROL DICT_ID="1f27d942-a52e-11eb-bcbc-0242ac130002" VALUE="Федеральный государственный санитарно-эпидемиологический контроль (надзор)"/>
+        <KIND_KNM DICT_ID="d2ec803a-a53e-11eb-bcbc-0242ac130002" VALUE="Документарная проверка"/>
+        <SUBJECT INN="7801633015" OGRN="1147847000000" NAME="ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ &quot;МАЛЫЙ 43&quot;" MSP_CODE="Микропредприятие" TYPE="ЮЛ" GUID="aaaa0002-0000-0000-0000-000000000001">
+            <OKVEDS CODE="56.10" NAME="Деятельность ресторанов и услуги по доставке продуктов питания"/>
+        </SUBJECT>
+        <SUBJECT INN="7810000000" OGRN="1057810000000" NAME="ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ &quot;СОСЕД&quot;" MSP_CODE="Не является субъектом МСП" TYPE="ЮЛ" GUID="aaaa0002-0000-0000-0000-000000000002">
+            <OKVEDS CODE="56.30" NAME="Подача напитков"/>
+        </SUBJECT>
+        <OBJECT GUID="bbbb0002-0000-0000-0000-000000000001">
+            <OBJECT_TYPE VALUE="Деятельность и действия"/>
+        </OBJECT>
+        <PLACE>г Санкт-Петербург, Малый пр-кт В.О., д 43</PLACE>
+        <KNO_ORGANIZATION DICT_ID="af002594-a4f0-11eb-bcbc-0242ac130002" VALUE="Управление Федеральной службы по надзору в сфере защиты прав потребителей и благополучия человека по городу Санкт-Петербургу"/>
+    </INSPECTION>
+    <INSPECTION CLASSIFICATION="КНМ" STATUS="Ожидает проведения" ERPID="33333333333333333333" KO_LEVEL="FEDERAL" TYPE_NAME="Плановое КНМ" START_DATE="2026-08-05" STOP_DATE="2026-08-18" DURATION_DAYS="10">
+        <PROSECUTOR_OFFICE NAME="Прокуратура Ярославской области"/>
+        <KIND_CONTROL DICT_ID="1f27d942-a52e-11eb-bcbc-0242ac130002" VALUE="Федеральный государственный пожарный надзор"/>
+        <KIND_KNM DICT_ID="d2ec803a-a53e-11eb-bcbc-0242ac130002" VALUE="Выездная проверка"/>
+        <SUBJECT INN="7604000000" OGRN="1027600000000" NAME="ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ &quot;ЯКОРЬ&quot;" MSP_CODE="Микропредприятие" TYPE="ЮЛ" GUID="aaaa0003-0000-0000-0000-000000000001"/>
+        <OBJECT ADDRESS="г Ярославль, ул Чкалова, д 20а" GUID="bbbb0003-0000-0000-0000-000000000001">
+            <OBJECT_TYPE VALUE="Производственные объекты"/>
+        </OBJECT>
+        <KNO_ORGANIZATION DICT_ID="af002594-a4f0-11eb-bcbc-0242ac130002" VALUE="ГЛАВНОЕ УПРАВЛЕНИЕ МЧС РОССИИ ПО ЯРОСЛАВСКОЙ ОБЛАСТИ"/>
+    </INSPECTION>
+</PLAN>

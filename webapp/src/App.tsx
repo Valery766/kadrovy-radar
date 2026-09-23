@@ -29,16 +29,32 @@ export function App() {
   const [history, setHistory] = useState<Screen[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
 
+  /** Новый экран начинается сверху: иначе длинная карточка открывается на середине. */
+  const scrollTop = () => window.scrollTo(0, 0);
+
   const go = useCallback((next: Screen) => {
+    scrollTop();
     setScreen((cur) => { setHistory((h) => (cur.name === 'boot' || cur.name === 'loading' ? h : [...h, cur])); return next; });
   }, []);
   const back = useCallback(() => {
+    scrollTop();
     setHistory((h) => {
       const prev = h[h.length - 1];
       setScreen(prev ?? { name: 'home' });
       return h.slice(0, -1);
     });
   }, []);
+  /** «Все вакансии» в инбоксе: возвращаемся к списку, не наращивая историю. */
+  const backToVacancies = useCallback(() => {
+    scrollTop();
+    setHistory((h) => {
+      const prev = h[h.length - 1];
+      if (prev && prev.name === 'inbox' && prev.vacancyId === null) { setScreen(prev); return h.slice(0, -1); }
+      setScreen({ name: 'inbox', vacancyId: null });
+      return h;
+    });
+  }, []);
+  const home = useCallback(() => { scrollTop(); setHistory([]); setScreen({ name: 'home' }); }, []);
   useBackButton(screen.name !== 'home' && screen.name !== 'boot', back);
 
   const reloadBoot = useCallback(async () => { const b = await api.bootstrap(); setBoot(b); return b; }, []);
@@ -50,7 +66,8 @@ export function App() {
         const b = await reloadBoot();
         const sp = s.startParam ?? startParam();
         if (sp && sp.startsWith('card_')) {
-          try { const r = await api.card(sp.slice(5)); setScreen({ name: 'card', result: r }); return; } catch { /* карточка не найдена — на главную */ }
+          try { const r = await api.card(sp.slice(5)); setScreen({ name: 'card', result: r }); return; }
+          catch { setScreen({ name: 'error', message: 'Карточка не найдена или устарела. Посчитайте рынок заново — это займёт полминуты.' }); return; }
         }
         if (sp && sp.startsWith('inbox_')) { setScreen({ name: 'inbox', vacancyId: sp.slice(6) }); return; }
         if (sp === 'staff') { setScreen({ name: 'staff' }); return; }
@@ -67,10 +84,12 @@ export function App() {
     go({ name: 'loading', label: 'Запрашиваю вакансии на «Работе России» и сверяю работодателей с реестром МСП. Обычно 10–40 секунд.' });
     try {
       const r = await api.market(p);
+      window.scrollTo(0, 0);
       setScreen({ name: 'card', result: r });
       void reloadBoot();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Не удалось получить данные';
+      window.scrollTo(0, 0);
       setScreen({ name: 'error', message, retry: () => void runMarket(p) });
     }
   }, [go, reloadBoot]);
@@ -104,33 +123,36 @@ export function App() {
         <div className="sv-center sv-muted">{screen.label}</div>
       </div>;
     case 'card':
-      return <Card result={screen.result} boot={boot} notInMax={notInMax}
+      return <Card result={screen.result} boot={boot} notInMax={notInMax} onBack={back}
         onRecalc={(offer) => void runMarket({ inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode, professionKey: screen.result.profession.key, professionText: screen.result.profession.query, offer })}
         onAnother={() => go({ name: 'query', prefill: { inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode } })}
         onText={(salary) => go({ name: 'text', result: screen.result, salary })}
         onOpenInbox={(vacancyId) => go({ name: 'inbox', vacancyId })}
         onCompareRegions={() => go({ name: 'regions', prefill: { professionKey: screen.result.profession.key, professionTitle: screen.result.profession.title, regionFnsCode: screen.result.region.fnsCode, offer: screen.result.card.offer?.value ?? null } })}
-        onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
+        onHome={home} />;
     case 'text':
       return <VacancyText result={screen.result} salary={screen.salary} onBack={back} />;
     case 'inbox':
-      return <Inbox boot={boot} notInMax={notInMax} initialVacancyId={screen.vacancyId}
-        onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
+      return <Inbox boot={boot} notInMax={notInMax} vacancyId={screen.vacancyId}
+        onSelectVacancy={(id) => go({ name: 'inbox', vacancyId: id })}
+        onVacancies={backToVacancies}
+        onBack={back}
+        onHome={home} />;
     case 'staff':
-      return <Staff boot={boot}
+      return <Staff boot={boot} onBack={back}
         onOpenCard={async (id) => { try { const r = await api.card(id); go({ name: 'card', result: r }); } catch (e) { setScreen({ name: 'error', message: e instanceof ApiError ? e.message : 'Карточка не найдена' }); } }}
-        onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
+        onHome={home} />;
     case 'regions':
-      return <Regions boot={boot} prefill={screen.prefill}
+      return <Regions boot={boot} prefill={screen.prefill} onBack={back}
         onOpenMarket={(p) => void runMarket(p)}
-        onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
+        onHome={home} />;
     case 'error':
       return <div className="sv-page sv-stack" style={{ paddingTop: 40 }}>
         <div className="sv-title">Не получилось</div>
         <div className="sv-banner sv-banner--error">{screen.message}</div>
         <div className="sv-actions">
           {screen.retry && <Button onClick={screen.retry}>Повторить</Button>}
-          <Button variant="secondary" onClick={() => { setHistory([]); setScreen({ name: 'home' }); }}>На главную</Button>
+          <Button variant="secondary" onClick={home}>На главную</Button>
         </div>
       </div>;
   }

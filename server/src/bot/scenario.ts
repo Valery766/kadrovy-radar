@@ -10,6 +10,7 @@ import { buildMarket, getProfile, MarketError, type MarketContext, type MarketRe
 import { buildStaffAssessment, MAX_STAFF_POSITIONS } from '../services/staff.js';
 import { compareRegions } from '../services/regions.js';
 import { MAX_DIGEST_PROFESSIONS, regionDigest } from '../services/region-digest.js';
+import { inspectionsForBusiness, inspectionsProfileLine, inspectionsText } from '../services/inspections.js';
 import { sendReportToChat, type ReportContext } from '../services/report.js';
 import {
   createVacancyFromCard, EXPERIENCE_LABEL, inboxButton, phoneFromVcf, renderVacancyQr, responseSummary,
@@ -62,6 +63,7 @@ const COMMANDS = [
   { name: 'staff', description: 'Мой штат: кто отстаёт от рынка' },
   { name: 'regions', description: 'Сравнить регионы по должности' },
   { name: 'digest', description: 'Сводка по рынку региона' },
+  { name: 'checks', description: 'Плановые проверки на год (ЕРКНМ)' },
   { name: 'vacancies', description: 'Мои вакансии и отклики' },
   { name: 'demo', description: 'Показать на примере' },
   { name: 'subs', description: 'Мои подписки на рынок' },
@@ -231,7 +233,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         return;
       }
       setState(uid, { step: 'idle' });
-      await ctx.reply(T.profileText(profile, pack, region.name), { attachments: [T.profileKeyboard()] });
+      await ctx.reply(T.profileText(profile, pack, region.name, inspectionsProfileLine(checksFor(uid))), { attachments: [T.profileKeyboard()] });
     } catch (err) {
       log.warn({ err: String(err) }, 'profile lookup failed');
       await ctx.reply(`Не удалось получить профиль: ${err instanceof MarketError ? err.message : 'источник временно недоступен'}. Попробуйте позже или напишите «пропустить».`);
@@ -411,6 +413,31 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       log.error({ err: String(err) }, 'digest failed');
       await ctx.reply(`Не получилось собрать сводку: ${msg}. Попробуйте ещё раз: /digest.`);
     }
+  }
+
+  /* ---------- плановые проверки (ЕРКНМ) ---------- */
+
+  /** Профиль бизнеса пользователя из кэша реестра МСП: нужен для региона и ОКВЭД в контексте проверок. */
+  const cachedProfile = (uid: number): { okved: string | null; fnsRegionCode: string | null } | null => {
+    const inn = getUser(db, uid)?.inn;
+    if (!inn) return null;
+    const row = db.prepare('SELECT payload FROM business_profiles WHERE inn = ?').get(inn) as { payload: string } | undefined;
+    return row ? (JSON.parse(row.payload) as { okved: string | null; fnsRegionCode: string | null }) : null;
+  };
+
+  /** Блок «Проверки {год}»: плановые КНМ по ИНН и контекст по региону и отрасли. */
+  const checksFor = (uid: number) => {
+    const u = getUser(db, uid);
+    const profile = cachedProfile(uid);
+    return inspectionsForBusiness(deps.market, {
+      inn: u?.inn ?? null,
+      regionFnsCode: u?.regionFnsCode ?? profile?.fnsRegionCode ?? null,
+      okved: profile?.okved ?? null,
+    });
+  };
+
+  async function runChecks(ctx: Context, uid: number) {
+    await replyLong(ctx, inspectionsText(checksFor(uid)));
   }
 
   /* ---------- отклики и найм ---------- */
@@ -735,6 +762,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (cmd === 'staff') { await startStaff(ctx, uid); return; }
     if (cmd === 'regions') { await startRegions(ctx, uid); return; }
     if (cmd === 'digest') { await runDigest(ctx, uid); return; }
+    if (cmd === 'checks') { await runChecks(ctx, uid); return; }
     if (cmd === 'subs') {
       const subs = listUserSubscriptions(db, uid);
       if (!subs.length) { await ctx.reply('Подписок пока нет. Их можно оформить из карточки рынка — кнопка «Следить за рынком».'); return; }

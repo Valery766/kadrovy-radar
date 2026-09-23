@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Button, Input, Spinner } from '@maxhub/max-ui';
 import { ProfessionPicker, type ProfessionChoice } from '../components/ProfessionPicker';
-import { api, ApiError, fmtDate, rub, type Bootstrap, type RegionSort, type RegionsResult } from '../lib/api';
+import { api, ApiError, fmtDate, rub, type Bootstrap, type RegionComparisonRow, type RegionSort, type RegionsResult } from '../lib/api';
 import { haptic } from '../lib/bridge';
 import type { MarketQuery } from './Query';
 
@@ -18,10 +18,11 @@ interface Props {
   boot: Bootstrap;
   prefill?: { professionKey?: string; professionTitle?: string; regionFnsCode?: string | null; offer?: number | null };
   onOpenMarket: (p: MarketQuery) => void;
+  onBack: () => void;
   onHome: () => void;
 }
 
-export function Regions({ boot, prefill, onOpenMarket, onHome }: Props) {
+export function Regions({ boot, prefill, onOpenMarket, onBack, onHome }: Props) {
   const [profession, setProfession] = useState<ProfessionChoice>(() => {
     const key = prefill?.professionKey ?? null;
     const found = key ? boot.professions.find((p) => p.key === key) ?? null : null;
@@ -42,6 +43,25 @@ export function Regions({ boot, prefill, onOpenMarket, onHome }: Props) {
 
   const selected = useMemo(() => codes.map((c) => boot.regions.find((r) => r.fnsCode === c)).filter((r): r is NonNullable<typeof r> => Boolean(r)), [codes, boot.regions]);
   const rest = useMemo(() => boot.regions.filter((r) => !codes.includes(r.fnsCode)), [codes, boot.regions]);
+
+  /**
+   * Порядок строк задаёт выбранная сортировка: уже посчитанную таблицу
+   * переупорядочиваем на месте, без повторного запроса (правила — как на сервере,
+   * core/regions.ts: регионы без данных уходят в конец).
+   */
+  const rows = useMemo(() => {
+    const all = result?.comparison.rows;
+    if (!all) return [];
+    const withData = all.filter((r) => r.median != null && !r.error);
+    const withoutData = all.filter((r) => !(r.median != null && !r.error));
+    const key = (r: RegionComparisonRow): number => {
+      if (sortBy === 'affordability') return r.affordability ?? Number.POSITIVE_INFINITY;
+      if (sortBy === 'vacancies') return -r.vacancies;
+      return r.median ?? Number.POSITIVE_INFINITY;
+    };
+    withData.sort((a, b) => key(a) - key(b) || a.regionName.localeCompare(b.regionName, 'ru'));
+    return [...withData.map((r, i) => ({ ...r, rank: i + 1 })), ...withoutData];
+  }, [result, sortBy]);
 
   const add = (fnsCode: string) => { if (fnsCode && codes.length < MAX_REGIONS && !codes.includes(fnsCode)) setCodes([...codes, fnsCode]); };
   const remove = (fnsCode: string) => setCodes(codes.filter((c) => c !== fnsCode));
@@ -78,7 +98,9 @@ export function Regions({ boot, prefill, onOpenMarket, onHome }: Props) {
       professionKey: result?.profession.key ?? profession.key ?? undefined,
       professionText: result?.profession.title ?? profession.title.trim() ?? undefined,
       offer: o ? Number(o) : null,
-      inn: null,
+      inn: boot.user.inn ?? null,
+      // Смотрим чужой регион из сравнения — домашний регион профиля менять не нужно.
+      keepRegion: true,
     });
   };
 
@@ -137,7 +159,7 @@ export function Regions({ boot, prefill, onOpenMarket, onHome }: Props) {
               <div className="sv-table__head sv-table__row sv-table__row--regions">
                 <div>Регион</div><div>Медиана</div><div>Половина предложений</div><div>Вакансий</div>
               </div>
-              {result.comparison.rows.map((r) => (
+              {rows.map((r) => (
                 <div key={r.fnsCode} className="sv-table__row sv-table__row--regions">
                   <div>
                     <div className="sv-item__title">{r.rank ? `${r.rank}. ` : ''}{r.regionName}</div>
@@ -169,7 +191,10 @@ export function Regions({ boot, prefill, onOpenMarket, onHome }: Props) {
         </>
       )}
 
-      <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
+      <div className="sv-actions">
+        <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
+        <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
+      </div>
     </div>
   );
 }

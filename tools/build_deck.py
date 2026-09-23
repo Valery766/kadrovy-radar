@@ -20,7 +20,7 @@ ap.add_argument('--commit', default='<commit hash>')
 ap.add_argument('--repo', default='<ссылка на репозиторий>')
 ap.add_argument('--secrets-file', default=None, help='.env с MAX_BOT_TOKEN/MAX_WEBHOOK_SECRET для служебного слайда')
 ap.add_argument('--out', default=str(ROOT / 'out'))
-ap.add_argument('--app-url', default='https://stavka.i-tech.unecon.ru/app/')
+ap.add_argument('--app-url', default='https://radar.digital-projects.tech/app/')
 ap.add_argument('--name', default='stavka-presentation')
 args = ap.parse_args()
 
@@ -95,7 +95,7 @@ n = 0
 s = prs.slides.add_slide(BLANK); n += 1
 header(s, 'Техническая информация для проверки', 'Служебный слайд, не оценивается: ссылки, репозиторий, переменные окружения, порядок проверки.', n)
 rows = [
-    ('Работающее решение в MAX', 'Бот: https://max.ru/t796_hakaton_max_bot  ·  Мини-приложение: ' + args.app_url + '  ·  Состояние: https://stavka.i-tech.unecon.ru/api/health'),
+    ('Работающее решение в MAX', 'Бот: https://max.ru/t796_hakaton_max_bot  ·  Мини-приложение: ' + args.app_url + '  ·  Состояние: https://radar.digital-projects.tech/api/health'),
     ('Git-репозиторий и commit hash', f'{args.repo}  ·  commit {args.commit}'),
     ('Собственный API', 'Не заявляется (внутренний HTTP между мини-приложением и сервером; DATA-API.yaml не требуется)'),
     ('Тестовые логины и пароли', 'Не требуются: сценарий доступен любому пользователю MAX. Демо-ИНН: 7801633015 (ООО «Малый 43», СПб), 1601000159 (Агрызское райпо, Татарстан)'),
@@ -115,7 +115,7 @@ rect(s, 0, 0, W, H, fill=BLUE, radius=False)
 txt(s, Inches(0.8), Inches(1.6), Inches(11), Inches(1.2), 'Ставка', size=66, bold=True, color=WHITE)
 txt(s, Inches(0.8), Inches(2.9), Inches(11), Inches(1.0), 'Зарплатный радар для малого бизнеса в MAX', size=30, color=WHITE)
 txt(s, Inches(0.8), Inches(3.8), Inches(11), Inches(1.4), ['Чат-бот + мини-приложение: сколько платят конкуренты вашего размера, где ваша ставка на шкале рынка и что написать в вакансии.', 'Только официальные живые данные: реестр МСП ФНС и портал «Работа России».'], size=17, color=WHITE)
-txt(s, Inches(0.8), Inches(5.5), Inches(11.5), Inches(1.5), ['Команда unecon.tech (СПбГЭУ): Черевко Валерий — капитан, архитектура и бэкенд · Бережных Михаил — фронтенд и дизайн · Частикова Анастасия — продукт и исследование · Шакирьянова Суфия — UX/UI и презентация', 'Хакатон MAX 2026 · трек «Эффективный бизнес» · https://max.ru/t796_hakaton_max_bot'], size=13, color=WHITE)
+txt(s, Inches(0.8), Inches(5.5), Inches(11.5), Inches(1.5), ['Команда unecon.tech (СПбГЭУ): Черевко Валерий — капитан, backend · Бережных Михаил — frontend · Частикова Анастасия — product-менеджер · Шакирьянова Суфия — UX/UI-дизайнер', 'Хакатон MAX 2026 · трек «Эффективный бизнес» · https://max.ru/t796_hakaton_max_bot'], size=13, color=WHITE)
 
 # 3. Executive summary
 s = prs.slides.add_slide(BLANK); n += 1

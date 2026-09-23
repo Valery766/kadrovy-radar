@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button, Input } from '@maxhub/max-ui';
 import { api, ApiError, categoryLabel, fmtDate, rub, type Bootstrap, type PackRef, type Profile, type Region } from '../lib/api';
+import { Inspections } from '../components/Inspections';
 
 interface Props {
   boot: Bootstrap;
@@ -71,6 +72,8 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
         )}
       </div>
 
+      <Inspections inn={profile?.inRegistry ? profile.inn : boot.user.inn} />
+
       <div className="sv-card sv-stack">
         <div className="sv-h2">2. Проверить ставку</div>
         <div className="sv-muted sv-small">Должность → регион → ваша ставка. Источник вакансий — «Работа России» (Роструд), обновляется при запросе.</div>
@@ -96,7 +99,9 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
           <div className="sv-h2">Недавние карточки</div>
           <div className="sv-list">
             {boot.recentCards.map((c) => (
-              <div key={c.id} className="sv-item" role="button" onClick={() => onOpenCard(c.id)}>
+              <div key={c.id} className="sv-item" role="button" tabIndex={0}
+                onClick={() => onOpenCard(c.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenCard(c.id); } }}>
                 <div><div className="sv-item__title">{c.professionTitle} — {c.regionName}</div><div className="sv-item__sub">{fmtDate(c.createdAt)}{c.offer ? ` · ваша ставка ${rub(c.offer)}` : ''}</div></div>
                 <div className="sv-item__value">{c.median ? rub(c.median) : '—'}</div>
               </div>
