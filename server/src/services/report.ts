@@ -22,7 +22,7 @@ export function cardDeepLink(botUsername: string, cardId: string): string {
 }
 
 /** Кнопка открытия мини-приложения: web_app — ник бота, к которому привязано приложение; payload → initData.start_param. */
-export function openRadarButton(botUsername: string, cardId: string | null, text = 'Открыть радар') {
+export function openRadarButton(botUsername: string, cardId: string | null, text = 'Подробный разбор') {
   return Keyboard.button.openApp(text, botUsername, undefined, cardId ? `card_${cardId}` : undefined);
 }
 
@@ -41,9 +41,9 @@ export async function sendReportToChat(ctx: ReportContext, result: MarketResult,
   const file = await ctx.bot.api.uploadFile({ source: filePath });
   const { card, profession, region } = result;
   const text = [
-    `📄 Отчёт «Ставка»: ${profession.title}, ${region.name}.`,
+    `📄 Отчёт «Кадрового радара»: ${profession.title}, ${region.name}.`,
     card.stats ? `Медиана ${formatRub(card.stats.median)}, половина предложений ${formatRub(card.stats.p25)}–${formatRub(card.stats.p75)}; выборка ${card.sample.vacancies} вак. / ${card.sample.employers} работод.` : 'Данных для расчёта не хватило.',
-    'Переслать отчёт партнёру или бухгалтеру можно из радара — кнопка «Поделиться в MAX».',
+    'Переслать отчёт партнёру или бухгалтеру можно из приложения — кнопка «Поделиться отчётом».',
   ].join('\n');
   const keyboard = Keyboard.inlineKeyboard([[openRadarButton(ctx.botUsername, result.cardId)]]);
   const message = await ctx.bot.api.sendMessageToChat(chatId, text, { attachments: [file.toJson(), keyboard] });

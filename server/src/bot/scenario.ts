@@ -56,17 +56,25 @@ interface State {
   answers?: Partial<CandidateAnswers>;
 }
 
+/**
+ * Меню MAX: все команды на месте, но выстроены группами — сначала основное,
+ * затем дополнительное, в конце настройки и справка. Описания короткие и
+ * в словах владельца бизнеса, чтобы список читался сверху вниз.
+ */
 const COMMANDS = [
   { name: 'start', description: 'Начать' },
-  { name: 'stavka', description: 'Проверить ставку по должности' },
-  { name: 'profile', description: 'Указать ИНН бизнеса' },
-  { name: 'staff', description: 'Мой штат: кто отстаёт от рынка' },
-  { name: 'regions', description: 'Сравнить регионы по должности' },
-  { name: 'digest', description: 'Сводка по рынку региона' },
-  { name: 'checks', description: 'Плановые проверки на год (ЕРКНМ)' },
+  // Основное
+  { name: 'stavka', description: 'Сколько платить — проверить ставку' },
+  { name: 'staff', description: 'Мой штат — кто отстаёт от рынка' },
   { name: 'vacancies', description: 'Мои вакансии и отклики' },
-  { name: 'demo', description: 'Показать на примере' },
-  { name: 'subs', description: 'Мои подписки на рынок' },
+  { name: 'checks', description: 'Проверки на год по моему ИНН' },
+  // Ещё
+  { name: 'regions', description: 'Сравнить регионы по должности' },
+  { name: 'digest', description: 'Обзор зарплат по моему региону' },
+  { name: 'subs', description: 'Мои подписки на изменения рынка' },
+  { name: 'demo', description: 'Показать на готовом примере' },
+  // Настройки и справка
+  { name: 'profile', description: 'Указать или сменить ИНН бизнеса' },
   { name: 'help', description: 'Как это работает' },
 ];
 
@@ -211,13 +219,19 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ctx.reply(T.askProfessionText(pack), { attachments: [T.professionKeyboard(pack)] });
     } else {
       setState(uid, { step: 'inn' });
-      await ctx.reply(T.askInnText());
+      await ctx.reply(T.askInnText(), { attachments: [T.askInnKeyboard()] });
     }
+  }
+
+  /** Шаг ИНН пропущен: спрашиваем регион — без него рынок не с чем сравнивать. */
+  async function skipInn(ctx: Context, uid: number) {
+    setState(uid, { step: 'region' });
+    await ctx.reply('Хорошо, без ИНН. Напишите регион, например «Санкт-Петербург» или «Татарстан».');
   }
 
   async function handleInn(ctx: Context, uid: number, inn: string) {
     if (!isValidInn(inn)) {
-      await ctx.reply('Похоже, это не ИНН: нужно 10 или 12 цифр с верной контрольной суммой. Попробуйте ещё раз или напишите «пропустить».');
+      await ctx.reply('Похоже, это не ИНН: нужно 10 или 12 цифр. Попробуйте ещё раз или пропустите этот шаг.', { attachments: [T.askInnKeyboard()] });
       return;
     }
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
@@ -236,7 +250,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ctx.reply(T.profileText(profile, pack, region.name, inspectionsProfileLine(checksFor(uid))), { attachments: [T.profileKeyboard()] });
     } catch (err) {
       log.warn({ err: String(err) }, 'profile lookup failed');
-      await ctx.reply(`Не удалось получить профиль: ${err instanceof MarketError ? err.message : 'источник временно недоступен'}. Попробуйте позже или напишите «пропустить».`);
+      await ctx.reply(err instanceof MarketError ? err.message : 'Не получилось найти бизнес в реестре МСП. Можно продолжить без ИНН — просто укажите регион.', { attachments: [T.askInnKeyboard()] });
     }
   }
 
@@ -272,10 +286,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         await ctx.reply(T.cardText(result), { attachments: [T.cardKeyboard(result, deps.botUsername)] });
       });
     } catch (err) {
-      const msg = err instanceof MarketError ? err.message : 'что-то пошло не так';
+      const msg = err instanceof MarketError ? err.message : 'Не получилось посчитать рынок — что-то пошло не так.';
       log.error({ err: String(err) }, 'market failed');
       setState(uid, { step: 'idle' });
-      await ctx.reply(`Не получилось: ${msg}. Нажмите «Повторить» или начните заново командой /stavka.`, { attachments: [Keyboard.inlineKeyboard([[Keyboard.button.callback('Повторить', `retry:${offer ?? 'none'}`)]])] });
+      await ctx.reply(`${msg} Нажмите «Повторить» или начните заново командой /stavka.`, { attachments: [Keyboard.inlineKeyboard([[Keyboard.button.callback('Повторить', `retry:${offer ?? 'none'}`)]])] });
     }
   }
 
@@ -341,10 +355,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       setState(uid, { step: 'idle', staffRows: undefined });
       await replyLong(ctx, result.text, { attachments: [T.staffKeyboard(deps.botUsername)] });
     } catch (err) {
-      const msg = err instanceof MarketError ? err.message : 'что-то пошло не так';
+      const msg = err instanceof MarketError ? err.message : 'Не получилось посчитать штат — что-то пошло не так.';
       log.error({ err: String(err) }, 'staff failed');
       setState(uid, { step: 'staff' });
-      await ctx.reply(`Не получилось посчитать штат: ${msg}. Список сохранён — напишите «готово», чтобы повторить.`);
+      await ctx.reply(`${msg} Список сохранён — напишите «готово», чтобы повторить.`);
     }
   }
 
@@ -383,10 +397,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const tail = unknown.length ? `\n\nНе узнал регионы: ${unknown.join(', ')}.` : '';
       await replyLong(ctx, result.text + tail, { attachments: [T.regionsKeyboard(deps.botUsername)] });
     } catch (err) {
-      const msg = err instanceof MarketError ? err.message : 'что-то пошло не так';
+      const msg = err instanceof MarketError ? err.message : 'Не получилось сравнить регионы — что-то пошло не так.';
       log.error({ err: String(err) }, 'regions failed');
       setState(uid, { step: 'regions' });
-      await ctx.reply(`Не получилось сравнить регионы: ${msg}. Пришлите список регионов ещё раз или начните заново: /regions.`);
+      await ctx.reply(`${msg} Пришлите список регионов ещё раз или начните заново: /regions.`);
     }
   }
 
@@ -409,9 +423,9 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       setState(uid, { step: 'idle' });
       await replyLong(ctx, result.text, { attachments: [T.digestKeyboard(deps.botUsername)] });
     } catch (err) {
-      const msg = err instanceof MarketError ? err.message : 'что-то пошло не так';
+      const msg = err instanceof MarketError ? err.message : 'Не получилось собрать сводку — что-то пошло не так.';
       log.error({ err: String(err) }, 'digest failed');
-      await ctx.reply(`Не получилось собрать сводку: ${msg}. Попробуйте ещё раз: /digest.`);
+      await ctx.reply(`${msg} Попробуйте ещё раз: /digest.`);
     }
   }
 
@@ -449,7 +463,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   /** Публикация вакансии из карточки рынка: черновик текста + диплинк + QR. */
   async function publishVacancy(ctx: Context, uid: number, result: MarketResult) {
     const pack = catalog.packs.find((p) => p.id === result.pack.id) ?? catalog.packs.find((p) => !p.region)!;
-    const salary = result.card.options.find((o) => o.kind === 'median')?.value ?? result.card.offer?.value ?? result.card.stats?.median ?? null;
+    const salary = T.publishSalary(result);
     const text = buildVacancyDraft({ card: result.card, profession: result.profession, pack, salary: salary ?? 0, companyName: result.profile?.name ?? null, cityName: result.region.name });
     const { vacancy, link } = createVacancyFromCard(hiring, {
       card: {
@@ -548,7 +562,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   });
 
   bot.on('bot_added', async (ctx) => {
-    await ctx.reply('Привет! Я «Ставка» — зарплатный радар. Напишите /stavka, чтобы проверить ставку по должности.').catch(() => undefined);
+    await ctx.reply('Привет! Я «Кадровый радар». Напишите /stavka, чтобы узнать, сколько платят за нужную должность в вашем регионе.').catch(() => undefined);
   });
 
   bot.on('message_callback', async (ctx) => {
@@ -559,13 +573,15 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const cbId = ctx.callback?.callback_id;
     const ack = (notification?: string) => (cbId ? ctx.api.answerOnCallback(cbId, notification ? ({ notification } as never) : {}).catch(() => undefined) : Promise.resolve());
 
-    if (payload === 'inn:new') { await ack(); setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText()); return; }
+    if (payload === 'inn:new') { await ack(); setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText(), { attachments: [T.askInnKeyboard()] }); return; }
+    if (payload === 'inn:skip') { await ack(); await skipInn(ctx, uid); return; }
+    if (payload === 'stavka') { await ack(); await startFlow(ctx, uid); return; }
     if (payload === 'profile:ok') { await ack(); setState(uid, { step: 'profession' }); const pack = packFor(uid); await ctx.reply(T.askProfessionText(pack), { attachments: [T.professionKeyboard(pack)] }); return; }
     if (payload === 'demo') {
       await ack();
       const demos = catalog.packs.filter((p) => p.demo);
       if (demos.length <= 1) { await runDemo(ctx, uid, demos[0]?.id); return; }
-      await ctx.reply('Какой пример показать? Разные регионы и отрасли считаются одним и тем же кодом — меняется только пакет контекста.', { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(p.title, `demo:${p.id}`)]))] });
+      await ctx.reply('Примеры на реальных микропредприятиях из реестра МСП — это чужой бизнес, ваш профиль не меняется. Какой показать?', { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(T.packShortTitle(p), `demo:${p.id}`)]))] });
       return;
     }
     if (payload.startsWith('demo:')) { await ack(); await runDemo(ctx, uid, payload.slice(5)); return; }
@@ -588,9 +604,9 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       const mid = ctx.messageId ?? `card:${cardId}`;
       const tally = castVote(db, mid, uid, kind);
       const opt = row.payload.card.options.find((o) => o.kind === kind);
-      const summary = row.payload.card.options.map((o) => `${o.kind === 'keep' ? 'оставить' : o.kind === 'median' ? 'медиана' : 'топ-25 %'} ${formatRub(o.value)}: ${tally.counts[o.kind] ?? 0}`).join(' · ');
-      await ack(opt ? `Ваш выбор: ${formatRub(opt.value)}` : 'Голос учтён');
-      await ctx.reply(`Голосование по ставке «${row.payload.profession.title}»: ${summary}. Всего голосов: ${tally.total}.`);
+      const summary = row.payload.card.options.map((o) => `${T.OPTION_LABEL[o.kind] ?? o.kind} ${formatRub(o.value)} — ${tally.counts[o.kind] ?? 0}`).join(' · ');
+      await ack(opt ? `Учёл ваш голос: ${formatRub(opt.value)}` : 'Голос учтён');
+      await ctx.reply(`Учёл ваш голос${opt ? `: ${T.OPTION_LABEL[opt.kind] ?? opt.kind} ${formatRub(opt.value)}` : ''}. Итог по «${row.payload.profession.title}»: ${summary}. Всего голосов: ${tally.total}.`);
       return;
     }
     if (payload.startsWith('pdf:')) {
@@ -651,7 +667,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (payload.startsWith('apply:')) {
       const vacancy = applyTarget(uid, payload.slice(6));
       if (!vacancy) { await ack('Вакансия закрыта или не найдена'); return; }
-      if (vacancy.maxUserId === uid) { await ack(); await ctx.reply('Это ваша вакансия — отклики придут в мини-приложение, кнопка «Отклики».'); return; }
+      if (vacancy.maxUserId === uid) { await ack(); await ctx.reply('Это ваша вакансия — отклики придут в мини-приложение, раздел «Вакансии и отклики».'); return; }
       const existing = findResponseByCandidate(db, vacancy.id, uid);
       if (existing) {
         await ack('Вы уже откликнулись');
@@ -746,7 +762,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     }
     if (cmd === 'vacancies') {
       const items = listVacanciesByUser(db, uid);
-      const rows = items.slice(0, 8).map((v) => [inboxButton(deps.botUsername, v.id, `Отклики: ${v.title} (${v.responses})`)]);
+      const rows = items.slice(0, 8).map((v) => [inboxButton(deps.botUsername, v.id, `Отклики: ${v.title} (${v.responses})`.slice(0, 60))]);
       await replyLong(ctx, T.vacanciesListText(items), rows.length ? { attachments: [Keyboard.inlineKeyboard(rows)] } : undefined);
       return;
     }
@@ -754,10 +770,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (cmd === 'demo') {
       const demos = catalog.packs.filter((p) => p.demo);
       if (demos.length <= 1) { await runDemo(ctx, uid, demos[0]?.id); return; }
-      await ctx.reply('Какой пример показать? Разные регионы и отрасли считаются одним кодом — меняется только пакет контекста.', { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(p.title, `demo:${p.id}`)]))] });
+      await ctx.reply('Примеры на реальных микропредприятиях из реестра МСП — это чужой бизнес, ваш профиль не меняется. Какой показать?', { attachments: [Keyboard.inlineKeyboard(demos.map((p) => [Keyboard.button.callback(T.packShortTitle(p), `demo:${p.id}`)]))] });
       return;
     }
-    if (cmd === 'profile') { setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText()); return; }
+    if (cmd === 'profile') { setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText(), { attachments: [T.askInnKeyboard()] }); return; }
     if (cmd === 'stavka') { await startFlow(ctx, uid); return; }
     if (cmd === 'staff') { await startStaff(ctx, uid); return; }
     if (cmd === 'regions') { await startRegions(ctx, uid); return; }
@@ -774,7 +790,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const st = state(uid);
     switch (st.step) {
       case 'inn': {
-        if (/^(пропустить|нет|skip)$/i.test(text)) { setState(uid, { step: 'region' }); await ctx.reply('Напишите регион, например «Санкт-Петербург» или «Татарстан».'); return; }
+        if (/^(пропустить|нет|skip)$/i.test(text)) { await skipInn(ctx, uid); return; }
         await handleInn(ctx, uid, text.replace(/\D/g, ''));
         return;
       }

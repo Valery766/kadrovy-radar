@@ -68,7 +68,7 @@ export function ProfessionPicker({ quick, value, onChange, label = 'Должно
         value={query}
         onChange={(e) => { const v = e.target.value; setQuery(v); setOpen(true); onChange({ key: null, title: v }); }}
         onFocus={() => setOpen(true)}
-        hint={hint ?? 'Любая профессия: подскажу по каталогу и справочнику ОКПДТР «Работы России» или посчитаю по вашему названию'}
+        hint={hint ?? 'Любая профессия: подскажу по каталогу и государственному справочнику профессий «Работы России» или посчитаю по вашему названию'}
       />
       {busy && <div className="sv-muted sv-small"><Spinner size={20} /> ищу похожие должности…</div>}
       {error && <div className="sv-muted sv-small">{error}</div>}
@@ -77,7 +77,7 @@ export function ProfessionPicker({ quick, value, onChange, label = 'Должно
           {suggestions.map((s) => (
             <button key={s.key} type="button" className="sv-suggest__item" onClick={() => pick({ key: s.key, title: s.title })}>
               <span>{s.title}</span>
-              <span className="sv-muted sv-small">{s.source === 'catalog' ? 'каталог' : `ОКПДТР ${s.code ?? ''}`}</span>
+              <span className="sv-muted sv-small">{s.source === 'catalog' ? 'каталог' : `справочник профессий · ${s.code ?? ''}`}</span>
             </button>
           ))}
         </div>

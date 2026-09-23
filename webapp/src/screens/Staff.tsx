@@ -92,7 +92,7 @@ export function Staff({ boot, onOpenCard, onBack, onHome }: Props) {
         {!loading && rows.map((r, i) => (
           <div key={r.id} className="sv-staff-row">
             <Input placeholder={i === 0 ? 'повар' : 'должность'} value={r.title} onChange={(e) => setRow(r.id, { title: e.target.value })} />
-            <Input inputMode="numeric" placeholder="60000" value={r.salary} onChange={(e) => setRow(r.id, { salary: e.target.value })} />
+            <Input inputMode="numeric" placeholder={i === 0 ? '60000' : 'ставка, ₽'} value={r.salary} onChange={(e) => setRow(r.id, { salary: e.target.value })} />
             <button type="button" className="sv-iconbtn" title="Удалить строку" aria-label="Удалить строку" onClick={() => removeRow(r.id)}>×</button>
           </div>
         ))}
@@ -159,7 +159,7 @@ export function Staff({ boot, onOpenCard, onBack, onHome }: Props) {
             <div className="sv-h2">Источники и метод</div>
             {result.sources.map((s) => <div key={s.id} className="sv-small">{s.title} · получено {fmtDate(s.fetchedAt)}{s.note ? ` · ${s.note}` : ''}</div>)}
             <div className="sv-muted sv-small">
-              Риск определяется положением ставки на рынке региона: ниже 25-го перцентиля — высокий, ниже медианы — умеренный. Перцентиль считается по гистограмме карточки рынка, разрыв — расстояние до медианы. Регион: {result.region.name}, пакет «{result.pack.title}» v{result.pack.version}.
+              Риск определяется положением ставки на рынке региона: ниже 25-го перцентиля — высокий, ниже медианы — умеренный. Перцентиль считается по гистограмме карточки рынка, разрыв — расстояние до медианы. Регион: {result.region.name}, отрасль «{result.pack.title}».
             </div>
           </div>
         </>

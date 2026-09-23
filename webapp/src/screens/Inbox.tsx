@@ -81,7 +81,7 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
   if (demo) {
     return (
       <div className="sv-page sv-stack">
-        <div className="sv-title">Отклики</div>
+        <div className="sv-title">Вакансии и отклики</div>
         <div className="sv-banner">Открыто вне MAX: демо-режим. Публикация вакансии и отклики кандидатов работают только внутри мессенджера — там бот принимает отклики по ссылке и пишет кандидатам о приглашении или отказе.</div>
         <div className="sv-card sv-stack">
           <div className="sv-h2">Как это выглядит внутри MAX</div>
@@ -99,14 +99,14 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
   if (!selectedId) {
     return (
       <div className="sv-page sv-stack">
-        <div className="sv-title">Мои вакансии</div>
+        <div className="sv-title">Вакансии и отклики</div>
         {notInMax && <div className="sv-banner">Действия с откликами отправляют сообщения кандидатам — они работают внутри MAX.</div>}
         {error && <div className="sv-banner sv-banner--error">{error}</div>}
         {!vacancies && <div className="sv-center"><Spinner /></div>}
         {vacancies && vacancies.length === 0 && !error && (
           <div className="sv-card sv-stack">
             <div className="sv-h2">Пока пусто</div>
-            <div className="sv-muted sv-small">Опубликованных вакансий нет. Откройте карточку рынка, выберите ставку и нажмите «Опубликовать вакансию» — бот пришлёт ссылку и QR для кандидатов.</div>
+            <div className="sv-muted sv-small">Опубликованных вакансий нет. Откройте карточку рынка, выберите ставку и нажмите «Опубликовать» — бот пришлёт ссылку и QR для кандидатов.</div>
           </div>
         )}
         {vacancies && vacancies.length > 0 && (
@@ -138,7 +138,7 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
   /* ---------- отклики по одной вакансии ---------- */
   return (
     <div className="sv-page sv-stack">
-      <div className="sv-title">{vacancy ? `${vacancy.title} — ${vacancy.regionName}` : 'Отклики'}</div>
+      <div className="sv-title">{vacancy ? `${vacancy.title} — ${vacancy.regionName}` : 'Вакансии и отклики'}</div>
       {error && <div className="sv-banner sv-banner--error">{error}</div>}
       {note && <div className={`sv-banner ${note.kind === 'error' ? 'sv-banner--error' : 'sv-banner--info'}`}>{note.text}</div>}
 
@@ -223,7 +223,7 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
 
       <div className="sv-card sv-stack" style={{ gap: 6 }}>
         <div className="sv-h2">Как считается совпадение</div>
-        <div className="sv-muted sv-small">Детерминированные правила, без нейросети: опыт (нет / до года / 1–3 / 3+) × 2 балла, готовность к графику +3, ожидания в пределах ставки вакансии +3 (до +30 % — +1), оставленный номер +1. Максимум — {responses?.[0]?.maxScore ?? 13} баллов.</div>
+        <div className="sv-muted sv-small">Простые правила, одинаковые для всех откликов: опыт (нет / до года / 1–3 / 3+) × 2 балла, готовность к графику +3, ожидания в пределах ставки вакансии +3 (до +30 % — +1), оставленный номер +1. Максимум — {responses?.[0]?.maxScore ?? 13} баллов.</div>
       </div>
 
       <div className="sv-actions">

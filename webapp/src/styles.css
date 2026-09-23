@@ -32,9 +32,14 @@ html, body { margin: 0; padding: 0; }
 .sv-tile { background: rgba(47,107,255,.06); border-radius: 12px; padding: 10px 12px; }
 .sv-tile__label { font-size: 12px; color: var(--sv-muted); }
 .sv-tile__value { font-size: 18px; font-weight: 700; margin-top: 2px; }
-.sv-scale { position: relative; height: 44px; margin: 10px 0 4px; }
+/* Длинное значение (две суммы в одной плитке) не должно резаться на 375 px. */
+.sv-tile__value--long { font-size: 14px; }
+.sv-scale { position: relative; height: 34px; margin: 10px 0 6px; }
+/* Засечка нижней четверти / медианы / верхней четверти: подписи к ним — в .sv-scale__legend под шкалой. */
+.sv-scale__pin { position: absolute; top: 13px; width: 2px; height: 18px; border-radius: 1px; background: var(--sv-muted); transform: translateX(-50%); }
+.sv-scale__legend { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12px; color: var(--sv-muted); margin-bottom: 4px; }
+.sv-scale__legend-you { color: var(--text-primary, #111); font-weight: 600; }
 .sv-scale__bar { position: absolute; left: 0; right: 0; top: 18px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #f87171 0%, #fbbf24 35%, #34d399 60%, #60a5fa 100%); opacity: .85; }
-.sv-scale__tick { position: absolute; top: 30px; font-size: 11px; color: var(--sv-muted); transform: translateX(-50%); white-space: nowrap; }
 .sv-scale__marker { position: absolute; top: 6px; width: 4px; height: 32px; background: var(--text-primary, #111); border-radius: 2px; transform: translateX(-50%); box-shadow: 0 0 0 2px var(--sv-card, #fff); }
 .sv-hist { display: flex; align-items: flex-end; gap: 4px; height: 96px; margin-top: 8px; }
 .sv-hist__col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }

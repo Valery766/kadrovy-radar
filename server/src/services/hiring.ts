@@ -206,7 +206,7 @@ export function sendToUser(ctx: HiringContext, userId: number, text: string, ext
 }
 
 /** Кнопка «Отклики»: открывает инбокс вакансии в мини-приложении. */
-export function inboxButton(botUsername: string, vacancyId: string, text = 'Отклики') {
+export function inboxButton(botUsername: string, vacancyId: string, text = 'Вакансии и отклики') {
   return Keyboard.button.openApp(text, botUsername, undefined, inboxStartPayload(vacancyId));
 }
 

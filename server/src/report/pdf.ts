@@ -1,5 +1,5 @@
 /**
- * PDF-отчёт «Ставка»: одна страница A4 с карточкой рынка. Генерируется детерминированно
+ * PDF-отчёт «Кадрового радара»: одна страница A4 с карточкой рынка. Генерируется детерминированно
  * из рассчитанной карточки (pdfkit, шрифт PT Sans — лицензия OFL, файл в assets/fonts).
  */
 import PDFDocument from 'pdfkit';
@@ -14,7 +14,7 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { timeZon
 
 export async function renderMarketPdf(result: MarketResult, opts: { appUrl?: string } = {}): Promise<Buffer> {
   const { card, profession, region, profile } = result;
-  const doc = new PDFDocument({ size: 'A4', margin: 40, info: { Title: `Ставка — ${profession.title}, ${region.name}`, Author: 'Ставка (хакатон MAX 2026, unecon.tech)' } });
+  const doc = new PDFDocument({ size: 'A4', margin: 40, info: { Title: `Кадровый радар — ${profession.title}, ${region.name}`, Author: 'Кадровый радар (хакатон MAX 2026, unecon.tech)' } });
   doc.registerFont('R', FONT_REGULAR).registerFont('B', FONT_BOLD);
   const chunks: Buffer[] = [];
   doc.on('data', (c: Buffer) => chunks.push(c));
@@ -24,7 +24,7 @@ export async function renderMarketPdf(result: MarketResult, opts: { appUrl?: str
   const accent = '#2F6BFF';
   const muted = '#6B7280';
 
-  doc.font('B').fontSize(20).fillColor('#111').text('Ставка · зарплатный радар', { continued: true }).font('R').fontSize(11).fillColor(muted).text(`   отчёт от ${fmtDate(result.createdAt)} МСК`);
+  doc.font('B').fontSize(20).fillColor('#111').text('Кадровый радар', { continued: true }).font('R').fontSize(11).fillColor(muted).text(`   отчёт от ${fmtDate(result.createdAt)} МСК`);
   doc.moveDown(0.3);
   doc.font('B').fontSize(15).fillColor('#111').text(`${profession.title} — ${region.name}`);
   doc.moveDown(0.2);
@@ -123,7 +123,7 @@ export async function renderMarketPdf(result: MarketResult, opts: { appUrl?: str
   // Источники и метод
   doc.font('B').fontSize(10).fillColor('#111').text('Источники и метод');
   for (const s of result.sources) doc.font('R').fontSize(8.5).fillColor(muted).text(`• ${s.title} — ${s.url} · получено ${fmtDate(s.fetchedAt)}${s.note ? ` · ${s.note}` : ''}`, { width: W });
-  doc.font('R').fontSize(8.5).fillColor(muted).text(`Расчёт: ставка вакансии = середина вилки; точные дубли и объявления одного работодателя сверх лимита исключены (отброшено: ${Object.entries(card.sample.dropped).map(([k, v]) => `${k} ${v}`).join(', ') || '0'}); перцентиль = доля вакансий со ставкой ниже вашей; крупнейший работодатель даёт ${card.sample.topEmployerShare} % выборки. Это заявленные в вакансиях ставки на государственном портале, а не фактические выплаты. Пакет контекста: ${result.pack.title} v${result.pack.version}.`, { width: W });
+  doc.font('R').fontSize(8.5).fillColor(muted).text(`Расчёт: ставка вакансии = середина вилки; точные дубли и объявления одного работодателя сверх лимита исключены (отброшено: ${Object.entries(card.sample.dropped).map(([k, v]) => `${k} ${v}`).join(', ') || '0'}); перцентиль = доля вакансий со ставкой ниже вашей; крупнейший работодатель даёт ${card.sample.topEmployerShare} % выборки. Это заявленные в вакансиях ставки на государственном портале, а не фактические выплаты. Отрасль: ${result.pack.title}.`, { width: W });
   if (opts.appUrl) doc.font('R').fontSize(8.5).fillColor(accent).text(`Открыть карточку в MAX: ${opts.appUrl}`, { width: W });
 
   doc.end();

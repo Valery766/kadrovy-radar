@@ -64,14 +64,14 @@ export function Query({ boot, prefill, onSubmit, onBack }: Props) {
 
   return (
     <div className="sv-page sv-stack">
-      <div className="sv-title">Проверить ставку</div>
+      <div className="sv-title">Сколько платить</div>
       <div className="sv-card sv-stack">
         <label className="sv-stack" style={{ gap: 6 }}>
           <span className="sv-h2" style={{ margin: 0 }}>Регион</span>
           <select className="sv-select" value={regionFns} onChange={(e) => setRegionFns(e.target.value)}>
             {boot.regions.map((r) => <option key={r.fnsCode} value={r.fnsCode}>{r.name}</option>)}
           </select>
-          <span className="sv-muted sv-small">Пакет контекста: {pack.title}</span>
+          <span className="sv-muted sv-small">Отрасль: {pack.title}</span>
         </label>
         <ProfessionPicker quick={pack.professions} value={profession} onChange={setProfession} />
         <label className="sv-stack" style={{ gap: 6 }}>

@@ -52,6 +52,9 @@ function Seasons({ seasonality }: { seasonality: NonNullable<MarketResult['card'
   );
 }
 
+/** Подписи вариантов ставки — те же слова, что в боте и в отчёте. */
+const OPTION_LABEL: Record<string, string> = { keep: 'оставить', median: 'медиана рынка', top: 'верхняя четверть' };
+
 const BAND: Record<string, { label: string; cls: string }> = {
   low: { label: 'ниже рынка', cls: 'sv-badge--bad' },
   below_median: { label: 'ниже медианы', cls: 'sv-badge--warn' },
@@ -63,14 +66,24 @@ function Scale({ stats, offer }: { stats: NonNullable<MarketResult['card']['stat
   const lo = Math.min(stats.p25 * 0.8, offer ?? Infinity);
   const hi = Math.max(stats.p75 * 1.2, offer ?? 0);
   const pos = (v: number) => `${Math.max(2, Math.min(98, ((v - lo) / (hi - lo)) * 100))}%`;
+  // Подписи вынесены под шкалу отдельной строкой: на 375 px три названия
+  // («нижняя четверть», «медиана», «верхняя четверть») у своих засечек налезают друг на друга.
   return (
-    <div className="sv-scale">
-      <div className="sv-scale__bar" />
-      <div className="sv-scale__tick" style={{ left: pos(stats.p25) }}>P25 {Math.round(stats.p25 / 1000)}т</div>
-      <div className="sv-scale__tick" style={{ left: pos(stats.median) }}>медиана {Math.round(stats.median / 1000)}т</div>
-      <div className="sv-scale__tick" style={{ left: pos(stats.p75) }}>P75 {Math.round(stats.p75 / 1000)}т</div>
-      {offer != null && <div className="sv-scale__marker" style={{ left: pos(offer) }} title={rub(offer)} />}
-    </div>
+    <>
+      <div className="sv-scale">
+        <div className="sv-scale__bar" />
+        <div className="sv-scale__pin" style={{ left: pos(stats.p25) }} title={`нижняя четверть ${rub(stats.p25)}`} />
+        <div className="sv-scale__pin" style={{ left: pos(stats.median) }} title={`медиана ${rub(stats.median)}`} />
+        <div className="sv-scale__pin" style={{ left: pos(stats.p75) }} title={`верхняя четверть ${rub(stats.p75)}`} />
+        {offer != null && <div className="sv-scale__marker" style={{ left: pos(offer) }} title={rub(offer)} />}
+      </div>
+      <div className="sv-scale__legend">
+        <span>нижняя четверть {rub(stats.p25)}</span>
+        <span>медиана {rub(stats.median)}</span>
+        <span>верхняя четверть {rub(stats.p75)}</span>
+        {offer != null && <span className="sv-scale__legend-you">ваша ставка {rub(offer)}</span>}
+      </div>
+    </>
   );
 }
 
@@ -128,7 +141,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
 
   const shareCardLink = async () => {
     const link = boot.bot ? `https://max.ru/${boot.bot.username}?startapp=card_${result.cardId}` : window.location.href;
-    const text = `Ставка: ${profession.title}, ${region.name} — медиана ${card.stats ? rub(card.stats.median) : '—'}. Карточка рынка:`;
+    const text = `Кадровый радар: ${profession.title}, ${region.name} — медиана ${card.stats ? rub(card.stats.median) : '—'}. Карточка рынка:`;
     const r = await shareLink(text, link);
     if (r !== 'shared') {
       try { await navigator.clipboard.writeText(`${text} ${link}`); setNote({ kind: 'info', text: 'Ссылка на карточку скопирована.' }); } catch { setNote({ kind: 'info', text: link }); }
@@ -154,20 +167,27 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
           {card.offer && <span className={`sv-badge ${BAND[card.offer.band]?.cls ?? ''}`}>{rub(card.offer.value)} · {card.offer.percentile}-й перцентиль · {BAND[card.offer.band]?.label}</span>}
           <span className={`sv-badge ${card.confidence === 'ok' ? 'sv-badge--ok' : card.confidence === 'low' ? 'sv-badge--warn' : 'sv-badge--bad'}`}>{card.confidence === 'ok' ? 'данных достаточно' : card.confidence === 'low' ? 'данных мало' : 'данных нет'}</span>
         </div>
+        {card.offer && <div className="sv-muted sv-small" style={{ marginTop: 6 }}>{card.offer.percentile}-й перцентиль — вы платите больше, чем {card.offer.percentile} вакансий из 100.</div>}
       </div>
 
       {card.confidence !== 'ok' && <div className="sv-banner">{card.confidenceReason ?? 'Подходящих вакансий не нашлось'}. {card.confidence === 'low' ? 'Цифры ниже — ориентир, а не вывод.' : 'Попробуйте другую должность или регион.'}</div>}
 
       {card.stats && (
         <div className="sv-card">
+          <div className="sv-h2">{card.offer ? 'Ваша ставка на шкале рынка' : 'Шкала рынка'}</div>
           <div className="sv-verdict">{card.verdict}</div>
           <Scale stats={card.stats} offer={card.offer?.value ?? null} />
           <div className="sv-tiles" style={{ marginTop: 10 }}>
             <div className="sv-tile"><div className="sv-tile__label">Медиана</div><div className="sv-tile__value">{rub(card.stats.median)}</div></div>
-            <div className="sv-tile"><div className="sv-tile__label">Половина предложений</div><div className="sv-tile__value">{Math.round(card.stats.p25 / 1000)}–{Math.round(card.stats.p75 / 1000)} тыс.</div></div>
+            <div className="sv-tile"><div className="sv-tile__label">Половина предложений</div><div className="sv-tile__value sv-tile__value--long">{Math.round(card.stats.p25).toLocaleString('ru-RU')}–{rub(card.stats.p75)}</div></div>
             <div className="sv-tile"><div className="sv-tile__label">Вакансий / работодателей</div><div className="sv-tile__value">{card.sample.vacancies} / {card.sample.employers}</div></div>
             <div className="sv-tile"><div className="sv-tile__label">{card.sameSize ? `Такие же, как вы (${card.sameSize.label})` : 'Средняя по региону (Роструд)'}</div><div className="sv-tile__value">{card.sameSize?.median ? rub(card.sameSize.median) : region.avgSalary ? rub(region.avgSalary) : '—'}</div></div>
           </div>
+          {card.sameSize?.median != null && card.stats.median !== card.sameSize.median && (
+            <div className="sv-muted sv-small" style={{ marginTop: 8 }}>
+              Работодатели вашего размера платят на {rub(Math.abs(card.sameSize.median - card.stats.median))} {card.sameSize.median > card.stats.median ? 'больше' : 'меньше'} общей медианы — сравнивайте себя с ними.
+            </div>
+          )}
         </div>
       )}
 
@@ -177,14 +197,15 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
           <div className="sv-options">
             {card.options.map((o) => (
               <button key={o.kind} type="button" className={`sv-option ${selected === o.kind ? 'sv-option--active' : ''}`} onClick={() => setSelected(o.kind)}>
-                <div className="sv-option__value">{Math.round(o.value / 1000)} т.</div>
-                <div className="sv-option__label">{o.label}</div>
-                <div className="sv-option__label">{o.percentile}-й перц.</div>
+                <div className="sv-option__value">{rub(o.value)}</div>
+                <div className="sv-option__label">{OPTION_LABEL[o.kind] ?? o.label}</div>
+                <div className="sv-option__label">{o.percentile}-й перцентиль</div>
               </button>
             ))}
           </div>
+          {selectedOpt && <div className="sv-muted sv-small" style={{ marginTop: 8 }}>Выбрано: {rub(selectedOpt.value)} — по этой ставке соберём текст вакансии и опубликуем её.</div>}
           <div className="sv-actions" style={{ marginTop: 10 }}>
-            <Button stretched onClick={() => selectedOpt && onText(selectedOpt.value)}>Собрать текст вакансии{selectedOpt ? ` на ${rub(selectedOpt.value)}` : ''}</Button>
+            <Button stretched onClick={() => selectedOpt && onText(selectedOpt.value)}>Текст вакансии</Button>
             {selectedOpt && selectedOpt.kind !== 'keep' && <Button stretched variant="secondary" onClick={() => onRecalc(selectedOpt.value)}>Пересчитать с {rub(selectedOpt.value)}</Button>}
           </div>
         </div>
@@ -200,11 +221,11 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
         <div className="sv-actions">
           {!vacancy && (
             <Button stretched onClick={publish} loading={busy === 'publish'} disabled={busy !== null || notInMax}>
-              Опубликовать вакансию{selectedOpt ? ` на ${rub(selectedOpt.value)}` : ''}
+              Опубликовать{selectedOpt ? ` на ${rub(selectedOpt.value)}` : ' вакансию'}
             </Button>
           )}
           {vacancy && <Button stretched disabled={!vacancy.link} onClick={shareVacancy}>Поделиться в MAX</Button>}
-          {vacancy && <Button stretched variant="secondary" onClick={() => onOpenInbox(vacancy.id)}>Открыть отклики</Button>}
+          {vacancy && <Button stretched variant="secondary" onClick={() => onOpenInbox(vacancy.id)}>Вакансии и отклики</Button>}
         </div>
         {notInMax && !vacancy && <div className="sv-muted sv-small">Публикация доступна внутри MAX: откройте приложение из чата с ботом.</div>}
       </div>
@@ -254,8 +275,8 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
 
       {(card.requirements.length > 0 || card.schedules.length > 0) && (
         <div className="sv-card sv-stack">
-          {card.requirements.length > 0 && <><div className="sv-h2">Что пишут в требованиях</div><div className="sv-chips">{card.requirements.slice(0, 10).map((r) => <span key={r.key} className="sv-badge sv-badge--muted">{r.label} · {r.share} %</span>)}</div></>}
-          {card.schedules.length > 0 && <><div className="sv-h2">График</div><div className="sv-chips">{card.schedules.map((s) => <span key={s.label} className="sv-badge sv-badge--muted">{s.label} · {s.share} %</span>)}</div></>}
+          {card.requirements.length > 0 && <><div className="sv-h2">Что требуют работодатели</div><div className="sv-chips">{card.requirements.slice(0, 10).map((r) => <span key={r.key} className="sv-badge sv-badge--muted">{r.label} · {r.share} %</span>)}</div></>}
+          {card.schedules.length > 0 && <><div className="sv-h2">График работы</div><div className="sv-chips">{card.schedules.map((s) => <span key={s.label} className="sv-badge sv-badge--muted">{s.label} · {s.share} %</span>)}</div></>}
         </div>
       )}
 
@@ -288,11 +309,21 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
         <div className="sv-h2">Действия</div>
         {note && <div className={`sv-banner ${note.kind === 'error' ? 'sv-banner--error' : 'sv-banner--info'}`}>{note.text}</div>}
         <div className="sv-actions">
-          {!mid && <Button stretched onClick={sendReport} loading={busy === 'report'} disabled={busy !== null || notInMax}>Отправить PDF-отчёт в чат</Button>}
-          {mid && <Button stretched onClick={share} loading={busy === 'share'} disabled={busy !== null}>Поделиться отчётом в MAX</Button>}
-          <Button stretched variant="secondary" onClick={onCompareRegions}>Сравнить регионы по этой должности</Button>
-          <Button stretched variant="secondary" onClick={shareCardLink}>Поделиться ссылкой на карточку</Button>
-          <Button stretched variant="secondary" onClick={subscribe} loading={busy === 'sub'} disabled={busy !== null || notInMax}>Следить за рынком (раз в неделю)</Button>
+          <Button stretched onClick={sendReport} loading={busy === 'report'} disabled={busy !== null || notInMax}>Прислать PDF-отчёт</Button>
+          <Button stretched variant="secondary" onClick={subscribe} loading={busy === 'sub'} disabled={busy !== null || notInMax}>Следить за рынком</Button>
+        </div>
+        <div className="sv-muted sv-small">Отчёт придёт в ваш чат с ботом — одна страница A4 с этими же цифрами. Подписка: раз в неделю пересчитаю рынок и напишу, если медиана сдвинется больше чем на 5 %.</div>
+
+        <div className="sv-h2">Поделиться</div>
+        <div className="sv-actions">
+          <Button stretched variant="secondary" onClick={shareCardLink}>Поделиться ссылкой</Button>
+          {mid && <Button stretched variant="secondary" onClick={share} loading={busy === 'share'} disabled={busy !== null}>Поделиться отчётом</Button>}
+        </div>
+        <div className="sv-muted sv-small">Ссылка открывает эту же карточку у партнёра или бухгалтера прямо в MAX.</div>
+
+        <div className="sv-h2">Дальше</div>
+        <div className="sv-actions">
+          <Button stretched variant="secondary" onClick={onCompareRegions}>Сравнить регионы</Button>
           <Button stretched variant="ghost" onClick={onAnother}>Другая должность</Button>
           <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
           <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
@@ -301,10 +332,10 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
       </div>
 
       <div className="sv-card sv-stack" style={{ gap: 6 }}>
-        <div className="sv-h2">Источники и метод</div>
+        <div className="sv-h2">Откуда эти цифры</div>
         {sources.map((s) => <div key={s.id} className="sv-small"><a className="sv-link" href={s.url} onClick={(ev) => { ev.preventDefault(); openUrl(s.url); }}>{s.title}</a> · получено {fmtDate(s.fetchedAt)}{s.note ? ` · ${s.note}` : ''}</div>)}
         <div className="sv-muted sv-small">
-          Факты — заявленные в вакансиях ставки на портале «Работа России» ({fetched.total} по запросу, загружено {fetched.records}). Расчёт — ядро «Ставки»: ставка вакансии = середина вилки; убраны точные дубли и объявления сверх лимита на работодателя ({dropped.map(([k, v]) => `${k}: ${v}`).join(', ') || '0'}); перцентиль = доля вакансий со ставкой ниже вашей; крупнейший работодатель даёт {card.sample.topEmployerShare} % выборки. Рекомендация — варианты ставки по медиане и 75-му перцентилю. Пакет контекста: {result.pack.title} v{result.pack.version}.
+          Факты — заявленные в вакансиях ставки на портале «Работа России» ({fetched.total} по запросу, загружено {fetched.records}). Считаем так: ставка вакансии = середина вилки; убраны точные дубли и объявления сверх лимита на работодателя ({dropped.map(([k, v]) => `${k}: ${v}`).join(', ') || '0'}); перцентиль = доля вакансий со ставкой ниже вашей; крупнейший работодатель даёт {card.sample.topEmployerShare} % выборки. Рекомендация — варианты ставки по медиане и 75-му перцентилю. Отрасль: {result.pack.title}.
           {profile?.inRegistry && ` Профиль бизнеса: реестр МСП ФНС, ${fmtDate(profile.fetchedAt)}.`}
         </div>
       </div>

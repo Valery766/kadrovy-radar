@@ -11,7 +11,7 @@ export function VacancyText({ result, salary, onBack }: { result: MarketResult; 
   return (
     <div className="sv-page sv-stack">
       <div className="sv-title">Текст вакансии</div>
-      <div className="sv-muted sv-small">Собран детерминированно: ставка {rub(salary)}, требования — самые частые формулировки рынка «{result.profession.title}, {result.region.name}», условия — из пакета «{result.pack.title}». Отредактируйте под себя.</div>
+      <div className="sv-muted sv-small">Собран из самых частых формулировок рынка «{result.profession.title}, {result.region.name}» — ничего не выдумано. Ставка {rub(salary)}, условия — для отрасли «{result.pack.title}». Отредактируйте под себя.</div>
       {error && <div className="sv-banner sv-banner--error">{error}</div>}
       {!text && !error && <div className="sv-center"><Spinner /></div>}
       {text && <Textarea className="sv-textarea" value={text} onChange={(e) => setText(e.target.value)} />}

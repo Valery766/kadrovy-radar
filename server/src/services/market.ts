@@ -46,7 +46,9 @@ export async function getProfile(ctx: MarketContext, inn: string, opts: { forceR
     return profile;
   } catch (err) {
     if (cached) { ctx.log.warn({ inn, err: String(err) }, 'rmsp недоступен, отдаём кэш'); return cached.payload; }
-    throw new MarketError('source_unavailable', `Реестр МСП сейчас недоступен: ${(err as Error).message}`);
+    // Техническая причина — только в лог: пользователю нужен понятный выход, а не «rmsp: HTTP 500».
+    ctx.log.warn({ inn, err: String(err) }, 'rmsp недоступен и кэша нет');
+    throw new MarketError('source_unavailable', 'Реестр МСП ФНС сейчас не отвечает. Можно продолжить без ИНН — просто укажите регион.');
   }
 }
 
@@ -66,8 +68,10 @@ async function getVacancies(ctx: MarketContext, regionCode: string, profession: 
     return { vacancies: res.vacancies, total: res.total, fetchedAt: res.fetchedAt, cacheHit: false };
   } catch (err) {
     if (cached) { ctx.log.warn({ cacheKey, err: String(err) }, 'trudvsem недоступен, отдаём устаревший кэш'); return { vacancies: cached.payload, total: cached.total, fetchedAt: cached.fetchedAt, cacheHit: true }; }
+    // Техническая причина («trudvsem: таймаут 15000 мс») остаётся в логе, пользователь её не видит.
     const msg = err instanceof SourceError ? err.message : String((err as Error).message ?? err);
-    throw new MarketError('source_unavailable', `«Работа России» сейчас недоступна: ${msg}`);
+    ctx.log.warn({ cacheKey, regionCode, query: profession.query, err: msg }, 'trudvsem недоступен и кэша нет');
+    throw new MarketError('source_unavailable', 'Портал «Работа России» не ответил, попробуйте через минуту.');
   }
 }
 

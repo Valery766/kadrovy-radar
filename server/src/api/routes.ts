@@ -137,8 +137,8 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   const heavyGate = (reply: FastifyReply, s: SessionPayload): boolean => {
     const now = Date.now();
     const hits = (heavyHits.get(s.uid) ?? []).filter((t) => now - t < 60_000);
-    if (hits.length >= (s.demo ? 3 : HEAVY_PER_MINUTE)) { void reply.code(429).send({ error: 'rate_limited', message: 'Слишком много тяжёлых расчётов подряд: подождите минуту' }); return false; }
-    if (heavyRunning >= HEAVY_CONCURRENT) { void reply.code(503).send({ error: 'busy', message: 'Сервер занят расчётами по другим запросам: повторите через минуту' }); return false; }
+    if (hits.length >= (s.demo ? 3 : HEAVY_PER_MINUTE)) { void reply.code(429).send({ error: 'rate_limited', message: 'Слишком много запросов подряд — подождите минуту.' }); return false; }
+    if (heavyRunning >= HEAVY_CONCURRENT) { void reply.code(503).send({ error: 'busy', message: 'Сейчас считаю запросы других пользователей — повторите через минуту.' }); return false; }
     hits.push(now);
     heavyHits.set(s.uid, hits);
     if (heavyHits.size > 5000) for (const [k, v] of heavyHits) if (!v.some((t) => now - t < 60_000)) heavyHits.delete(k);

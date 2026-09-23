@@ -164,6 +164,6 @@ export function digestText(region: RegionInfo, rows: RegionDigestRow[], now: Dat
   const failed = rows.filter((r) => r.error);
   if (failed.length) lines.push(`Не удалось посчитать: ${failed.map((r) => r.professionTitle).join(', ')}.`);
   lines.push('');
-  lines.push('Источник: «Работа России» (Роструд), Open API; размеры работодателей — Единый реестр субъектов МСП (ФНС России). Расчёт детерминированный: медиана и перцентили заявленных в вакансиях ставок.');
+  lines.push('Источник: «Работа России» (Роструд), Open API; размеры работодателей — Единый реестр субъектов МСП (ФНС России). Считаем медиану и перцентили заявленных в вакансиях ставок — ничего не выдумываем.');
   return lines.join('\n');
 }
