@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Input, Spinner } from '@maxhub/max-ui';
 import { api, type ProfessionRef, type ProfessionSuggestion } from '../lib/api';
+import { Muted, SectionTitle } from './ui';
 
-/** Выбранная должность: ключ каталога или «custom:…» из подсказки; текст — то, что увидит источник. */
+/** Выбранная должность: ключ каталога или «custom:…» из подсказки; текст – то, что увидит источник. */
 export interface ProfessionChoice {
   key: string | null;
   title: string;
@@ -24,7 +25,7 @@ const DEBOUNCE_MS = 300;
 /**
  * Должность: быстрый выбор из пакета плюс поиск по любой профессии.
  * Подсказки берутся офлайн (каталог пакетов + справочник ОКПДТР «Работы России»),
- * своё название тоже принимается — сервер посчитает рынок по нему.
+ * своё название тоже принимается: сервер посчитает рынок по нему.
  */
 export function ProfessionPicker({ quick, value, onChange, label = 'Должность', hint }: Props) {
   const [query, setQuery] = useState(value.title);
@@ -47,7 +48,7 @@ export function ProfessionPicker({ quick, value, onChange, label = 'Должно
     const timer = setTimeout(() => {
       api.suggestProfessions(q, 8)
         .then((r) => { if (seq.current === id) { setSuggestions(r.suggestions); setError(null); } })
-        .catch(() => { if (seq.current === id) setError('Подсказки сейчас недоступны — можно писать должность своими словами'); })
+        .catch(() => { if (seq.current === id) setError('Подсказки сейчас недоступны: можно писать должность своими словами'); })
         .finally(() => { if (seq.current === id) setBusy(false); });
     }, DEBOUNCE_MS);
     return () => { clearTimeout(timer); };
@@ -61,33 +62,33 @@ export function ProfessionPicker({ quick, value, onChange, label = 'Должно
   };
 
   return (
-    <div className="sv-stack" style={{ gap: 6 }}>
-      <span className="sv-h2" style={{ margin: 0 }}>{label}</span>
+    <div className="sv-field">
+      <SectionTitle>{label}</SectionTitle>
       <Input
         placeholder="например, повар или обвальщик мяса"
         value={query}
         onChange={(e) => { const v = e.target.value; setQuery(v); setOpen(true); onChange({ key: null, title: v }); }}
         onFocus={() => setOpen(true)}
-        hint={hint ?? 'Любая профессия: подскажу по каталогу и государственному справочнику профессий «Работы России» или посчитаю по вашему названию'}
+        hint={hint ?? 'Любая профессия: подскажу по каталогу и государственному справочнику профессий или посчитаю по вашему названию.'}
       />
-      {busy && <div className="sv-muted sv-small"><Spinner size={20} /> ищу похожие должности…</div>}
-      {error && <div className="sv-muted sv-small">{error}</div>}
+      {busy && <Muted><Spinner size={20} /> ищу похожие должности…</Muted>}
+      {error && <Muted>{error}</Muted>}
       {open && suggestions && suggestions.length > 0 && (
         <div className="sv-suggest">
           {suggestions.map((s) => (
             <button key={s.key} type="button" className="sv-suggest__item" onClick={() => pick({ key: s.key, title: s.title })}>
               <span>{s.title}</span>
-              <span className="sv-muted sv-small">{s.source === 'catalog' ? 'каталог' : `справочник профессий · ${s.code ?? ''}`}</span>
+              <span className="sv-muted sv-small">{s.source === 'catalog' ? 'каталог' : `справочник профессий${s.code ? ` · ${s.code}` : ''}`}</span>
             </button>
           ))}
         </div>
       )}
       {open && suggestions && suggestions.length === 0 && query.trim().length >= 2 && (
-        <div className="sv-muted sv-small">В справочнике такого нет — посчитаю по вашему названию «{query.trim()}».</div>
+        <Muted>В справочнике такого нет: посчитаю по вашему названию «{query.trim()}».</Muted>
       )}
       {quick.length > 0 && (
         <>
-          <div className="sv-muted sv-small">Быстрый выбор:</div>
+          <Muted>Быстрый выбор:</Muted>
           <div className="sv-chips">
             {quick.map((p) => (
               <button

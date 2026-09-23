@@ -5,11 +5,13 @@ import {
   type Bootstrap, type ResponseView, type VacancyView,
 } from '../lib/api';
 import { haptic, shareLink } from '../lib/bridge';
+import { expectationWords, matchClass, matchWords, nWord } from '../lib/plain';
+import { Banner, Muted, Nav, ScreenTitle, Section, Text, Tile } from '../components/ui';
 
 interface Props {
   boot: Bootstrap;
   notInMax: boolean;
-  /** Открытая вакансия: null — список. Экран инбокса, диплинк `inbox_<id>`. */
+  /** Открытая вакансия: null – список. Экран инбокса, диплинк `inbox_<id>`. */
   vacancyId: string | null;
   onSelectVacancy: (id: string) => void;
   /** Назад к списку вакансий (кнопка «Все вакансии»). */
@@ -24,6 +26,17 @@ const STATUS_CLASS: Record<ResponseView['status'], string> = {
   rejected: 'sv-badge sv-badge--muted',
   hired: 'sv-badge sv-badge--ok',
 };
+
+/** Ответы кандидата одной фразой: опыт, график, деньги, номер. */
+function answersWords(r: ResponseView, vacancySalary: number | null): string {
+  const parts = [
+    `Опыт: ${r.experienceLabel.toLowerCase()}.`,
+    r.answers.schedule ? 'График подходит.' : 'График не подходит.',
+    `Ожидания по деньгам: ${expectationWords(r.answers.expectedSalary, vacancySalary)}.`,
+    r.phone ? 'Номер оставил.' : 'Номер не оставил.',
+  ];
+  return parts.join(' ');
+}
 
 export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, onVacancies, onBack, onHome }: Props) {
   const [vacancies, setVacancies] = useState<VacancyView[] | null>(null);
@@ -70,7 +83,7 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
 
   const shareVacancy = async (v: VacancyView) => {
     if (!v.link) return;
-    const text = `Вакансия: ${v.title}, ${v.regionName}${v.salary ? ` — от ${rub(v.salary)}` : ''}. Откликнуться в MAX:`;
+    const text = `Вакансия: ${v.title}, ${v.regionName}${v.salary ? `, от ${rub(v.salary)}` : ''}. Откликнуться в MAX:`;
     const r = await shareLink(text, v.link);
     if (r !== 'shared') {
       try { await navigator.clipboard.writeText(`${text} ${v.link}`); setNote({ kind: 'info', text: 'Ссылка на вакансию скопирована.' }); }
@@ -81,16 +94,19 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
   if (demo) {
     return (
       <div className="sv-page sv-stack">
-        <div className="sv-title">Вакансии и отклики</div>
-        <div className="sv-banner">Открыто вне MAX: демо-режим. Публикация вакансии и отклики кандидатов работают только внутри мессенджера — там бот принимает отклики по ссылке и пишет кандидатам о приглашении или отказе.</div>
-        <div className="sv-card sv-stack">
-          <div className="sv-h2">Как это выглядит внутри MAX</div>
-          <div className="sv-muted sv-small">Кандидат открывает ссылку вида max.ru/бот?start=vac_… → отвечает на три вопроса (опыт, готовность к графику, ожидания по ставке) → делится номером кнопкой MAX. Отклик попадает сюда с баллом совпадения; кнопки «Пригласить», «Отказать», «Нанят» отправляют кандидату сообщение от бота.</div>
+        <div className="sv-head">
+          <ScreenTitle>Вакансии и отклики</ScreenTitle>
+          <Text>Здесь собираются опубликованные вакансии и отклики кандидатов. Каждый отклик приходит с оценкой совпадения словами: опыт, график, ожидания по деньгам, номер телефона.</Text>
         </div>
-        <div className="sv-actions">
-          <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
-          <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
-        </div>
+        <Banner>Открыто вне MAX: демо-режим. Публикация вакансии и отклики кандидатов работают только внутри мессенджера: там бот принимает отклики по ссылке и пишет кандидатам о приглашении или отказе.</Banner>
+        <Section title="Как это выглядит внутри MAX">
+          <ol className="sv-steps">
+            <li className="sv-step"><span className="sv-step__num">1</span><div className="sv-step__body"><div className="sv-step__title">Публикуете вакансию из карточки ставки</div><Muted>Бот присылает ссылку и QR-код. Перешлите их в чаты сотрудников и партнёров или распечатайте.</Muted></div></li>
+            <li className="sv-step"><span className="sv-step__num">2</span><div className="sv-step__body"><div className="sv-step__title">Кандидат отвечает на три вопроса прямо в MAX</div><Muted>Опыт, готовность к графику, ожидания по ставке. Номер телефона оставляет кнопкой MAX.</Muted></div></li>
+            <li className="sv-step"><span className="sv-step__num">3</span><div className="sv-step__body"><div className="sv-step__title">Отклик появляется здесь</div><Muted>С оценкой совпадения и ответами. Кнопки «Пригласить», «Отказать», «Нанят» отправляют кандидату сообщение от бота.</Muted></div></li>
+          </ol>
+        </Section>
+        <Nav onBack={onBack} onHome={onHome} />
       </div>
     );
   }
@@ -99,38 +115,36 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
   if (!selectedId) {
     return (
       <div className="sv-page sv-stack">
-        <div className="sv-title">Вакансии и отклики</div>
-        {notInMax && <div className="sv-banner">Действия с откликами отправляют сообщения кандидатам — они работают внутри MAX.</div>}
-        {error && <div className="sv-banner sv-banner--error">{error}</div>}
+        <div className="sv-head">
+          <ScreenTitle>Вакансии и отклики</ScreenTitle>
+          <Text>Опубликованные вакансии и отклики кандидатов. Нажмите на вакансию, чтобы увидеть, кто откликнулся.</Text>
+        </div>
+        {notInMax && <Banner>Действия с откликами отправляют сообщения кандидатам: они работают внутри MAX.</Banner>}
+        {error && <Banner kind="error">{error}</Banner>}
         {!vacancies && <div className="sv-center"><Spinner /></div>}
         {vacancies && vacancies.length === 0 && !error && (
-          <div className="sv-card sv-stack">
-            <div className="sv-h2">Пока пусто</div>
-            <div className="sv-muted sv-small">Опубликованных вакансий нет. Откройте карточку рынка, выберите ставку и нажмите «Опубликовать» — бот пришлёт ссылку и QR для кандидатов.</div>
-          </div>
+          <Section title="Пока пусто">
+            <Text>Опубликованных вакансий нет. Проверьте ставку, выберите вариант и нажмите «Опубликовать»: бот пришлёт ссылку и QR-код для кандидатов, а отклики появятся здесь.</Text>
+          </Section>
         )}
         {vacancies && vacancies.length > 0 && (
-          <div className="sv-card">
+          <Section>
             <div className="sv-list">
               {vacancies.map((v) => (
                 <div key={v.id} className="sv-item" role="button" tabIndex={0}
                   onClick={() => onSelectVacancy(v.id)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectVacancy(v.id); } }}>
                   <div>
-                    <div className="sv-item__title">{v.title} — {v.regionName}</div>
+                    <div className="sv-item__title">{v.title} · {v.regionName}</div>
                     <div className="sv-item__sub">{v.status === 'open' ? 'открыта' : 'закрыта'} · {fmtDate(v.createdAt)}{v.salary ? ` · от ${rub(v.salary)}` : ''}</div>
                   </div>
-                  <div className="sv-item__value">{v.responses}{v.newResponses ? ` (+${v.newResponses})` : ''}</div>
+                  <div className="sv-item__value">{nWord(v.responses, 'отклик', 'отклика', 'откликов')}{v.newResponses ? <small>{v.newResponses} новых</small> : null}</div>
                 </div>
               ))}
             </div>
-            <div className="sv-muted sv-small" style={{ marginTop: 8 }}>Справа — число откликов, в скобках новые.</div>
-          </div>
+          </Section>
         )}
-        <div className="sv-actions">
-          <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
-          <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
-        </div>
+        <Nav onBack={onBack} onHome={onHome} />
       </div>
     );
   }
@@ -138,23 +152,33 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
   /* ---------- отклики по одной вакансии ---------- */
   return (
     <div className="sv-page sv-stack">
-      <div className="sv-title">{vacancy ? `${vacancy.title} — ${vacancy.regionName}` : 'Вакансии и отклики'}</div>
-      {error && <div className="sv-banner sv-banner--error">{error}</div>}
-      {note && <div className={`sv-banner ${note.kind === 'error' ? 'sv-banner--error' : 'sv-banner--info'}`}>{note.text}</div>}
+      <div className="sv-head">
+        <ScreenTitle>{vacancy ? `${vacancy.title} · ${vacancy.regionName}` : 'Вакансии и отклики'}</ScreenTitle>
+        {vacancy && (
+          <Text>
+            {vacancy.responses === 0
+              ? 'Откликов пока нет.'
+              : `${nWord(vacancy.responses, 'отклик', 'отклика', 'откликов')}${vacancy.newResponses ? `, ${nWord(vacancy.newResponses, 'новый', 'новых', 'новых')}` : ''}.`}
+            {vacancy.status === 'open' ? ' Вакансия открыта: кандидаты могут откликаться.' : ' Вакансия закрыта: новые отклики не принимаются.'}
+          </Text>
+        )}
+      </div>
+      {error && <Banner kind="error">{error}</Banner>}
+      {note && <Banner kind={note.kind === 'error' ? 'error' : 'info'}>{note.text}</Banner>}
 
       {vacancy && (
-        <div className="sv-card sv-stack">
+        <Section>
           <div className="sv-chips">
             <span className={`sv-badge ${vacancy.status === 'open' ? 'sv-badge--ok' : 'sv-badge--muted'}`}>{vacancy.status === 'open' ? 'вакансия открыта' : 'вакансия закрыта'}</span>
             {vacancy.salary && <span className="sv-badge sv-badge--muted">от {rub(vacancy.salary)}</span>}
           </div>
           <div className="sv-tiles">
-            <div className="sv-tile"><div className="sv-tile__label">Откликов</div><div className="sv-tile__value">{vacancy.responses}</div></div>
-            <div className="sv-tile"><div className="sv-tile__label">Новых</div><div className="sv-tile__value">{vacancy.newResponses}</div></div>
-            <div className="sv-tile"><div className="sv-tile__label">Время до первого отклика</div><div className="sv-tile__value">{fmtDuration(vacancy.metrics.timeToFirstResponseMin)}</div></div>
-            <div className="sv-tile"><div className="sv-tile__label">Срок закрытия</div><div className="sv-tile__value">{fmtDuration(vacancy.metrics.timeToHireMin)}</div></div>
+            <Tile label="Откликов" value={vacancy.responses} note="всего с момента публикации" />
+            <Tile label="Новых" value={vacancy.newResponses} note="ещё не смотрели" />
+            <Tile label="Первый отклик через" value={fmtDuration(vacancy.metrics.timeToFirstResponseMin)} note="после публикации" />
+            <Tile label="Закрыта за" value={fmtDuration(vacancy.metrics.timeToHireMin)} note="от публикации до найма" />
           </div>
-          {vacancy.link && <div className="sv-muted sv-small">Ссылка для кандидатов: {vacancy.link}</div>}
+          {vacancy.link && <Muted>Ссылка для кандидатов: {vacancy.link}</Muted>}
           <div className="sv-actions">
             <Button stretched variant="secondary" disabled={!vacancy.link} onClick={() => void shareVacancy(vacancy)}>Поделиться в MAX</Button>
             {vacancy.status === 'open' && (
@@ -162,35 +186,33 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
                 onClick={() => void act('close', () => api.closeVacancy(vacancy.id), 'Вакансия закрыта, кандидатам отправлено уведомление.')}>Закрыть вакансию</Button>
             )}
           </div>
-        </div>
+        </Section>
       )}
 
       {!responses && <div className="sv-center"><Spinner /></div>}
       {responses && responses.length === 0 && (
-        <div className="sv-card sv-stack">
-          <div className="sv-h2">Откликов пока нет</div>
-          <div className="sv-muted sv-small">Перешлите ссылку или QR в чаты сотрудников, партнёров и местные каналы MAX — кандидат откликнется прямо в мессенджере.</div>
-        </div>
+        <Section title="Откликов пока нет">
+          <Text>Перешлите ссылку или QR-код в чаты сотрудников, партнёров и местные каналы MAX: кандидат откликнется прямо в мессенджере.</Text>
+        </Section>
       )}
 
       {responses?.map((r) => (
-        <div key={r.id} className="sv-card sv-stack">
+        <Section key={r.id}>
           <div className="sv-row">
             <div className="sv-item__title">{r.candidateName ?? 'Кандидат'}</div>
-            <div className="sv-item__value">{r.score} / {r.maxScore}</div>
+            <div className="sv-item__value">{r.score} из {r.maxScore}<small>совпадение с вакансией</small></div>
           </div>
           <div className="sv-chips">
             <span className={STATUS_CLASS[r.status]}>{responseStatusLabel(r.status)}</span>
-            <span className="sv-badge sv-badge--muted">опыт: {r.experienceLabel}</span>
-            <span className="sv-badge sv-badge--muted">график: {r.answers.schedule ? 'готов' : 'не готов'}</span>
-            <span className="sv-badge sv-badge--muted">ожидания: {r.answers.expectedSalary == null ? 'как в вакансии' : rub(r.answers.expectedSalary)}</span>
+            <span className={`sv-badge ${matchClass(r.score, r.maxScore)}`}>{matchWords(r.score, r.maxScore)}</span>
           </div>
-          <div className="sv-muted sv-small">
+          <Text>{answersWords(r, vacancy?.salary ?? null)}</Text>
+          <Muted>
             {r.phone
-              ? <>Телефон: <a className="sv-link" href={`tel:${r.phone}`}>{r.phone}</a>{r.phoneVerified ? ' · подпись MAX проверена' : ' · подпись не подтверждена'}</>
-              : 'Номер не оставлен — свяжитесь через приглашение, бот напишет кандидату в MAX.'}
+              ? <>Телефон: <a className="sv-link" href={`tel:${r.phone}`}>{r.phone}</a>{r.phoneVerified ? ' · номер подтверждён MAX' : ' · номер не подтверждён'}</>
+              : 'Номер не оставлен: нажмите «Пригласить», бот напишет кандидату в MAX.'}
             {' · '}отклик {fmtDate(r.createdAt)}
-          </div>
+          </Muted>
 
           {inviteFor === r.id && (
             <div className="sv-stack">
@@ -218,18 +240,14 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
               )}
             </div>
           )}
-        </div>
+        </Section>
       ))}
 
-      <div className="sv-card sv-stack" style={{ gap: 6 }}>
-        <div className="sv-h2">Как считается совпадение</div>
-        <div className="sv-muted sv-small">Простые правила, одинаковые для всех откликов: опыт (нет / до года / 1–3 / 3+) × 2 балла, готовность к графику +3, ожидания в пределах ставки вакансии +3 (до +30 % — +1), оставленный номер +1. Максимум — {responses?.[0]?.maxScore ?? 13} баллов.</div>
-      </div>
+      <Section title="Как считается совпадение" gap="tight">
+        <Muted>Складываем четыре признака, правила одинаковые для всех откликов: опыт (чем больше, тем больше баллов, до 6), готов к графику (+3), ожидания по деньгам не выше ставки вакансии (+3, до +30 % к ставке: +1), оставил номер (+1). Максимум {responses?.[0]?.maxScore ?? 13} баллов: от 10 считаем хорошим совпадением, от 7 частичным.</Muted>
+      </Section>
 
-      <div className="sv-actions">
-        <Button stretched variant="ghost" onClick={() => { setVacancy(null); setResponses(null); setNote(null); onVacancies(); }}>Все вакансии</Button>
-        <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
-      </div>
+      <Nav onBack={() => { setVacancy(null); setResponses(null); setNote(null); onVacancies(); }} backLabel="Все вакансии" onHome={onHome} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Button, Input } from '@maxhub/max-ui';
 import { ProfessionPicker, type ProfessionChoice } from '../components/ProfessionPicker';
+import { Banner, Muted, ScreenTitle, Section, SectionTitle, Text } from '../components/ui';
 import type { Bootstrap } from '../lib/api';
 
 export interface MarketQuery {
@@ -50,7 +51,7 @@ export function Query({ boot, prefill, onSubmit, onBack }: Props) {
     setError(null);
     const o = offer.replace(/\D/g, '');
     const offerNum = o ? Number(o) : null;
-    if (offerNum != null && (offerNum < 1000 || offerNum > 5_000_000)) { setError('Ставка — от 1 000 до 5 000 000 ₽ в месяц'); return; }
+    if (offerNum != null && (offerNum < 1000 || offerNum > 5_000_000)) { setError('Ставка должна быть от 1 000 до 5 000 000 ₽ в месяц'); return; }
     const title = profession.title.trim();
     if (!profession.key && !title) { setError('Выберите должность из списка или напишите её название'); return; }
     onSubmit({
@@ -64,24 +65,27 @@ export function Query({ boot, prefill, onSubmit, onBack }: Props) {
 
   return (
     <div className="sv-page sv-stack">
-      <div className="sv-title">Сколько платить</div>
-      <div className="sv-card sv-stack">
-        <label className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2" style={{ margin: 0 }}>Регион</span>
+      <div className="sv-head">
+        <ScreenTitle>Проверить ставку</ScreenTitle>
+        <Text>Три поля, и через 10–40 секунд покажу, платите ли вы как большинство работодателей региона.</Text>
+      </div>
+      <Section>
+        <label className="sv-field">
+          <SectionTitle>Регион</SectionTitle>
           <select className="sv-select" value={regionFns} onChange={(e) => setRegionFns(e.target.value)}>
             {boot.regions.map((r) => <option key={r.fnsCode} value={r.fnsCode}>{r.name}</option>)}
           </select>
-          <span className="sv-muted sv-small">Отрасль: {pack.title}</span>
+          <Muted>Где вы нанимаете. Отрасль: {pack.title}.</Muted>
         </label>
         <ProfessionPicker quick={pack.professions} value={profession} onChange={setProfession} />
-        <label className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2" style={{ margin: 0 }}>Ваша ставка, ₽ в месяц</span>
-          <Input inputMode="numeric" placeholder="например 45000" value={offer} onChange={(e) => setOffer(e.target.value)} hint="Оклад до вычета НДФЛ. Можно оставить пустым — покажу рынок без сравнения." />
+        <label className="sv-field">
+          <SectionTitle>Ваша ставка, ₽ в месяц</SectionTitle>
+          <Input inputMode="numeric" placeholder="например 45000" value={offer} onChange={(e) => setOffer(e.target.value)} hint="Оклад до вычета НДФЛ. Можно оставить пустым: покажу рынок без сравнения с вами." />
         </label>
-        {error && <div className="sv-banner sv-banner--error">{error}</div>}
+        {error && <Banner kind="error">{error}</Banner>}
         <Button stretched onClick={submit}>Показать рынок</Button>
         <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
-      </div>
+      </Section>
     </div>
   );
 }

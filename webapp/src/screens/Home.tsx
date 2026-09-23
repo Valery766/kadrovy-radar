@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Input } from '@maxhub/max-ui';
 import { api, ApiError, categoryLabel, fmtDate, rub, type Bootstrap, type PackRef, type Profile, type Region } from '../lib/api';
 import { Inspections } from '../components/Inspections';
+import { Banner, ExternalLink, Muted, ScreenTitle, Section, Text } from '../components/ui';
 
 interface Props {
   boot: Bootstrap;
@@ -17,6 +18,9 @@ interface Props {
 }
 
 const innValid = (s: string) => /^\d{10}$|^\d{12}$/.test(s);
+
+/** Меры поддержки малого бизнеса: внешняя ссылка на платформу МСП.РФ, без параметров и без интеграции. */
+const SUPPORT_URL = 'https://xn--l1agf.xn--p1ai/services/support/filter/';
 
 /** Короткие названия регионов для узких кнопок: полное имя субъекта обрезается на 375 px. */
 const SHORT_REGION: Record<string, string> = { '78': 'СПб', '77': 'Москва', '16': 'Татарстан', '23': 'Краснодар' };
@@ -44,7 +48,7 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
   const lookup = async () => {
     setError(null);
     const clean = inn.replace(/\D/g, '');
-    if (!innValid(clean)) { setError('ИНН — это 10 цифр для организации или 12 для ИП'); return; }
+    if (!innValid(clean)) { setError('ИНН состоит из 10 цифр у организации или из 12 у ИП'); return; }
     setBusy(true);
     try {
       const r = await api.profile(clean);
@@ -54,85 +58,109 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
     finally { setBusy(false); }
   };
 
+  const start = () => onStart({ inn: profile?.inRegistry ? profile.inn : null, regionFnsCode: region?.fnsCode ?? null });
+
   return (
     <div className="sv-page sv-stack">
-      <div>
-        <div className="sv-title">Кадровый радар</div>
-        <div className="sv-muted">Сколько платить сотрудникам: считаю по живым вакансиям вашего региона и сравниваю с работодателями вашего размера.</div>
+      <div className="sv-head">
+        <ScreenTitle>Кадровый радар</ScreenTitle>
+        <Text>Сколько платить сотрудникам и где найти людей. Считаю по живым объявлениям вашего региона и сравниваю с компаниями вашего размера.</Text>
       </div>
-      {notInMax && <div className="sv-banner">Открыто вне MAX ({platform}): демо-режим. Расчёты работают, а отправка отчёта в чат и подписка доступны только внутри мессенджера.</div>}
+      {notInMax && <Banner>Открыто {platform === 'browser' ? 'в браузере' : `вне MAX (${platform})`}: демо-режим. Расчёты работают, а отправка отчёта в чат, публикация вакансии и подписка доступны только внутри мессенджера.</Banner>}
 
-      <div className="sv-card sv-stack">
-        <div className="sv-h2">Сколько платить</div>
-        <div className="sv-muted sv-small">Должность → регион → ваша ставка. Считаю по живым вакансиям «Работы России», 10–40 секунд.</div>
-        <Button stretched onClick={() => onStart({ inn: profile?.inRegistry ? profile.inn : null, regionFnsCode: region?.fnsCode ?? null })}>Показать рынок</Button>
-        {demoPacks.length > 0 && (
-          <>
-            <div className="sv-muted sv-small">Примеры на реальных микропредприятиях из реестра МСП (чужой бизнес — ваш профиль не меняется):</div>
+      <Section title="Как это работает: 3 шага">
+        <ol className="sv-steps">
+          <li className="sv-step">
+            <span className="sv-step__num">1</span>
+            <div className="sv-step__body">
+              <div className="sv-step__title">Проверьте ставку</div>
+              <Muted>Должность, регион и ваша ставка. Через 10–40 секунд узнаете, платите ли вы как большинство работодателей.</Muted>
+              <Button stretched onClick={start}>Проверить ставку</Button>
+            </div>
+          </li>
+          <li className="sv-step">
+            <span className="sv-step__num">2</span>
+            <div className="sv-step__body">
+              <div className="sv-step__title">Найдите людей</div>
+              <Muted>Из карточки ставки опубликуйте вакансию: бот пришлёт ссылку и QR-код, отклики кандидатов придут сюда.</Muted>
+              <Button stretched variant="secondary" onClick={onInbox}>Вакансии и отклики</Button>
+            </div>
+          </li>
+          <li className="sv-step">
+            <span className="sv-step__num">3</span>
+            <div className="sv-step__body">
+              <div className="sv-step__title">Проверьте свой штат</div>
+              <Muted>Кто из сотрудников получает меньше рынка, кого легко переманить и сколько стоит это исправить.</Muted>
+              <Button stretched variant="secondary" onClick={onStaff}>Мой штат</Button>
+            </div>
+          </li>
+        </ol>
+      </Section>
+
+      {demoPacks.length > 0 && (
+        <Section title="Посмотреть на примере">
+          <Muted>Готовая карточка ставки на примере реального микропредприятия из реестра МСП. Это чужой бизнес: ваш профиль не меняется.</Muted>
+          <div className="sv-actions">
             {demoPacks.map((p) => <Button key={p.id} stretched variant="secondary" onClick={() => onDemo(p)}>{packShortTitle(p)}</Button>)}
-          </>
-        )}
-      </div>
+          </div>
+        </Section>
+      )}
 
-      <div className="sv-card sv-stack">
-        <div className="sv-h2">Ваш бизнес</div>
+      <Section title="Ваш бизнес">
         {profile && profile.inRegistry ? (
           <div className="sv-stack">
             <div>
               <div className="sv-item__title">{profile.name}</div>
-              <div className="sv-item__sub">{categoryLabel(profile.category)} · ОКВЭД {profile.okved ?? '—'} {profile.okvedName ?? ''} · {region?.name ?? profile.fnsRegionCode}</div>
+              <div className="sv-item__sub">{categoryLabel(profile.category)} · {profile.okvedName ?? 'вид деятельности не указан'}{profile.okved ? ` (код ${profile.okved})` : ''} · {region?.name ?? profile.fnsRegionCode}</div>
             </div>
             <div className="sv-chips">
               <span className="sv-badge sv-badge--ok">Реестр МСП ФНС · {fmtDate(profile.fetchedAt)}</span>
               <span className="sv-badge sv-badge--muted">Отрасль: {packTitle}</span>
             </div>
+            <Muted>Теперь ставки сравниваются с компаниями вашего размера, а не только со всем рынком.</Muted>
             <Button variant="secondary" size="small" onClick={() => setProfile(null)}>Другой ИНН</Button>
           </div>
         ) : (
           <div className="sv-stack">
-            <div className="sv-muted sv-small">Необязательно. По ИНН сравню вас с работодателями вашего размера, а не со всем рынком, и покажу плановые проверки на год.</div>
-            {profile && !profile.inRegistry && <div className="sv-banner">ИНН {profile.inn} в реестре МСП не найден (бюджет, крупный бизнес или ликвидирован). Можно продолжить без профиля — регион выберете на следующем шаге.</div>}
-            <Input inputMode="numeric" placeholder="ИНН, например 7801633015" value={inn} onChange={(e) => setInn(e.target.value)} hint="По ИНН беру из реестра МСП регион, отрасль и размер компании" />
-            {error && <div className="sv-banner sv-banner--error">{error}</div>}
+            <Muted>Необязательно. По ИНН возьму из реестра МСП регион, отрасль и размер компании: сравню вас с работодателями вашего размера и покажу плановые проверки на год.</Muted>
+            {profile && !profile.inRegistry && <Banner>ИНН {profile.inn} в реестре МСП не найден: это бюджетное учреждение, крупная компания или закрытый бизнес. Можно продолжить без профиля, регион выберете на следующем шаге.</Banner>}
+            <Input inputMode="numeric" placeholder="ИНН, например 7801633015" value={inn} onChange={(e) => setInn(e.target.value)} hint="10 цифр у организации, 12 у ИП" />
+            {error && <Banner kind="error">{error}</Banner>}
             <Button onClick={lookup} loading={busy} disabled={busy}>Найти в реестре МСП</Button>
           </div>
         )}
-      </div>
+        <div className="sv-divider" />
+        <div>
+          <div className="sv-item__title">Меры поддержки</div>
+          <Muted>Субсидии, льготные кредиты и обучение для малого бизнеса: <ExternalLink href={SUPPORT_URL}>Меры поддержки для вашего региона на МСП.РФ</ExternalLink>. Откроется сайт платформы МСП.РФ. Это ссылка, а не интеграция: регион и отрасль выбираются там.</Muted>
+        </div>
+      </Section>
 
       <Inspections inn={profile?.inRegistry ? profile.inn : boot.user.inn} />
 
-      <div className="sv-card sv-stack">
-        <div className="sv-h2">Найм</div>
-        <div className="sv-muted sv-small">Опубликованные вакансии, отклики кандидатов с баллом совпадения, приглашения и найм. Публикация — из карточки рынка.</div>
-        <Button stretched variant="secondary" onClick={onInbox}>Вакансии и отклики</Button>
-      </div>
-
-      <div className="sv-card sv-stack">
-        <div className="sv-h2">Штат и регионы</div>
-        <div className="sv-muted sv-small">Кто из ваших сотрудников уже ниже рынка и сколько стоит подтянуть до медианы; где в стране эта должность дешевле и где людей больше.</div>
-        <Button stretched variant="secondary" onClick={onStaff}>Мой штат</Button>
+      <Section title="Сравнить регионы">
+        <Muted>Открываете точку в другом городе или нанимаете вахтой: покажу, где эта должность дешевле и где больше объявлений.</Muted>
         <Button stretched variant="secondary" onClick={onRegions}>Сравнить регионы</Button>
-      </div>
+      </Section>
 
       {boot.recentCards.length > 0 && (
-        <div className="sv-card">
-          <div className="sv-h2">Недавние карточки</div>
+        <Section title="Недавние карточки">
           <div className="sv-list">
             {boot.recentCards.map((c) => (
               <div key={c.id} className="sv-item" role="button" tabIndex={0}
                 onClick={() => onOpenCard(c.id)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenCard(c.id); } }}>
-                <div><div className="sv-item__title">{c.professionTitle} — {c.regionName}</div><div className="sv-item__sub">{fmtDate(c.createdAt)}{c.offer ? ` · ваша ставка ${rub(c.offer)}` : ''}</div></div>
-                <div className="sv-item__value">{c.median ? rub(c.median) : '—'}</div>
+                <div><div className="sv-item__title">{c.professionTitle} · {c.regionName}</div><div className="sv-item__sub">{fmtDate(c.createdAt)}{c.offer ? ` · ваша ставка ${rub(c.offer)}` : ''}</div></div>
+                <div className="sv-item__value">{c.median ? rub(c.median) : '–'}<small>обычная ставка</small></div>
               </div>
             ))}
           </div>
-        </div>
+        </Section>
       )}
 
-      <div className="sv-muted sv-small">
-        Откуда данные: {boot.sources.map((s) => s.title).join(' · ')}. Ничего не выдумываем — каждое число выводимо из источника. Бот: {boot.bot ? <a className="sv-link" href={boot.bot.link}>@{boot.bot.username}</a> : '—'}.
-      </div>
+      <Muted>
+        Откуда данные: {boot.sources.map((s) => s.title).join(' · ')}. Все цифры взяты из открытых источников, ничего не придумано. Бот: {boot.bot ? <a className="sv-link" href={boot.bot.link}>@{boot.bot.username}</a> : 'не подключён'}.
+      </Muted>
     </div>
   );
 }

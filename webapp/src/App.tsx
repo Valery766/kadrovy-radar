@@ -3,6 +3,7 @@ import { Button, Spinner } from '@maxhub/max-ui';
 import { api, ApiError, openSession, type Bootstrap, type MarketResult, type Profile, type ProfessionRef, type Region } from './lib/api';
 import { insideMax, platform, startParam } from './lib/bridge';
 import { useBackButton } from './lib/state';
+import { Banner, Loading, Muted, ScreenTitle } from './components/ui';
 import { Home } from './screens/Home';
 import { Query, type MarketQuery } from './screens/Query';
 import { Card } from './screens/Card';
@@ -67,9 +68,10 @@ export function App() {
         const sp = s.startParam ?? startParam();
         if (sp && sp.startsWith('card_')) {
           try { const r = await api.card(sp.slice(5)); setScreen({ name: 'card', result: r }); return; }
-          catch { setScreen({ name: 'error', message: 'Карточка не найдена или устарела. Посчитайте рынок заново — это займёт полминуты.' }); return; }
+          catch { setScreen({ name: 'error', message: 'Карточка не найдена или устарела. Проверьте ставку заново: это займёт 10–40 секунд.' }); return; }
         }
         if (sp && sp.startsWith('inbox_')) { setScreen({ name: 'inbox', vacancyId: sp.slice(6) }); return; }
+        if (sp === 'inbox') { setScreen({ name: 'inbox', vacancyId: null }); return; }
         if (sp === 'staff') { setScreen({ name: 'staff' }); return; }
         if (sp === 'regions') { setScreen({ name: 'regions' }); return; }
         void b;
@@ -95,10 +97,10 @@ export function App() {
   }, [go, reloadBoot]);
 
   if (fatal) {
-    return <div className="sv-page sv-stack"><div className="sv-banner sv-banner--error">{fatal}</div><Button onClick={() => window.location.reload()}>Обновить</Button></div>;
+    return <div className="sv-page sv-stack"><Banner kind="error">{fatal}</Banner><Button onClick={() => window.location.reload()}>Обновить</Button></div>;
   }
   if (!boot || screen.name === 'boot') {
-    return <div className="sv-page sv-center" style={{ paddingTop: 80 }}><Spinner /><div className="sv-muted" style={{ marginTop: 12 }}>Загружаю…</div></div>;
+    return <div className="sv-page sv-center" style={{ paddingTop: 80 }}><Spinner /><Muted className="sv-center">Загружаю…</Muted></div>;
   }
 
   const notInMax = !insideMax();
@@ -116,12 +118,7 @@ export function App() {
     case 'query':
       return <Query boot={boot} prefill={screen.prefill} onSubmit={(p) => void runMarket(p)} onBack={back} />;
     case 'loading':
-      return <div className="sv-page sv-stack" style={{ paddingTop: 60 }}>
-        <div className="sv-center"><Spinner /></div>
-        <div className="sv-center sv-title">Считаю рынок</div>
-        <div className="sv-progress"><div className="sv-progress__bar" /></div>
-        <div className="sv-center sv-muted">{screen.label}</div>
-      </div>;
+      return <Loading title="Считаю по живым объявлениям" text={screen.label} />;
     case 'card':
       return <Card result={screen.result} boot={boot} notInMax={notInMax} onBack={back}
         onRecalc={(offer) => void runMarket({ inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode, professionKey: screen.result.profession.key, professionText: screen.result.profession.query, offer })}
@@ -148,8 +145,8 @@ export function App() {
         onHome={home} />;
     case 'error':
       return <div className="sv-page sv-stack" style={{ paddingTop: 40 }}>
-        <div className="sv-title">Не получилось</div>
-        <div className="sv-banner sv-banner--error">{screen.message}</div>
+        <ScreenTitle>Не получилось</ScreenTitle>
+        <Banner kind="error">{screen.message}</Banner>
         <div className="sv-actions">
           {screen.retry && <Button onClick={screen.retry}>Повторить</Button>}
           <Button variant="secondary" onClick={home}>На главную</Button>

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Spinner } from '@maxhub/max-ui';
 import {
-  api, ApiError, fmtDate, rub, staffRiskClass, staffRiskLabel,
+  api, ApiError, rub, staffRiskClass, staffRiskLabel,
   type Bootstrap, type StaffPositionInput, type StaffResult,
 } from '../lib/api';
 import { haptic } from '../lib/bridge';
+import { nWord, staffLead, staffMeaning, staffPositionWords } from '../lib/plain';
+import { Banner, Facts, Lead, Loading, Meaning, Muted, Nav, ScreenTitle, Section, SectionTitle, Sources, Text, Tile } from '../components/ui';
 
 interface Row { id: string; title: string; salary: string }
 
@@ -19,7 +21,7 @@ export function Staff({ boot, onOpenCard, onBack, onHome }: Props) {
   // Сквозной счётчик строк: номер по длине списка давал бы дубли после удаления середины.
   const nextId = useRef(0);
   const newRow = (title = '', salary = ''): Row => ({ id: `p${(nextId.current += 1)}`, title, salary });
-  /** Строки редактора из сохранённой оценки: порядок отчёта — от самых отстающих. */
+  /** Строки редактора из сохранённой оценки: порядок отчёта, от самых отстающих. */
   const rowsFromResult = (r: StaffResult): Row[] => r.report.positions.map((p) => newRow(p.title, String(p.salary)));
   const [rows, setRows] = useState<Row[]>(() => [newRow(), newRow(), newRow()]);
   const [regionFns, setRegionFns] = useState<string>(boot.user.regionFnsCode ?? '78');
@@ -51,11 +53,11 @@ export function Staff({ boot, onOpenCard, onBack, onHome }: Props) {
       const salary = Number(r.salary.replace(/\D/g, ''));
       if (!title && !r.salary.trim()) continue;
       if (!title) { setError('В каждой строке нужна должность'); return; }
-      if (!Number.isFinite(salary) || salary < 1000 || salary > 5_000_000) { setError(`«${title}»: ставка от 1 000 до 5 000 000 ₽ в месяц`); return; }
+      if (!Number.isFinite(salary) || salary < 1000 || salary > 5_000_000) { setError(`«${title}»: ставка должна быть от 1 000 до 5 000 000 ₽ в месяц`); return; }
       positions.push({ id: r.id, title, salary });
     }
     if (positions.length === 0) { setError('Добавьте хотя бы одну должность со ставкой'); return; }
-    if (!regionFns) { setError('Выберите регион — иначе рынок не с чем сравнивать'); return; }
+    if (!regionFns) { setError('Выберите регион, иначе рынок не с чем сравнивать'); return; }
     setBusy(true);
     try {
       const r = await api.staff({ positions, inn: boot.user.inn, regionFnsCode: regionFns });
@@ -70,24 +72,26 @@ export function Staff({ boot, onOpenCard, onBack, onHome }: Props) {
   const cardIdFor = (professionKey: string | null): string | null =>
     (professionKey ? result?.markets.find((m) => m.professionKey === professionKey)?.cardId ?? null : null);
 
+  const summary = result?.report.summary ?? null;
+
   return (
     <div className="sv-page sv-stack">
-      <div>
-        <div className="sv-title">Мой штат</div>
-        <div className="sv-muted sv-small">Внесите должности и ставки сотрудников — покажу, кто уже ниже рынка{regionName ? ` в регионе «${regionName}»` : ''}, на сколько и сколько стоит подтянуть до медианы.</div>
+      <div className="sv-head">
+        <ScreenTitle>Мой штат</ScreenTitle>
+        <Text>Впишите должности и ставки сотрудников. Покажу, кто получает меньше рынка{regionName ? ` в регионе ${regionName}` : ''}, кого легко переманить и сколько стоит это исправить.</Text>
       </div>
 
-      {demo && <div className="sv-banner">Демо-режим: расчёт работает, но список не сохранится. Внутри MAX штат запоминается и открывается по команде /staff.</div>}
+      {demo && <Banner>Демо-режим: расчёт работает, но список не сохранится. Внутри MAX штат запоминается и открывается по команде /staff.</Banner>}
 
-      <div className="sv-card sv-stack">
-        <label className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2" style={{ margin: 0 }}>Регион</span>
+      <Section>
+        <label className="sv-field">
+          <SectionTitle>Регион</SectionTitle>
           <select className="sv-select" value={regionFns} onChange={(e) => setRegionFns(e.target.value)}>
             {boot.regions.map((r) => <option key={r.fnsCode} value={r.fnsCode}>{r.name}</option>)}
           </select>
-          <span className="sv-muted sv-small">Рынок сравниваем по этому региону{boot.user.inn ? `; профиль бизнеса — по ИНН ${boot.user.inn}` : ''}.</span>
+          <Muted>Рынок сравниваем по этому региону{boot.user.inn ? `; профиль бизнеса по ИНН ${boot.user.inn}` : ''}.</Muted>
         </label>
-        <div className="sv-h2" style={{ marginTop: 6 }}>Должности и ставки</div>
+        <SectionTitle>Должности и ставки</SectionTitle>
         {loading && <div className="sv-center"><Spinner /></div>}
         {!loading && rows.map((r, i) => (
           <div key={r.id} className="sv-staff-row">
@@ -96,79 +100,63 @@ export function Staff({ boot, onOpenCard, onBack, onHome }: Props) {
             <button type="button" className="sv-iconbtn" title="Удалить строку" aria-label="Удалить строку" onClick={() => removeRow(r.id)}>×</button>
           </div>
         ))}
-        {error && <div className="sv-banner sv-banner--error">{error}</div>}
+        {error && <Banner kind="error">{error}</Banner>}
         <div className="sv-actions">
           <Button stretched variant="secondary" onClick={addRow} disabled={rows.length >= 20}>Добавить должность</Button>
-          <Button stretched onClick={() => void assess()} loading={busy} disabled={busy}>Оценить</Button>
+          <Button stretched onClick={() => void assess()} loading={busy} disabled={busy}>Сравнить с рынком</Button>
         </div>
-        <div className="sv-muted sv-small">Не больше 20 строк за раз. Ставка — оклад в месяц до вычета НДФЛ.</div>
-      </div>
+        <Muted>Не больше 20 должностей за раз. Ставка: оклад в месяц до вычета НДФЛ.</Muted>
+      </Section>
 
-      {busy && (
-        <div className="sv-card sv-stack">
-          <div className="sv-center"><Spinner /></div>
-          <div className="sv-center sv-muted sv-small">Считаю рынок по каждой должности: вакансии «Работы России» и размеры работодателей из реестра МСП.</div>
-        </div>
-      )}
+      {busy && <Loading inline title="Считаю по живым объявлениям" text="По каждой должности запрашиваю вакансии «Работы России» и размеры работодателей из реестра МСП. Обычно 10–40 секунд на должность." />}
 
-      {result && !busy && (
+      {result && summary && !busy && (
         <>
-          <div className="sv-card sv-stack">
-            <div className="sv-h2">Что получилось</div>
+          <Section title="Что получилось">
+            <Lead>{staffLead(summary)}</Lead>
             <div className="sv-tiles">
-              <div className="sv-tile"><div className="sv-tile__label">Ниже 25-го перцентиля</div><div className="sv-tile__value">{result.report.summary.highRisk}</div></div>
-              <div className="sv-tile"><div className="sv-tile__label">Ниже медианы</div><div className="sv-tile__value">{result.report.summary.mediumRisk}</div></div>
-              <div className="sv-tile"><div className="sv-tile__label">В рынке</div><div className="sv-tile__value">{result.report.summary.inMarket}</div></div>
-              <div className="sv-tile"><div className="sv-tile__label">Фонд оплаты труда</div><div className="sv-tile__value">{rub(result.report.summary.payroll)}</div></div>
+              <Tile tone="bad" label="Легко переманить" value={summary.highRisk} note="получают меньше, чем три четверти рынка" />
+              <Tile tone="warn" label="Ниже обычной ставки" value={summary.mediumRisk} note="меньше половины рынка, но не в зоне риска" />
+              <Tile tone="ok" label="Как большинство" value={summary.inMarket} note="ставка в рынке или выше" />
+              <Tile label="Фонд оплаты" value={rub(summary.payroll)} note={`оклады ${nWord(summary.positions, 'должности', 'должностей', 'должностей')} в месяц`} />
             </div>
-            <div className="sv-banner sv-banner--info">
-              Подтянуть всех до медианы рынка: {rub(result.report.summary.costToMedian)} в месяц (+{result.report.summary.costShare} % к фонду).
-              {result.report.summary.medianPercentile != null && ` Медианный перцентиль штата — ${result.report.summary.medianPercentile}-й.`}
-            </div>
-          </div>
+            <Meaning>{staffMeaning(summary) || 'Данных по рынку не хватает, чтобы посчитать доплату.'}</Meaning>
+            {summary.unknown > 0 && <Muted>По {nWord(summary.unknown, 'должности', 'должностям', 'должностям')} рынок не посчитан: попробуйте написать название иначе, как в объявлениях.</Muted>}
+          </Section>
 
-          <div className="sv-card">
-            <div className="sv-h2">Должности от самых отстающих</div>
-            <div className="sv-table">
-              <div className="sv-table__head sv-table__row sv-table__row--staff">
-                <div>Должность</div><div>Ставка</div><div>Медиана</div><div>Разрыв</div>
-              </div>
+          <Section title="По каждому сотруднику">
+            <Muted>Сначала те, кого легче всего переманить.</Muted>
+            <div className="sv-list">
               {result.report.positions.map((p) => {
                 const cardId = cardIdFor(p.professionKey);
                 return (
-                  <div key={p.id} className="sv-table__row sv-table__row--staff">
-                    <div>
-                      <div className="sv-item__title">{p.title}</div>
-                      <div className="sv-chips" style={{ marginTop: 4 }}>
-                        <span className={`sv-badge ${staffRiskClass(p.risk)}`}>{staffRiskLabel(p.risk)}</span>
-                        {p.percentile != null && <span className="sv-badge sv-badge--muted">{p.percentile}-й перцентиль</span>}
-                      </div>
-                      {p.note && <div className="sv-muted sv-small">{p.note}</div>}
-                      {cardId && <button type="button" className="sv-link sv-linkbtn" onClick={() => onOpenCard(cardId)}>карточка рынка «{p.professionTitle}»</button>}
+                  <div key={p.id} className="sv-record">
+                    <div className="sv-row">
+                      <div className="sv-record__title">{p.title}</div>
+                      <span className={`sv-badge ${staffRiskClass(p.risk)}`}>{staffRiskLabel(p.risk)}</span>
                     </div>
-                    <div className="sv-item__value" data-label="Ставка">{rub(p.salary)}</div>
-                    <div className="sv-item__value" data-label="Медиана">{p.median != null ? rub(p.median) : '—'}</div>
-                    <div className="sv-item__value" data-label="Разрыв">{p.gapRub > 0 ? `${rub(p.gapRub)} (${p.gapPct} %)` : '—'}</div>
+                    <Text>{staffPositionWords(p)}</Text>
+                    <Facts items={[
+                      { label: 'Ставка сейчас', value: rub(p.salary) },
+                      { label: 'Обычная ставка', value: p.median != null ? rub(p.median) : '–' },
+                      { label: 'Доплатить', value: p.risk === 'unknown' ? '–' : p.gapRub > 0 ? rub(p.gapRub) : 'не нужно' },
+                    ]} />
+                    {cardId && <button type="button" className="sv-link sv-linkbtn" onClick={() => onOpenCard(cardId)}>Подробный разбор: «{p.professionTitle}»</button>}
                   </div>
                 );
               })}
             </div>
-          </div>
+          </Section>
 
-          <div className="sv-card sv-stack" style={{ gap: 6 }}>
-            <div className="sv-h2">Источники и метод</div>
-            {result.sources.map((s) => <div key={s.id} className="sv-small">{s.title} · получено {fmtDate(s.fetchedAt)}{s.note ? ` · ${s.note}` : ''}</div>)}
-            <div className="sv-muted sv-small">
-              Риск определяется положением ставки на рынке региона: ниже 25-го перцентиля — высокий, ниже медианы — умеренный. Перцентиль считается по гистограмме карточки рынка, разрыв — расстояние до медианы. Регион: {result.region.name}, отрасль «{result.pack.title}».
-            </div>
-          </div>
+          <Sources sources={result.sources}>
+            <Muted>
+              Обычная ставка – середина рынка по объявлениям «Работы России» в регионе {result.region.name}: половина работодателей платит меньше, половина больше. «Легко переманить» – ставка ниже, чем у трёх четвертей работодателей. «Доплатить» – разница до обычной ставки. Отрасль: {result.pack.title}. Все цифры взяты из объявлений, ничего не придумано.
+            </Muted>
+          </Sources>
         </>
       )}
 
-      <div className="sv-actions">
-        <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
-        <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
-      </div>
+      <Nav onBack={onBack} onHome={onHome} />
     </div>
   );
 }

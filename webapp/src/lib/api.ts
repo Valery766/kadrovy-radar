@@ -69,7 +69,7 @@ export interface MarketCard {
   examples: { id: string; title: string; employerName: string | null; employerInn: string | null; employerCategory?: 0 | 1 | 2 | 3 | null; salaryMin: number | null; salaryMax: number | null; value: number; schedule: string | null; url: string | null }[];
   requirements: { key: string; label: string; count: number; share: number }[];
   schedules: { label: string; share: number }[];
-  /** Распределение вакансий по неделям публикации; null — дат в выборке слишком мало. */
+  /** Распределение вакансий по неделям публикации; null – дат в выборке слишком мало. */
   seasonality?: Seasonality | null;
   verdict: string;
 }
@@ -192,7 +192,7 @@ export interface InspectionView {
 }
 
 export interface InspectionsResult {
-  /** false — набор плана проверок ещё не загружен (подтягивается фоном). */
+  /** false – набор плана проверок ещё не загружен (подтягивается фоном). */
   loaded: boolean;
   inn: string | null;
   own: InspectionView[];
@@ -247,13 +247,14 @@ export const api = {
   closeVacancy: (id: string) => request<{ vacancy: VacancyView }>('POST', `/api/vacancies/${encodeURIComponent(id)}/close`, {}),
 };
 
-export const rub = (v: number) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
+/** «65 000 ₽»: перед знаком рубля неразрывный пробел, чтобы «₽» не уезжал на новую строку. */
+export const rub = (v: number) => `${Math.round(v).toLocaleString('ru-RU')} ₽`;
 export const fmtDate = (iso: string) => new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 export const categoryLabel = (c: 0 | 1 | 2 | 3 | null | undefined) => (c === 1 ? 'микропредприятие' : c === 2 ? 'малое предприятие' : c === 3 ? 'среднее предприятие' : 'не МСП');
 
 /** Длительность в минутах → «12 мин», «3 ч 20 мин», «2 дн 4 ч». */
 export const fmtDuration = (minutes: number | null): string => {
-  if (minutes == null) return '—';
+  if (minutes == null) return 'пока нет';
   if (minutes < 60) return `${minutes} мин`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} ч${minutes % 60 ? ` ${minutes % 60} мин` : ''}`;
@@ -261,8 +262,9 @@ export const fmtDuration = (minutes: number | null): string => {
   return `${days} дн${hours % 24 ? ` ${hours % 24} ч` : ''}`;
 };
 
+/** Риск ухода словами (docs/plain-language.md): вместо «высокий риск» – «легко переманить». */
 export const staffRiskLabel = (r: StaffRisk): string =>
-  (r === 'high' ? 'высокий риск ухода' : r === 'medium' ? 'умеренный риск' : r === 'none' ? 'в рынке' : 'нет данных');
+  (r === 'high' ? 'легко переманить' : r === 'medium' ? 'ниже обычной ставки' : r === 'none' ? 'как большинство' : 'нет данных по рынку');
 
 export const staffRiskClass = (r: StaffRisk): string =>
   (r === 'high' ? 'sv-badge--bad' : r === 'medium' ? 'sv-badge--warn' : r === 'none' ? 'sv-badge--ok' : 'sv-badge--muted');

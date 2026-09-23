@@ -1,17 +1,19 @@
 import { useMemo, useState } from 'react';
-import { Button, Input, Spinner } from '@maxhub/max-ui';
+import { Button, Input } from '@maxhub/max-ui';
 import { ProfessionPicker, type ProfessionChoice } from '../components/ProfessionPicker';
-import { api, ApiError, fmtDate, rub, type Bootstrap, type RegionComparisonRow, type RegionSort, type RegionsResult } from '../lib/api';
+import { api, ApiError, rub, type Bootstrap, type RegionComparisonRow, type RegionSort, type RegionsResult } from '../lib/api';
 import { haptic } from '../lib/bridge';
+import { ads, cheaperWords, employers, regionsLead } from '../lib/plain';
+import { Banner, Facts, Lead, Loading, Meaning, Muted, Nav, ScreenTitle, Section, SectionTitle, Sources, Text } from '../components/ui';
 import type { MarketQuery } from './Query';
 
 /** Столько же, сколько принимает сервер (services/regions.ts: MAX_REGIONS). */
 const MAX_REGIONS = 8;
 
 const SORT_LABEL: Record<RegionSort, string> = {
-  median: 'по медиане (дешевле сверху)',
-  affordability: 'по индексу доступности',
-  vacancies: 'по числу вакансий',
+  median: 'где дешевле нанять (сверху)',
+  affordability: 'где должность дешевле относительно местных зарплат',
+  vacancies: 'где больше объявлений',
 };
 
 interface Props {
@@ -20,6 +22,17 @@ interface Props {
   onOpenMarket: (p: MarketQuery) => void;
   onBack: () => void;
   onHome: () => void;
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Вывод по одному региону словами: дешевизна относительно местных зарплат, ваша ставка, размер выборки. */
+function rowWords(r: RegionComparisonRow, offer: number | null): string {
+  const parts: string[] = [];
+  if (r.affordability != null) parts.push(`${capitalize(cheaperWords(r.affordability))}.`);
+  if (r.offerPercentile != null && offer != null) parts.push(`Ваша ставка ${rub(offer)} выше, чем у ${r.offerPercentile} из 100 работодателей.`);
+  parts.push(`Посчитано по ${ads(r.vacancies)} от ${employers(r.employers)}.`);
+  return parts.join(' ');
 }
 
 export function Regions({ boot, prefill, onOpenMarket, onBack, onHome }: Props) {
@@ -46,7 +59,7 @@ export function Regions({ boot, prefill, onOpenMarket, onBack, onHome }: Props) 
 
   /**
    * Порядок строк задаёт выбранная сортировка: уже посчитанную таблицу
-   * переупорядочиваем на месте, без повторного запроса (правила — как на сервере,
+   * переупорядочиваем на месте, без повторного запроса (правила как на сервере,
    * core/regions.ts: регионы без данных уходят в конец).
    */
   const rows = useMemo(() => {
@@ -66,14 +79,15 @@ export function Regions({ boot, prefill, onOpenMarket, onBack, onHome }: Props) 
   const add = (fnsCode: string) => { if (fnsCode && codes.length < MAX_REGIONS && !codes.includes(fnsCode)) setCodes([...codes, fnsCode]); };
   const remove = (fnsCode: string) => setCodes(codes.filter((c) => c !== fnsCode));
 
+  const offerNumber = (): number | null => { const o = offer.replace(/\D/g, ''); return o ? Number(o) : null; };
+
   const compare = async () => {
     setError(null);
     if (codes.length === 0) { setError('Выберите хотя бы один регион'); return; }
     const title = profession.title.trim();
     if (!profession.key && !title) { setError('Выберите должность или напишите её название'); return; }
-    const o = offer.replace(/\D/g, '');
-    const offerNum = o ? Number(o) : null;
-    if (offerNum != null && (offerNum < 1000 || offerNum > 5_000_000)) { setError('Ставка — от 1 000 до 5 000 000 ₽ в месяц'); return; }
+    const offerNum = offerNumber();
+    if (offerNum != null && (offerNum < 1000 || offerNum > 5_000_000)) { setError('Ставка должна быть от 1 000 до 5 000 000 ₽ в месяц'); return; }
     setBusy(true);
     try {
       const r = await api.compareRegions({
@@ -92,109 +106,102 @@ export function Regions({ boot, prefill, onOpenMarket, onBack, onHome }: Props) 
   };
 
   const openCard = (fnsCode: string) => {
-    const o = offer.replace(/\D/g, '');
     onOpenMarket({
       regionFnsCode: fnsCode,
       professionKey: result?.profession.key ?? profession.key ?? undefined,
       professionText: result?.profession.title ?? profession.title.trim() ?? undefined,
-      offer: o ? Number(o) : null,
+      offer: offerNumber(),
       inn: boot.user.inn ?? null,
-      // Смотрим чужой регион из сравнения — домашний регион профиля менять не нужно.
+      // Смотрим чужой регион из сравнения: домашний регион профиля менять не нужно.
       keepRegion: true,
     });
   };
 
+  const summary = result?.comparison.summary ?? null;
+  const cheapest = summary?.cheapest ? rows.find((r) => r.fnsCode === summary.cheapest) ?? null : null;
+  const most = summary?.mostVacancies ? rows.find((r) => r.fnsCode === summary.mostVacancies) ?? null : null;
+
   return (
     <div className="sv-page sv-stack">
-      <div>
-        <div className="sv-title">Сравнить регионы</div>
-        <div className="sv-muted sv-small">Открываете точку в другом городе или нанимаете вахтой — посмотрите, где люди дешевле и где их больше. До {MAX_REGIONS} регионов за раз.</div>
+      <div className="sv-head">
+        <ScreenTitle>Сравнить регионы</ScreenTitle>
+        <Text>Открываете точку в другом городе или нанимаете вахтой: покажу, где эта должность дешевле и где больше объявлений. До {MAX_REGIONS} регионов за раз.</Text>
       </div>
 
-      <div className="sv-card sv-stack">
+      <Section>
         <ProfessionPicker quick={boot.packs.find((p) => p.id === boot.user.pack.id)?.professions ?? boot.professions.slice(0, 8)} value={profession} onChange={setProfession} />
 
-        <div className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2" style={{ margin: 0 }}>Регионы ({codes.length} из {MAX_REGIONS})</span>
+        <div className="sv-field">
+          <SectionTitle>Регионы ({codes.length} из {MAX_REGIONS})</SectionTitle>
           <div className="sv-chips">
             {selected.map((r) => (
               <button key={r.fnsCode} type="button" className="sv-chip sv-chip--active" onClick={() => remove(r.fnsCode)}>{r.name} ×</button>
             ))}
-            {selected.length === 0 && <span className="sv-muted sv-small">Ни одного региона не выбрано</span>}
+            {selected.length === 0 && <Muted>Ни одного региона не выбрано</Muted>}
           </div>
           <select className="sv-select" value="" disabled={codes.length >= MAX_REGIONS} onChange={(e) => add(e.target.value)}>
-            <option value="">{codes.length >= MAX_REGIONS ? 'Достигнут предел в 8 регионов' : 'Добавить регион…'}</option>
+            <option value="">{codes.length >= MAX_REGIONS ? `Больше ${MAX_REGIONS} регионов за раз нельзя` : 'Добавить регион…'}</option>
             {rest.map((r) => <option key={r.fnsCode} value={r.fnsCode}>{r.name}</option>)}
           </select>
+          <Muted>Нажмите на регион в списке выбранных, чтобы убрать его.</Muted>
         </div>
 
-        <label className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2" style={{ margin: 0 }}>Сортировка</span>
+        <label className="sv-field">
+          <SectionTitle>Порядок в списке</SectionTitle>
           <select className="sv-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as RegionSort)}>
             {(Object.keys(SORT_LABEL) as RegionSort[]).map((k) => <option key={k} value={k}>{SORT_LABEL[k]}</option>)}
           </select>
         </label>
 
-        <label className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2" style={{ margin: 0 }}>Ваша ставка, ₽ в месяц</span>
-          <Input inputMode="numeric" placeholder="например 60000" value={offer} onChange={(e) => setOffer(e.target.value)} hint="Необязательно: покажу её перцентиль в каждом регионе" />
+        <label className="sv-field">
+          <SectionTitle>Ваша ставка, ₽ в месяц</SectionTitle>
+          <Input inputMode="numeric" placeholder="например 60000" value={offer} onChange={(e) => setOffer(e.target.value)} hint="Необязательно: покажу, как ваша ставка смотрится в каждом регионе." />
         </label>
 
-        {error && <div className="sv-banner sv-banner--error">{error}</div>}
-        <Button stretched onClick={() => void compare()} loading={busy} disabled={busy}>Сравнить</Button>
-      </div>
+        {error && <Banner kind="error">{error}</Banner>}
+        <Button stretched onClick={() => void compare()} loading={busy} disabled={busy}>Сравнить регионы</Button>
+      </Section>
 
-      {busy && (
-        <div className="sv-card sv-stack">
-          <div className="sv-center"><Spinner /></div>
-          <div className="sv-center sv-muted sv-small">Считаю рынок в каждом регионе: запросы идут пачками по три, это может занять до минуты.</div>
-        </div>
-      )}
+      {busy && <Loading inline title="Считаю по живым объявлениям" text="В каждом регионе запрашиваю вакансии «Работы России», по три региона за раз. Обычно 10–40 секунд на регион." />}
 
-      {result && !busy && (
+      {result && summary && !busy && (
         <>
-          <div className="sv-card">
-            <div className="sv-h2">«{result.profession.title}» — {result.comparison.summary.withData} из {result.comparison.summary.regions} регионов с данными</div>
-            <div className="sv-table">
-              <div className="sv-table__head sv-table__row sv-table__row--regions">
-                <div>Регион</div><div>Медиана</div><div>Половина предложений</div><div>Вакансий</div>
-              </div>
+          <Section title={`«${result.profession.title}»: ${summary.withData} из ${summary.regions} регионов с данными`}>
+            <Lead>{regionsLead(result.profession.title, rows, summary.spreadPct)}</Lead>
+            <div className="sv-list">
               {rows.map((r) => (
-                <div key={r.fnsCode} className="sv-table__row sv-table__row--regions">
-                  <div>
-                    <div className="sv-item__title">{r.rank ? `${r.rank}. ` : ''}{r.regionName}</div>
-                    <div className="sv-chips" style={{ marginTop: 4 }}>
-                      {r.affordability != null && <span className="sv-badge sv-badge--muted">доступность {r.affordability.toFixed(2)}</span>}
-                      {r.offerPercentile != null && <span className="sv-badge">ваша ставка — {r.offerPercentile}-й перц.</span>}
-                      {r.confidence === 'low' && <span className="sv-badge sv-badge--warn">данных мало</span>}
-                    </div>
-                    {r.error && <div className="sv-muted sv-small">{r.error}</div>}
-                    {!r.error && <button type="button" className="sv-link sv-linkbtn" onClick={() => openCard(r.fnsCode)}>открыть карточку</button>}
+                <div key={r.fnsCode} className="sv-record">
+                  <div className="sv-row">
+                    <div className="sv-record__title">{r.rank ? `${r.rank}. ` : ''}{r.regionName}</div>
+                    {r.confidence === 'low' && <span className="sv-badge sv-badge--warn">объявлений мало</span>}
                   </div>
-                  <div className="sv-item__value" data-label="Медиана">{r.median != null ? rub(r.median) : '—'}</div>
-                  <div className="sv-item__value" data-label="Половина предл.">{r.p25 != null && r.p75 != null ? `${Math.round(r.p25 / 1000)}–${Math.round(r.p75 / 1000)} тыс.` : '—'}</div>
-                  <div className="sv-item__value" data-label="Вак. / работ.">{r.vacancies} / {r.employers}</div>
+                  {r.error ? <Muted>{r.error}</Muted> : <Text>{rowWords(r, offerNumber())}</Text>}
+                  {!r.error && (
+                    <Facts items={[
+                      { label: 'Обычная ставка', value: r.median != null ? rub(r.median) : '–' },
+                      { label: 'Коридор большинства', value: r.p25 != null && r.p75 != null ? `${Math.round(r.p25 / 1000)}–${Math.round(r.p75 / 1000)} тыс. ₽` : '–' },
+                      { label: 'Объявлений', value: r.vacancies.toLocaleString('ru-RU') },
+                    ]} />
+                  )}
+                  {!r.error && <button type="button" className="sv-link sv-linkbtn" onClick={() => openCard(r.fnsCode)}>Подробный разбор: {r.regionName}</button>}
                 </div>
               ))}
             </div>
-            {result.comparison.summary.spreadPct != null && (
-              <div className="sv-muted sv-small" style={{ marginTop: 8 }}>
-                Разрыв между крайними регионами — {result.comparison.summary.spreadPct} %. Индекс доступности — медиана профессии, делённая на среднюю зарплату региона: чем меньше, тем дешевле профессия относительно местного рынка труда. «Вак. / работ.» — размер выборки по региону.
-              </div>
+            {(cheapest || most) && (
+              <Meaning>
+                {cheapest && `Самая низкая обычная ставка: ${cheapest.regionName}. `}
+                {most && `Больше всего объявлений, а значит и конкуренции за людей: ${most.regionName}. `}
+                Для вахты считайте доплату к ставке домашнего региона, для новой точки закладывайте обычную ставку её региона.
+              </Meaning>
             )}
-          </div>
+            <Muted>«Обычная ставка» – половина работодателей платит меньше, половина больше. «Коридор большинства» – половина объявлений укладывается в эти суммы. «Дешевле средней по региону» – сравниваем ставку должности со средней зарплатой региона по всем профессиям: чем дешевле, тем легче нанять здесь на местные деньги.</Muted>
+          </Section>
 
-          <div className="sv-card sv-stack" style={{ gap: 6 }}>
-            <div className="sv-h2">Источники</div>
-            {result.sources.map((s) => <div key={s.id} className="sv-small">{s.title} · получено {fmtDate(s.fetchedAt)}{s.note ? ` · ${s.note}` : ''}</div>)}
-          </div>
+          <Sources sources={result.sources} />
         </>
       )}
 
-      <div className="sv-actions">
-        <Button stretched variant="ghost" onClick={onBack}>Назад</Button>
-        <Button stretched variant="ghost" onClick={onHome}>На главную</Button>
-      </div>
+      <Nav onBack={onBack} onHome={onHome} />
     </div>
   );
 }

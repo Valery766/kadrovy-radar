@@ -46,7 +46,7 @@ function launchParam(key: string): string | null {
 
 /**
  * Тема оформления от MAX: поле моста или параметр запуска.
- * Если мессенджер тему не сообщает, возвращаем null — тогда MAX UI следит за
+ * Если мессенджер тему не сообщает, возвращаем null – тогда MAX UI следит за
  * системной темой сам (matchMedia), в том числе при переключении на ходу.
  */
 export function colorScheme(): ColorScheme | null {
@@ -56,7 +56,7 @@ export function colorScheme(): ColorScheme | null {
   return isScheme(fromLaunch) ? fromLaunch : null;
 }
 
-/** Подписка на смену темы в MAX. Вне MAX и на старых клиентах — пустая отписка. */
+/** Подписка на смену темы в MAX. Вне MAX и на старых клиентах – пустая отписка. */
 export function onColorSchemeChange(cb: (scheme: ColorScheme) => void): () => void {
   const w = webApp();
   if (!w?.onEvent || !w.offEvent) return () => undefined;
@@ -68,13 +68,19 @@ export function onColorSchemeChange(cb: (scheme: ColorScheme) => void): () => vo
   return () => w.offEvent?.('themeChanged', handler);
 }
 
-/** Параметр запуска: из initData (start_param) или из query ?card= при открытии в браузере. */
+/**
+ * Параметр запуска: из initData (start_param) или из адреса при открытии в браузере:
+ * ?card=<id> открывает карточку, ?start=staff|regions|inbox – соответствующий экран (демо-режим).
+ */
 export function startParam(): string | null {
   const w = webApp();
   const sp = w?.initDataUnsafe?.start_param;
   if (sp) return sp;
-  const q = new URLSearchParams(window.location.search).get('card');
-  return q ? `card_${q}` : null;
+  const q = new URLSearchParams(window.location.search);
+  const card = q.get('card');
+  if (card) return `card_${card}`;
+  const start = q.get('start');
+  return start && /^[a-z_0-9-]{1,64}$/i.test(start) ? start : null;
 }
 
 export async function shareMid(mid: string, chatType: 'DIALOG' | 'CHAT' = 'DIALOG'): Promise<'shared' | 'unsupported' | 'failed'> {
