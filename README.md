@@ -101,7 +101,7 @@ docker compose up --build
 | `MAX_API_BASE` | базовый адрес Bot API | `https://platform-api2.max.ru` |
 | `NODE_EXTRA_CA_CERTS` | сертификат Минцифры (в Docker установлен в системное хранилище) | `server/certs/russian_trusted_bundle.pem` |
 | `VACANCY_CACHE_HOURS`, `PROFILE_CACHE_HOURS` | свежесть кэша источников | `6`, `720` |
-| `MAX_VACANCY_RECORDS`, `MAX_EMPLOYERS_TO_ENRICH` | глубина выборки и обогащения | `1000`, `60` |
+| `MAX_VACANCY_RECORDS`, `MAX_EMPLOYERS_TO_ENRICH` | глубина выборки и обогащения | `2000`, `60` |
 
 ## 7. Используемые порты
 

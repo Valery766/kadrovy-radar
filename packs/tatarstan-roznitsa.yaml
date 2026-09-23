@@ -13,7 +13,7 @@ thresholds:
   minVacancies: 20
   salaryMin: 15000
   salaryMax: 500000
-  perEmployerCap: 3
+  perEmployerCap: 5
 vacancyTemplate:
   conditions:
     - официальное оформление по ТК РФ

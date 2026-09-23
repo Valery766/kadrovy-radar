@@ -46,7 +46,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     packsDir: resolve(env.PACKS_DIR ?? resolve(import.meta.dirname, '../../packs')),
     vacancyCacheHours: Number(env.VACANCY_CACHE_HOURS ?? 6),
     profileCacheHours: Number(env.PROFILE_CACHE_HOURS ?? 24 * 30),
-    maxVacancyRecords: Number(env.MAX_VACANCY_RECORDS ?? 1000),
+    maxVacancyRecords: Number(env.MAX_VACANCY_RECORDS ?? 2000),
     maxEmployersToEnrich: Number(env.MAX_EMPLOYERS_TO_ENRICH ?? 60),
   };
 }
