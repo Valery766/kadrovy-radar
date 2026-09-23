@@ -1,0 +1,1978 @@
+{
+ "generatedAt": "2026-09-23T06:30:29.902Z",
+ "professions": [
+  {
+   "key": "povar",
+   "title": "Повар"
+  },
+  {
+   "key": "konditer",
+   "title": "Кондитер"
+  },
+  {
+   "key": "pekar",
+   "title": "Пекарь"
+  },
+  {
+   "key": "ofitsiant",
+   "title": "Официант"
+  },
+  {
+   "key": "barmen",
+   "title": "Бармен"
+  },
+  {
+   "key": "administrator",
+   "title": "Администратор"
+  },
+  {
+   "key": "kassir",
+   "title": "Кассир"
+  },
+  {
+   "key": "prodavets",
+   "title": "Продавец"
+  },
+  {
+   "key": "uborshchik",
+   "title": "Уборщик"
+  },
+  {
+   "key": "kurer",
+   "title": "Курьер"
+  },
+  {
+   "key": "voditel",
+   "title": "Водитель"
+  },
+  {
+   "key": "gruzchik",
+   "title": "Грузчик"
+  },
+  {
+   "key": "svarshchik",
+   "title": "Сварщик"
+  },
+  {
+   "key": "slesar",
+   "title": "Слесарь"
+  },
+  {
+   "key": "tokar",
+   "title": "Токарь"
+  }
+ ],
+ "regions": [
+  {
+   "fnsCode": "01",
+   "name": "Республика Адыгея",
+   "totals": {
+    "konditer": 24,
+    "kassir": 126,
+    "barmen": 1,
+    "povar": 56,
+    "pekar": 30,
+    "administrator": 48,
+    "ofitsiant": 7,
+    "prodavets": 147,
+    "uborshchik": 90,
+    "kurer": 11,
+    "voditel": 91,
+    "tokar": 7,
+    "gruzchik": 33,
+    "slesar": 122,
+    "svarshchik": 4
+   }
+  },
+  {
+   "fnsCode": "02",
+   "name": "Республика Башкортостан",
+   "totals": {
+    "povar": 366,
+    "konditer": 167,
+    "ofitsiant": 21,
+    "administrator": 392,
+    "barmen": 9,
+    "uborshchik": 225,
+    "kassir": 986,
+    "prodavets": 1125,
+    "pekar": 201,
+    "kurer": 122,
+    "tokar": 58,
+    "voditel": 640,
+    "svarshchik": 36,
+    "gruzchik": 120,
+    "slesar": 609
+   }
+  },
+  {
+   "fnsCode": "03",
+   "name": "Республика Бурятия",
+   "totals": {
+    "povar": 147,
+    "konditer": 17,
+    "pekar": 24,
+    "barmen": 7,
+    "ofitsiant": 10,
+    "administrator": 71,
+    "kassir": 70,
+    "uborshchik": 75,
+    "kurer": 16,
+    "prodavets": 85,
+    "gruzchik": 37,
+    "svarshchik": 7,
+    "tokar": 11,
+    "slesar": 135,
+    "voditel": 226
+   }
+  },
+  {
+   "fnsCode": "04",
+   "name": "Республика Алтай",
+   "totals": {
+    "povar": 14,
+    "konditer": 1,
+    "pekar": 3,
+    "administrator": 25,
+    "ofitsiant": 2,
+    "kurer": 1,
+    "barmen": 2,
+    "prodavets": 35,
+    "kassir": 23,
+    "uborshchik": 14,
+    "voditel": 20,
+    "slesar": 20,
+    "svarshchik": 3,
+    "gruzchik": 5,
+    "tokar": 0
+   }
+  },
+  {
+   "fnsCode": "05",
+   "name": "Республика Дагестан",
+   "totals": {
+    "povar": 28,
+    "konditer": 5,
+    "ofitsiant": 4,
+    "pekar": 0,
+    "administrator": 47,
+    "barmen": 3,
+    "uborshchik": 25,
+    "kassir": 92,
+    "kurer": 10,
+    "prodavets": 111,
+    "gruzchik": 3,
+    "voditel": 44,
+    "slesar": 37,
+    "svarshchik": 1,
+    "tokar": 5
+   }
+  },
+  {
+   "fnsCode": "06",
+   "name": "Республика Ингушетия",
+   "totals": {
+    "povar": 0,
+    "konditer": 0,
+    "pekar": 0,
+    "ofitsiant": 0,
+    "barmen": 0,
+    "administrator": 2,
+    "kassir": 3,
+    "uborshchik": 1,
+    "voditel": 1,
+    "prodavets": 3,
+    "kurer": 0,
+    "gruzchik": 0,
+    "svarshchik": 0,
+    "tokar": 0,
+    "slesar": 2
+   }
+  },
+  {
+   "fnsCode": "07",
+   "name": "Республика Кабардино-Балкарская",
+   "totals": {
+    "konditer": 16,
+    "povar": 31,
+    "barmen": 0,
+    "ofitsiant": 2,
+    "pekar": 16,
+    "administrator": 34,
+    "prodavets": 121,
+    "kassir": 113,
+    "svarshchik": 5,
+    "gruzchik": 13,
+    "uborshchik": 71,
+    "voditel": 110,
+    "kurer": 17,
+    "slesar": 56,
+    "tokar": 6
+   }
+  },
+  {
+   "fnsCode": "08",
+   "name": "Республика Калмыкия",
+   "totals": {
+    "povar": 34,
+    "ofitsiant": 0,
+    "barmen": 0,
+    "pekar": 23,
+    "kassir": 63,
+    "administrator": 38,
+    "konditer": 22,
+    "prodavets": 78,
+    "uborshchik": 14,
+    "kurer": 5,
+    "voditel": 25,
+    "svarshchik": 0,
+    "gruzchik": 7,
+    "slesar": 10,
+    "tokar": 1
+   }
+  },
+  {
+   "fnsCode": "09",
+   "name": "Республика Карачаево-Черкесская",
+   "totals": {
+    "povar": 17,
+    "konditer": 3,
+    "pekar": 4,
+    "barmen": 1,
+    "ofitsiant": 2,
+    "kassir": 56,
+    "administrator": 31,
+    "prodavets": 59,
+    "uborshchik": 11,
+    "kurer": 14,
+    "voditel": 23,
+    "gruzchik": 2,
+    "svarshchik": 4,
+    "slesar": 30,
+    "tokar": 4
+   }
+  },
+  {
+   "fnsCode": "10",
+   "name": "Республика Карелия",
+   "totals": {
+    "povar": 89,
+    "konditer": 53,
+    "pekar": 51,
+    "administrator": 114,
+    "ofitsiant": 21,
+    "barmen": 13,
+    "kassir": 239,
+    "prodavets": 293,
+    "uborshchik": 48,
+    "kurer": 21,
+    "voditel": 159,
+    "slesar": 88,
+    "svarshchik": 4,
+    "gruzchik": 3,
+    "tokar": 6
+   }
+  },
+  {
+   "fnsCode": "11",
+   "name": "Республика Коми",
+   "totals": {
+    "povar": 78,
+    "konditer": 34,
+    "pekar": 35,
+    "ofitsiant": 2,
+    "barmen": 0,
+    "administrator": 80,
+    "kassir": 189,
+    "prodavets": 223,
+    "kurer": 11,
+    "svarshchik": 9,
+    "voditel": 187,
+    "gruzchik": 16,
+    "slesar": 129,
+    "uborshchik": 40,
+    "tokar": 8
+   }
+  },
+  {
+   "fnsCode": "12",
+   "name": "Республика Марий Эл",
+   "totals": {
+    "povar": 124,
+    "konditer": 40,
+    "pekar": 45,
+    "barmen": 5,
+    "ofitsiant": 9,
+    "prodavets": 246,
+    "kassir": 209,
+    "administrator": 111,
+    "uborshchik": 106,
+    "kurer": 12,
+    "tokar": 13,
+    "voditel": 158,
+    "gruzchik": 40,
+    "svarshchik": 9,
+    "slesar": 141
+   }
+  },
+  {
+   "fnsCode": "13",
+   "name": "Республика Мордовия",
+   "totals": {
+    "povar": 59,
+    "konditer": 16,
+    "pekar": 18,
+    "ofitsiant": 1,
+    "prodavets": 211,
+    "administrator": 65,
+    "barmen": 1,
+    "kassir": 162,
+    "uborshchik": 111,
+    "kurer": 11,
+    "voditel": 183,
+    "svarshchik": 11,
+    "gruzchik": 27,
+    "tokar": 16,
+    "slesar": 130
+   }
+  },
+  {
+   "fnsCode": "14",
+   "name": "Республика Саха (Якутия)",
+   "totals": {
+    "pekar": 7,
+    "povar": 41,
+    "konditer": 6,
+    "ofitsiant": 3,
+    "kassir": 25,
+    "barmen": 2,
+    "administrator": 15,
+    "prodavets": 22,
+    "kurer": 2,
+    "uborshchik": 75,
+    "voditel": 260,
+    "gruzchik": 17,
+    "slesar": 328,
+    "tokar": 17,
+    "svarshchik": 26
+   }
+  },
+  {
+   "fnsCode": "15",
+   "name": "Республика Северная Осетия - Алания",
+   "totals": {
+    "povar": 30,
+    "pekar": 16,
+    "konditer": 18,
+    "ofitsiant": 4,
+    "barmen": 3,
+    "kassir": 78,
+    "administrator": 40,
+    "prodavets": 88,
+    "uborshchik": 12,
+    "kurer": 12,
+    "voditel": 18,
+    "gruzchik": 4,
+    "slesar": 12,
+    "svarshchik": 2,
+    "tokar": 1
+   }
+  },
+  {
+   "fnsCode": "16",
+   "name": "Республика Татарстан",
+   "totals": {
+    "povar": 507,
+    "pekar": 281,
+    "konditer": 273,
+    "ofitsiant": 20,
+    "barmen": 7,
+    "administrator": 570,
+    "kassir": 1309,
+    "kurer": 159,
+    "prodavets": 1582,
+    "uborshchik": 302,
+    "voditel": 427,
+    "svarshchik": 42,
+    "gruzchik": 131,
+    "slesar": 459,
+    "tokar": 46
+   }
+  },
+  {
+   "fnsCode": "17",
+   "name": "Республика Тыва",
+   "totals": {
+    "pekar": 6,
+    "konditer": 5,
+    "povar": 8,
+    "ofitsiant": 0,
+    "administrator": 6,
+    "barmen": 0,
+    "kassir": 12,
+    "prodavets": 15,
+    "uborshchik": 3,
+    "kurer": 6,
+    "voditel": 15,
+    "slesar": 11,
+    "svarshchik": 1,
+    "gruzchik": 2,
+    "tokar": 0
+   }
+  },
+  {
+   "fnsCode": "18",
+   "name": "Республика Удмуртская",
+   "totals": {
+    "povar": 194,
+    "konditer": 71,
+    "pekar": 93,
+    "ofitsiant": 13,
+    "barmen": 2,
+    "administrator": 197,
+    "prodavets": 627,
+    "kassir": 526,
+    "voditel": 332,
+    "uborshchik": 204,
+    "kurer": 21,
+    "gruzchik": 66,
+    "slesar": 293,
+    "svarshchik": 29,
+    "tokar": 34
+   }
+  },
+  {
+   "fnsCode": "19",
+   "name": "Республика Хакасия",
+   "totals": {
+    "povar": 49,
+    "konditer": 16,
+    "pekar": 25,
+    "barmen": 0,
+    "ofitsiant": 5,
+    "kassir": 79,
+    "administrator": 46,
+    "prodavets": 100,
+    "kurer": 10,
+    "uborshchik": 64,
+    "voditel": 140,
+    "svarshchik": 3,
+    "gruzchik": 33,
+    "slesar": 99,
+    "tokar": 5
+   }
+  },
+  {
+   "fnsCode": "20",
+   "name": "Республика Чеченская",
+   "totals": {
+    "povar": 5,
+    "pekar": 0,
+    "konditer": 0,
+    "ofitsiant": 0,
+    "barmen": 0,
+    "kassir": 5,
+    "administrator": 1,
+    "prodavets": 0,
+    "uborshchik": 22,
+    "kurer": 0,
+    "voditel": 12,
+    "gruzchik": 0,
+    "svarshchik": 0,
+    "slesar": 8,
+    "tokar": 0
+   }
+  },
+  {
+   "fnsCode": "21",
+   "name": "Чувашская Республика - чувашия",
+   "totals": {
+    "povar": 150,
+    "konditer": 69,
+    "pekar": 81,
+    "ofitsiant": 9,
+    "barmen": 2,
+    "administrator": 177,
+    "uborshchik": 121,
+    "prodavets": 455,
+    "kassir": 372,
+    "gruzchik": 60,
+    "kurer": 34,
+    "svarshchik": 8,
+    "slesar": 143,
+    "voditel": 135,
+    "tokar": 11
+   }
+  },
+  {
+   "fnsCode": "22",
+   "name": "Алтайский край",
+   "totals": {
+    "povar": 199,
+    "konditer": 62,
+    "pekar": 76,
+    "ofitsiant": 17,
+    "barmen": 8,
+    "administrator": 107,
+    "kassir": 327,
+    "prodavets": 402,
+    "uborshchik": 217,
+    "kurer": 25,
+    "voditel": 384,
+    "gruzchik": 96,
+    "svarshchik": 16,
+    "tokar": 30,
+    "slesar": 353
+   }
+  },
+  {
+   "fnsCode": "23",
+   "name": "Краснодарский край",
+   "totals": {
+    "povar": 759,
+    "konditer": 367,
+    "pekar": 404,
+    "barmen": 36,
+    "kassir": 2619,
+    "administrator": 798,
+    "ofitsiant": 86,
+    "prodavets": 3039,
+    "kurer": 177,
+    "uborshchik": 800,
+    "svarshchik": 53,
+    "gruzchik": 198,
+    "voditel": 919,
+    "slesar": 821,
+    "tokar": 58
+   }
+  },
+  {
+   "fnsCode": "24",
+   "name": "Красноярский край",
+   "totals": {
+    "povar": 291,
+    "konditer": 79,
+    "pekar": 122,
+    "ofitsiant": 32,
+    "barmen": 16,
+    "administrator": 271,
+    "prodavets": 614,
+    "kurer": 64,
+    "uborshchik": 326,
+    "kassir": 490,
+    "voditel": 632,
+    "gruzchik": 151,
+    "svarshchik": 39,
+    "slesar": 497,
+    "tokar": 54
+   }
+  },
+  {
+   "fnsCode": "25",
+   "name": "Приморский край",
+   "totals": {
+    "povar": 423,
+    "konditer": 118,
+    "pekar": 135,
+    "ofitsiant": 42,
+    "administrator": 172,
+    "prodavets": 436,
+    "barmen": 16,
+    "kassir": 270,
+    "uborshchik": 331,
+    "kurer": 66,
+    "voditel": 473,
+    "gruzchik": 108,
+    "svarshchik": 44,
+    "tokar": 62,
+    "slesar": 538
+   }
+  },
+  {
+   "fnsCode": "26",
+   "name": "Ставропольский край",
+   "totals": {
+    "povar": 294,
+    "konditer": 130,
+    "pekar": 138,
+    "barmen": 15,
+    "ofitsiant": 41,
+    "kassir": 865,
+    "administrator": 225,
+    "prodavets": 868,
+    "uborshchik": 336,
+    "voditel": 499,
+    "kurer": 42,
+    "svarshchik": 31,
+    "gruzchik": 144,
+    "tokar": 26,
+    "slesar": 439
+   }
+  },
+  {
+   "fnsCode": "27",
+   "name": "Хабаровский край",
+   "totals": {
+    "povar": 271,
+    "konditer": 67,
+    "pekar": 69,
+    "ofitsiant": 13,
+    "kassir": 237,
+    "barmen": 4,
+    "administrator": 158,
+    "prodavets": 359,
+    "uborshchik": 188,
+    "kurer": 69,
+    "voditel": 366,
+    "svarshchik": 20,
+    "gruzchik": 58,
+    "slesar": 342,
+    "tokar": 17
+   }
+  },
+  {
+   "fnsCode": "28",
+   "name": "Амурская область",
+   "totals": {
+    "konditer": 19,
+    "povar": 93,
+    "pekar": 22,
+    "ofitsiant": 9,
+    "barmen": 2,
+    "administrator": 43,
+    "kurer": 10,
+    "kassir": 43,
+    "prodavets": 64,
+    "uborshchik": 85,
+    "gruzchik": 30,
+    "voditel": 203,
+    "svarshchik": 14,
+    "slesar": 167,
+    "tokar": 6
+   }
+  },
+  {
+   "fnsCode": "29",
+   "name": "Архангельская область",
+   "totals": {
+    "povar": 122,
+    "konditer": 49,
+    "pekar": 66,
+    "barmen": 12,
+    "ofitsiant": 21,
+    "administrator": 135,
+    "kassir": 339,
+    "voditel": 164,
+    "uborshchik": 61,
+    "prodavets": 419,
+    "kurer": 40,
+    "gruzchik": 30,
+    "svarshchik": 8,
+    "slesar": 153,
+    "tokar": 18
+   }
+  },
+  {
+   "fnsCode": "30",
+   "name": "Астраханская область",
+   "totals": {
+    "ofitsiant": 10,
+    "konditer": 52,
+    "povar": 103,
+    "pekar": 54,
+    "administrator": 79,
+    "kassir": 275,
+    "barmen": 2,
+    "prodavets": 302,
+    "kurer": 17,
+    "uborshchik": 139,
+    "gruzchik": 27,
+    "voditel": 156,
+    "svarshchik": 7,
+    "tokar": 5,
+    "slesar": 102
+   }
+  },
+  {
+   "fnsCode": "31",
+   "name": "Белгородская область",
+   "totals": {
+    "povar": 224,
+    "konditer": 55,
+    "pekar": 58,
+    "ofitsiant": 7,
+    "barmen": 2,
+    "prodavets": 461,
+    "kassir": 418,
+    "uborshchik": 275,
+    "administrator": 114,
+    "kurer": 31,
+    "svarshchik": 24,
+    "voditel": 353,
+    "gruzchik": 59,
+    "slesar": 309,
+    "tokar": 12
+   }
+  },
+  {
+   "fnsCode": "32",
+   "name": "Брянская область",
+   "totals": {
+    "povar": 126,
+    "konditer": 61,
+    "pekar": 67,
+    "ofitsiant": 14,
+    "barmen": 6,
+    "administrator": 103,
+    "prodavets": 409,
+    "kassir": 356,
+    "svarshchik": 8,
+    "uborshchik": 90,
+    "kurer": 18,
+    "gruzchik": 53,
+    "voditel": 299,
+    "tokar": 28,
+    "slesar": 211
+   }
+  },
+  {
+   "fnsCode": "33",
+   "name": "Владимирская область",
+   "totals": {
+    "povar": 202,
+    "konditer": 88,
+    "pekar": 97,
+    "ofitsiant": 31,
+    "barmen": 12,
+    "administrator": 266,
+    "uborshchik": 165,
+    "prodavets": 654,
+    "kassir": 516,
+    "kurer": 28,
+    "voditel": 273,
+    "gruzchik": 79,
+    "svarshchik": 23,
+    "slesar": 268,
+    "tokar": 34
+   }
+  },
+  {
+   "fnsCode": "34",
+   "name": "Волгоградская область",
+   "totals": {
+    "povar": 205,
+    "konditer": 123,
+    "ofitsiant": 18,
+    "administrator": 349,
+    "barmen": 4,
+    "pekar": 131,
+    "kassir": 803,
+    "prodavets": 968,
+    "uborshchik": 254,
+    "kurer": 52,
+    "voditel": 399,
+    "svarshchik": 10,
+    "gruzchik": 82,
+    "slesar": 375,
+    "tokar": 40
+   }
+  },
+  {
+   "fnsCode": "35",
+   "name": "Вологодская область",
+   "totals": {
+    "konditer": 90,
+    "povar": 193,
+    "pekar": 107,
+    "barmen": 11,
+    "administrator": 239,
+    "ofitsiant": 20,
+    "prodavets": 557,
+    "uborshchik": 150,
+    "kassir": 437,
+    "kurer": 24,
+    "voditel": 357,
+    "gruzchik": 60,
+    "slesar": 296,
+    "svarshchik": 20,
+    "tokar": 31
+   }
+  },
+  {
+   "fnsCode": "36",
+   "name": "Воронежская область",
+   "totals": {
+    "povar": 233,
+    "konditer": 134,
+    "ofitsiant": 16,
+    "pekar": 140,
+    "barmen": 8,
+    "prodavets": 904,
+    "administrator": 257,
+    "kassir": 806,
+    "kurer": 48,
+    "uborshchik": 221,
+    "voditel": 297,
+    "gruzchik": 85,
+    "svarshchik": 36,
+    "slesar": 281,
+    "tokar": 26
+   }
+  },
+  {
+   "fnsCode": "37",
+   "name": "Ивановская область",
+   "totals": {
+    "povar": 109,
+    "konditer": 43,
+    "pekar": 46,
+    "ofitsiant": 9,
+    "barmen": 5,
+    "administrator": 149,
+    "kassir": 294,
+    "prodavets": 410,
+    "uborshchik": 128,
+    "kurer": 28,
+    "voditel": 153,
+    "gruzchik": 39,
+    "svarshchik": 4,
+    "tokar": 10,
+    "slesar": 150
+   }
+  },
+  {
+   "fnsCode": "38",
+   "name": "Иркутская область",
+   "totals": {
+    "povar": 262,
+    "pekar": 99,
+    "konditer": 85,
+    "ofitsiant": 24,
+    "barmen": 13,
+    "administrator": 215,
+    "kassir": 421,
+    "prodavets": 431,
+    "uborshchik": 317,
+    "kurer": 32,
+    "voditel": 567,
+    "gruzchik": 164,
+    "svarshchik": 60,
+    "slesar": 488,
+    "tokar": 58
+   }
+  },
+  {
+   "fnsCode": "39",
+   "name": "Калининградская область",
+   "totals": {
+    "povar": 170,
+    "konditer": 57,
+    "pekar": 66,
+    "ofitsiant": 21,
+    "barmen": 4,
+    "administrator": 84,
+    "kassir": 212,
+    "prodavets": 288,
+    "uborshchik": 187,
+    "kurer": 58,
+    "voditel": 157,
+    "svarshchik": 12,
+    "slesar": 215,
+    "gruzchik": 28,
+    "tokar": 15
+   }
+  },
+  {
+   "fnsCode": "40",
+   "name": "Калужская область",
+   "totals": {
+    "povar": 166,
+    "konditer": 60,
+    "pekar": 58,
+    "ofitsiant": 18,
+    "prodavets": 517,
+    "administrator": 196,
+    "barmen": 4,
+    "kassir": 411,
+    "uborshchik": 172,
+    "kurer": 39,
+    "voditel": 286,
+    "svarshchik": 16,
+    "gruzchik": 50,
+    "slesar": 298,
+    "tokar": 32
+   }
+  },
+  {
+   "fnsCode": "41",
+   "name": "Камчатский край",
+   "totals": {
+    "povar": 89,
+    "konditer": 2,
+    "pekar": 9,
+    "ofitsiant": 7,
+    "barmen": 3,
+    "administrator": 29,
+    "kassir": 26,
+    "prodavets": 32,
+    "kurer": 3,
+    "uborshchik": 140,
+    "voditel": 161,
+    "gruzchik": 8,
+    "svarshchik": 3,
+    "slesar": 100,
+    "tokar": 7
+   }
+  },
+  {
+   "fnsCode": "42",
+   "name": "Кемеровская область - Кузбасс область",
+   "totals": {
+    "povar": 158,
+    "konditer": 30,
+    "ofitsiant": 16,
+    "pekar": 42,
+    "barmen": 6,
+    "kassir": 357,
+    "administrator": 80,
+    "prodavets": 409,
+    "uborshchik": 171,
+    "gruzchik": 48,
+    "voditel": 414,
+    "kurer": 18,
+    "svarshchik": 22,
+    "tokar": 53,
+    "slesar": 338
+   }
+  },
+  {
+   "fnsCode": "43",
+   "name": "Кировская область",
+   "totals": {
+    "povar": 216,
+    "konditer": 59,
+    "pekar": 88,
+    "ofitsiant": 21,
+    "barmen": 12,
+    "administrator": 223,
+    "kassir": 512,
+    "prodavets": 606,
+    "uborshchik": 293,
+    "kurer": 27,
+    "voditel": 286,
+    "svarshchik": 20,
+    "gruzchik": 99,
+    "slesar": 274,
+    "tokar": 32
+   }
+  },
+  {
+   "fnsCode": "44",
+   "name": "Костромская область",
+   "totals": {
+    "konditer": 31,
+    "povar": 100,
+    "pekar": 34,
+    "barmen": 3,
+    "ofitsiant": 11,
+    "administrator": 59,
+    "kassir": 151,
+    "prodavets": 186,
+    "kurer": 10,
+    "gruzchik": 17,
+    "voditel": 151,
+    "svarshchik": 16,
+    "uborshchik": 76,
+    "slesar": 82,
+    "tokar": 7
+   }
+  },
+  {
+   "fnsCode": "45",
+   "name": "Курганская область",
+   "totals": {
+    "barmen": 4,
+    "administrator": 178,
+    "konditer": 28,
+    "povar": 81,
+    "ofitsiant": 2,
+    "pekar": 36,
+    "kassir": 157,
+    "prodavets": 192,
+    "uborshchik": 83,
+    "kurer": 23,
+    "gruzchik": 60,
+    "voditel": 190,
+    "svarshchik": 10,
+    "tokar": 13,
+    "slesar": 104
+   }
+  },
+  {
+   "fnsCode": "46",
+   "name": "Курская область",
+   "totals": {
+    "konditer": 40,
+    "povar": 98,
+    "pekar": 47,
+    "ofitsiant": 2,
+    "barmen": 3,
+    "administrator": 105,
+    "kassir": 285,
+    "prodavets": 321,
+    "uborshchik": 88,
+    "kurer": 17,
+    "gruzchik": 62,
+    "slesar": 221,
+    "svarshchik": 6,
+    "voditel": 175,
+    "tokar": 32
+   }
+  },
+  {
+   "fnsCode": "47",
+   "name": "Ленинградская область",
+   "totals": {
+    "konditer": 123,
+    "povar": 299,
+    "pekar": 139,
+    "ofitsiant": 20,
+    "barmen": 10,
+    "administrator": 418,
+    "kassir": 838,
+    "kurer": 105,
+    "uborshchik": 266,
+    "voditel": 419,
+    "prodavets": 1152,
+    "gruzchik": 92,
+    "svarshchik": 61,
+    "slesar": 747,
+    "tokar": 64
+   }
+  },
+  {
+   "fnsCode": "48",
+   "name": "Липецкая область",
+   "totals": {
+    "povar": 101,
+    "konditer": 44,
+    "pekar": 55,
+    "ofitsiant": 5,
+    "barmen": 1,
+    "kassir": 359,
+    "administrator": 103,
+    "prodavets": 366,
+    "uborshchik": 114,
+    "kurer": 23,
+    "voditel": 214,
+    "gruzchik": 41,
+    "svarshchik": 11,
+    "slesar": 203,
+    "tokar": 14
+   }
+  },
+  {
+   "fnsCode": "49",
+   "name": "Магаданская область",
+   "totals": {
+    "povar": 35,
+    "konditer": 2,
+    "pekar": 3,
+    "ofitsiant": 3,
+    "administrator": 14,
+    "barmen": 1,
+    "prodavets": 11,
+    "uborshchik": 48,
+    "kassir": 6,
+    "kurer": 0,
+    "voditel": 99,
+    "gruzchik": 12,
+    "svarshchik": 5,
+    "tokar": 3,
+    "slesar": 46
+   }
+  },
+  {
+   "fnsCode": "50",
+   "name": "Московская область",
+   "totals": {
+    "povar": 866,
+    "konditer": 485,
+    "pekar": 498,
+    "ofitsiant": 78,
+    "barmen": 10,
+    "administrator": 1441,
+    "prodavets": 3431,
+    "kurer": 560,
+    "uborshchik": 271,
+    "kassir": 2534,
+    "voditel": 485,
+    "gruzchik": 379,
+    "svarshchik": 36,
+    "slesar": 422,
+    "tokar": 69
+   }
+  },
+  {
+   "fnsCode": "51",
+   "name": "Мурманская область",
+   "totals": {
+    "pekar": 50,
+    "konditer": 44,
+    "povar": 120,
+    "ofitsiant": 9,
+    "barmen": 5,
+    "administrator": 147,
+    "kassir": 316,
+    "prodavets": 401,
+    "uborshchik": 103,
+    "gruzchik": 18,
+    "kurer": 38,
+    "svarshchik": 22,
+    "voditel": 223,
+    "slesar": 260,
+    "tokar": 9
+   }
+  },
+  {
+   "fnsCode": "52",
+   "name": "Нижегородская область",
+   "totals": {
+    "pekar": 89,
+    "povar": 269,
+    "konditer": 71,
+    "ofitsiant": 40,
+    "kassir": 763,
+    "barmen": 15,
+    "administrator": 343,
+    "prodavets": 978,
+    "uborshchik": 509,
+    "kurer": 57,
+    "voditel": 446,
+    "gruzchik": 104,
+    "svarshchik": 46,
+    "slesar": 569,
+    "tokar": 60
+   }
+  },
+  {
+   "fnsCode": "53",
+   "name": "Новгородская область",
+   "totals": {
+    "povar": 73,
+    "konditer": 37,
+    "ofitsiant": 7,
+    "pekar": 40,
+    "barmen": 3,
+    "administrator": 98,
+    "prodavets": 277,
+    "kassir": 229,
+    "uborshchik": 83,
+    "kurer": 9,
+    "svarshchik": 8,
+    "slesar": 101,
+    "voditel": 109,
+    "tokar": 12,
+    "gruzchik": 25
+   }
+  },
+  {
+   "fnsCode": "54",
+   "name": "Новосибирская область",
+   "totals": {
+    "povar": 253,
+    "konditer": 84,
+    "pekar": 91,
+    "ofitsiant": 18,
+    "barmen": 8,
+    "administrator": 253,
+    "kassir": 637,
+    "prodavets": 742,
+    "kurer": 42,
+    "voditel": 384,
+    "uborshchik": 382,
+    "gruzchik": 75,
+    "svarshchik": 15,
+    "tokar": 30,
+    "slesar": 332
+   }
+  },
+  {
+   "fnsCode": "55",
+   "name": "Омская область",
+   "totals": {
+    "povar": 179,
+    "konditer": 73,
+    "pekar": 103,
+    "ofitsiant": 15,
+    "barmen": 5,
+    "kassir": 507,
+    "uborshchik": 209,
+    "administrator": 183,
+    "prodavets": 637,
+    "kurer": 52,
+    "voditel": 381,
+    "gruzchik": 99,
+    "svarshchik": 15,
+    "slesar": 364,
+    "tokar": 45
+   }
+  },
+  {
+   "fnsCode": "56",
+   "name": "Оренбургская область",
+   "totals": {
+    "povar": 185,
+    "pekar": 109,
+    "konditer": 86,
+    "ofitsiant": 16,
+    "barmen": 5,
+    "administrator": 236,
+    "kassir": 552,
+    "prodavets": 651,
+    "uborshchik": 236,
+    "kurer": 49,
+    "voditel": 455,
+    "gruzchik": 91,
+    "svarshchik": 17,
+    "slesar": 370,
+    "tokar": 41
+   }
+  },
+  {
+   "fnsCode": "57",
+   "name": "Орловская область",
+   "totals": {
+    "konditer": 38,
+    "povar": 87,
+    "pekar": 36,
+    "ofitsiant": 6,
+    "barmen": 1,
+    "administrator": 73,
+    "kassir": 225,
+    "prodavets": 254,
+    "uborshchik": 107,
+    "kurer": 9,
+    "gruzchik": 44,
+    "voditel": 184,
+    "svarshchik": 10,
+    "slesar": 192,
+    "tokar": 22
+   }
+  },
+  {
+   "fnsCode": "58",
+   "name": "Пензенская область",
+   "totals": {
+    "povar": 136,
+    "konditer": 88,
+    "pekar": 76,
+    "ofitsiant": 11,
+    "barmen": 2,
+    "administrator": 176,
+    "kassir": 411,
+    "prodavets": 461,
+    "kurer": 46,
+    "voditel": 260,
+    "uborshchik": 203,
+    "svarshchik": 11,
+    "tokar": 29,
+    "gruzchik": 95,
+    "slesar": 264
+   }
+  },
+  {
+   "fnsCode": "59",
+   "name": "Пермский край",
+   "totals": {
+    "povar": 231,
+    "ofitsiant": 13,
+    "konditer": 119,
+    "pekar": 130,
+    "barmen": 5,
+    "kassir": 825,
+    "administrator": 390,
+    "prodavets": 965,
+    "uborshchik": 214,
+    "kurer": 45,
+    "voditel": 447,
+    "gruzchik": 125,
+    "svarshchik": 36,
+    "slesar": 451,
+    "tokar": 44
+   }
+  },
+  {
+   "fnsCode": "60",
+   "name": "Псковская область",
+   "totals": {
+    "povar": 77,
+    "pekar": 31,
+    "konditer": 25,
+    "barmen": 3,
+    "ofitsiant": 5,
+    "administrator": 75,
+    "prodavets": 245,
+    "kassir": 210,
+    "uborshchik": 80,
+    "kurer": 13,
+    "voditel": 103,
+    "slesar": 111,
+    "gruzchik": 26,
+    "svarshchik": 6,
+    "tokar": 7
+   }
+  },
+  {
+   "fnsCode": "61",
+   "name": "Ростовская область",
+   "totals": {
+    "povar": 366,
+    "konditer": 162,
+    "pekar": 180,
+    "barmen": 16,
+    "administrator": 493,
+    "ofitsiant": 53,
+    "kassir": 1251,
+    "voditel": 638,
+    "uborshchik": 394,
+    "kurer": 115,
+    "prodavets": 1501,
+    "gruzchik": 143,
+    "svarshchik": 45,
+    "slesar": 512,
+    "tokar": 59
+   }
+  },
+  {
+   "fnsCode": "62",
+   "name": "Рязанская область",
+   "totals": {
+    "povar": 131,
+    "ofitsiant": 13,
+    "pekar": 77,
+    "konditer": 72,
+    "barmen": 5,
+    "administrator": 159,
+    "prodavets": 486,
+    "kassir": 393,
+    "voditel": 198,
+    "uborshchik": 108,
+    "kurer": 37,
+    "gruzchik": 40,
+    "svarshchik": 14,
+    "slesar": 181,
+    "tokar": 27
+   }
+  },
+  {
+   "fnsCode": "63",
+   "name": "Самарская область",
+   "totals": {
+    "povar": 324,
+    "barmen": 14,
+    "konditer": 165,
+    "pekar": 174,
+    "ofitsiant": 35,
+    "prodavets": 1150,
+    "uborshchik": 457,
+    "administrator": 495,
+    "kassir": 991,
+    "voditel": 793,
+    "kurer": 101,
+    "svarshchik": 41,
+    "gruzchik": 177,
+    "slesar": 773,
+    "tokar": 85
+   }
+  },
+  {
+   "fnsCode": "64",
+   "name": "Саратовская область",
+   "totals": {
+    "povar": 221,
+    "konditer": 111,
+    "pekar": 122,
+    "ofitsiant": 11,
+    "barmen": 2,
+    "administrator": 428,
+    "prodavets": 962,
+    "kassir": 824,
+    "uborshchik": 234,
+    "kurer": 35,
+    "voditel": 456,
+    "gruzchik": 151,
+    "svarshchik": 14,
+    "slesar": 371,
+    "tokar": 37
+   }
+  },
+  {
+   "fnsCode": "65",
+   "name": "Сахалинская область",
+   "totals": {
+    "povar": 69,
+    "konditer": 9,
+    "pekar": 12,
+    "ofitsiant": 4,
+    "barmen": 3,
+    "administrator": 30,
+    "prodavets": 58,
+    "voditel": 122,
+    "kassir": 49,
+    "uborshchik": 70,
+    "kurer": 2,
+    "slesar": 98,
+    "gruzchik": 17,
+    "svarshchik": 9,
+    "tokar": 5
+   }
+  },
+  {
+   "fnsCode": "66",
+   "name": "Свердловская область",
+   "totals": {
+    "konditer": 276,
+    "povar": 668,
+    "pekar": 306,
+    "ofitsiant": 30,
+    "prodavets": 2000,
+    "administrator": 813,
+    "kassir": 1651,
+    "uborshchik": 660,
+    "barmen": 9,
+    "kurer": 146,
+    "voditel": 750,
+    "gruzchik": 358,
+    "svarshchik": 36,
+    "slesar": 823,
+    "tokar": 120
+   }
+  },
+  {
+   "fnsCode": "67",
+   "name": "Смоленская область",
+   "totals": {
+    "povar": 164,
+    "konditer": 69,
+    "ofitsiant": 9,
+    "pekar": 73,
+    "barmen": 1,
+    "prodavets": 404,
+    "kassir": 401,
+    "administrator": 108,
+    "gruzchik": 57,
+    "uborshchik": 161,
+    "kurer": 9,
+    "voditel": 292,
+    "svarshchik": 15,
+    "slesar": 196,
+    "tokar": 35
+   }
+  },
+  {
+   "fnsCode": "68",
+   "name": "Тамбовская область",
+   "totals": {
+    "konditer": 44,
+    "ofitsiant": 2,
+    "pekar": 44,
+    "povar": 109,
+    "barmen": 1,
+    "administrator": 99,
+    "prodavets": 321,
+    "uborshchik": 159,
+    "kassir": 324,
+    "kurer": 19,
+    "svarshchik": 10,
+    "gruzchik": 52,
+    "voditel": 320,
+    "slesar": 283,
+    "tokar": 38
+   }
+  },
+  {
+   "fnsCode": "69",
+   "name": "Тверская область",
+   "totals": {
+    "povar": 128,
+    "konditer": 61,
+    "pekar": 65,
+    "ofitsiant": 39,
+    "administrator": 205,
+    "barmen": 12,
+    "kassir": 447,
+    "prodavets": 561,
+    "voditel": 250,
+    "gruzchik": 41,
+    "uborshchik": 149,
+    "kurer": 49,
+    "svarshchik": 18,
+    "slesar": 247,
+    "tokar": 24
+   }
+  },
+  {
+   "fnsCode": "70",
+   "name": "Томская область",
+   "totals": {
+    "povar": 133,
+    "pekar": 41,
+    "konditer": 32,
+    "ofitsiant": 7,
+    "barmen": 4,
+    "administrator": 58,
+    "kassir": 184,
+    "prodavets": 234,
+    "uborshchik": 121,
+    "kurer": 13,
+    "tokar": 19,
+    "voditel": 240,
+    "gruzchik": 26,
+    "slesar": 175,
+    "svarshchik": 16
+   }
+  },
+  {
+   "fnsCode": "71",
+   "name": "Тульская область",
+   "totals": {
+    "konditer": 91,
+    "pekar": 90,
+    "povar": 234,
+    "kassir": 494,
+    "administrator": 266,
+    "ofitsiant": 16,
+    "prodavets": 576,
+    "barmen": 3,
+    "uborshchik": 273,
+    "kurer": 49,
+    "voditel": 374,
+    "tokar": 55,
+    "gruzchik": 94,
+    "svarshchik": 20,
+    "slesar": 383
+   }
+  },
+  {
+   "fnsCode": "72",
+   "name": "Тюменская область",
+   "totals": {
+    "povar": 193,
+    "konditer": 72,
+    "ofitsiant": 23,
+    "pekar": 90,
+    "kassir": 607,
+    "administrator": 295,
+    "barmen": 6,
+    "prodavets": 721,
+    "uborshchik": 163,
+    "voditel": 283,
+    "gruzchik": 84,
+    "svarshchik": 12,
+    "slesar": 168,
+    "kurer": 43,
+    "tokar": 10
+   }
+  },
+  {
+   "fnsCode": "73",
+   "name": "Ульяновская область",
+   "totals": {
+    "povar": 162,
+    "konditer": 60,
+    "ofitsiant": 17,
+    "administrator": 155,
+    "pekar": 79,
+    "prodavets": 478,
+    "kassir": 416,
+    "barmen": 7,
+    "uborshchik": 215,
+    "kurer": 25,
+    "voditel": 296,
+    "svarshchik": 17,
+    "tokar": 28,
+    "gruzchik": 84,
+    "slesar": 282
+   }
+  },
+  {
+   "fnsCode": "74",
+   "name": "Челябинская область",
+   "totals": {
+    "povar": 370,
+    "konditer": 174,
+    "pekar": 186,
+    "ofitsiant": 21,
+    "barmen": 8,
+    "administrator": 509,
+    "prodavets": 1096,
+    "kassir": 929,
+    "uborshchik": 402,
+    "kurer": 84,
+    "voditel": 458,
+    "gruzchik": 219,
+    "slesar": 575,
+    "svarshchik": 48,
+    "tokar": 74
+   }
+  },
+  {
+   "fnsCode": "75",
+   "name": "Забайкальский край",
+   "totals": {
+    "povar": 167,
+    "konditer": 47,
+    "pekar": 48,
+    "ofitsiant": 30,
+    "administrator": 94,
+    "barmen": 4,
+    "kassir": 132,
+    "kurer": 24,
+    "prodavets": 153,
+    "uborshchik": 145,
+    "voditel": 289,
+    "svarshchik": 21,
+    "gruzchik": 64,
+    "tokar": 14,
+    "slesar": 251
+   }
+  },
+  {
+   "fnsCode": "76",
+   "name": "Ярославская область",
+   "totals": {
+    "povar": 175,
+    "konditer": 90,
+    "pekar": 97,
+    "ofitsiant": 30,
+    "barmen": 7,
+    "administrator": 146,
+    "kassir": 530,
+    "prodavets": 628,
+    "uborshchik": 180,
+    "kurer": 51,
+    "voditel": 186,
+    "gruzchik": 49,
+    "svarshchik": 11,
+    "slesar": 215,
+    "tokar": 25
+   }
+  },
+  {
+   "fnsCode": "77",
+   "name": "Москва",
+   "totals": {
+    "pekar": 553,
+    "konditer": 556,
+    "povar": 1304,
+    "ofitsiant": 159,
+    "barmen": 50,
+    "administrator": 3157,
+    "kassir": 3726,
+    "voditel": 390,
+    "uborshchik": 343,
+    "kurer": 928,
+    "prodavets": 4389,
+    "gruzchik": 1326,
+    "svarshchik": 48,
+    "slesar": 405,
+    "tokar": 28
+   }
+  },
+  {
+   "fnsCode": "78",
+   "name": "Санкт-Петербург",
+   "totals": {
+    "povar": 702,
+    "konditer": 143,
+    "pekar": 159,
+    "ofitsiant": 40,
+    "barmen": 13,
+    "administrator": 516,
+    "prodavets": 1605,
+    "kassir": 1243,
+    "uborshchik": 733,
+    "gruzchik": 92,
+    "kurer": 208,
+    "svarshchik": 28,
+    "slesar": 507,
+    "voditel": 321,
+    "tokar": 66
+   }
+  },
+  {
+   "fnsCode": "79",
+   "name": "Еврейская автономная область",
+   "totals": {
+    "povar": 119,
+    "konditer": 12,
+    "pekar": 13,
+    "ofitsiant": 5,
+    "barmen": 0,
+    "administrator": 26,
+    "kassir": 21,
+    "prodavets": 26,
+    "uborshchik": 24,
+    "kurer": 5,
+    "voditel": 61,
+    "slesar": 105,
+    "svarshchik": 7,
+    "gruzchik": 3,
+    "tokar": 6
+   }
+  },
+  {
+   "fnsCode": "83",
+   "name": "Ненецкий автономный округ",
+   "totals": {
+    "konditer": 0,
+    "pekar": 1,
+    "povar": 2,
+    "ofitsiant": 0,
+    "barmen": 0,
+    "administrator": 2,
+    "kassir": 1,
+    "prodavets": 3,
+    "uborshchik": 3,
+    "kurer": 0,
+    "voditel": 21,
+    "gruzchik": 0,
+    "svarshchik": 1,
+    "slesar": 6,
+    "tokar": 1
+   }
+  },
+  {
+   "fnsCode": "86",
+   "name": "Ханты-Мансийский Автономный округ - Югра автономный округ",
+   "totals": {
+    "povar": 187,
+    "konditer": 77,
+    "pekar": 91,
+    "ofitsiant": 11,
+    "barmen": 1,
+    "administrator": 178,
+    "kassir": 494,
+    "prodavets": 604,
+    "uborshchik": 184,
+    "voditel": 526,
+    "gruzchik": 40,
+    "kurer": 57,
+    "svarshchik": 16,
+    "slesar": 401,
+    "tokar": 36
+   }
+  },
+  {
+   "fnsCode": "87",
+   "name": "Чукотский автономный округ",
+   "totals": {
+    "povar": 16,
+    "konditer": 1,
+    "pekar": 1,
+    "barmen": 1,
+    "administrator": 2,
+    "prodavets": 3,
+    "uborshchik": 13,
+    "ofitsiant": 2,
+    "kassir": 3,
+    "kurer": 7,
+    "voditel": 38,
+    "gruzchik": 6,
+    "svarshchik": 3,
+    "slesar": 36,
+    "tokar": 3
+   }
+  },
+  {
+   "fnsCode": "89",
+   "name": "Ямало-Ненецкий автономный округ",
+   "totals": {
+    "pekar": 34,
+    "konditer": 30,
+    "povar": 113,
+    "ofitsiant": 3,
+    "barmen": 0,
+    "administrator": 56,
+    "kassir": 174,
+    "uborshchik": 86,
+    "voditel": 212,
+    "kurer": 21,
+    "prodavets": 230,
+    "gruzchik": 22,
+    "svarshchik": 13,
+    "slesar": 213,
+    "tokar": 8
+   }
+  },
+  {
+   "fnsCode": "90",
+   "name": "Запорожская область",
+   "totals": {
+    "povar": 22,
+    "ofitsiant": 3,
+    "pekar": 2,
+    "konditer": 0,
+    "barmen": 2,
+    "administrator": 24,
+    "kassir": 12,
+    "prodavets": 19,
+    "uborshchik": 49,
+    "kurer": 3,
+    "voditel": 231,
+    "gruzchik": 10,
+    "svarshchik": 4,
+    "slesar": 62,
+    "tokar": 5
+   }
+  },
+  {
+   "fnsCode": "91",
+   "name": "Республика Крым",
+   "totals": {
+    "povar": 121,
+    "ofitsiant": 26,
+    "barmen": 4,
+    "konditer": 3,
+    "administrator": 57,
+    "pekar": 9,
+    "prodavets": 48,
+    "kassir": 49,
+    "kurer": 4,
+    "uborshchik": 246,
+    "voditel": 208,
+    "svarshchik": 16,
+    "slesar": 288,
+    "gruzchik": 41,
+    "tokar": 19
+   }
+  },
+  {
+   "fnsCode": "92",
+   "name": "Севастополь",
+   "totals": {
+    "povar": 28,
+    "pekar": 2,
+    "konditer": 0,
+    "ofitsiant": 0,
+    "administrator": 7,
+    "barmen": 1,
+    "kassir": 22,
+    "uborshchik": 51,
+    "prodavets": 22,
+    "voditel": 29,
+    "kurer": 1,
+    "gruzchik": 1,
+    "svarshchik": 3,
+    "tokar": 4,
+    "slesar": 50
+   }
+  },
+  {
+   "fnsCode": "93",
+   "name": "Республика Донецкая Народная",
+   "totals": {
+    "povar": 126,
+    "konditer": 19,
+    "pekar": 7,
+    "ofitsiant": 3,
+    "barmen": 1,
+    "administrator": 70,
+    "kassir": 25,
+    "prodavets": 30,
+    "uborshchik": 267,
+    "svarshchik": 15,
+    "gruzchik": 64,
+    "kurer": 6,
+    "voditel": 352,
+    "slesar": 566,
+    "tokar": 38
+   }
+  },
+  {
+   "fnsCode": "94",
+   "name": "Республика Луганская Народная",
+   "totals": {
+    "povar": 100,
+    "konditer": 5,
+    "barmen": 5,
+    "ofitsiant": 5,
+    "pekar": 24,
+    "kassir": 14,
+    "administrator": 25,
+    "prodavets": 22,
+    "kurer": 0,
+    "uborshchik": 170,
+    "tokar": 16,
+    "slesar": 153,
+    "svarshchik": 6,
+    "voditel": 255,
+    "gruzchik": 26
+   }
+  },
+  {
+   "fnsCode": "95",
+   "name": "Херсонская область",
+   "totals": {
+    "konditer": 0,
+    "pekar": 0,
+    "povar": 2,
+    "ofitsiant": 0,
+    "administrator": 5,
+    "barmen": 0,
+    "kurer": 1,
+    "prodavets": 0,
+    "uborshchik": 8,
+    "kassir": 5,
+    "voditel": 25,
+    "svarshchik": 0,
+    "slesar": 16,
+    "gruzchik": 0,
+    "tokar": 0
+   }
+  },
+  {
+   "fnsCode": "98",
+   "name": "Сириус федеральная территория",
+   "totals": {
+    "povar": 0,
+    "konditer": 0,
+    "pekar": 0,
+    "ofitsiant": 0,
+    "prodavets": 0,
+    "kassir": 0,
+    "barmen": 0,
+    "administrator": 0,
+    "uborshchik": 0,
+    "kurer": 0,
+    "voditel": 0,
+    "gruzchik": 0,
+    "svarshchik": 0,
+    "tokar": 0,
+    "slesar": 0
+   }
+  },
+  {
+   "fnsCode": "99",
+   "name": "Байконур",
+   "totals": {
+    "pekar": 1,
+    "povar": 1,
+    "konditer": 0,
+    "ofitsiant": 0,
+    "administrator": 2,
+    "barmen": 0,
+    "kassir": 2,
+    "prodavets": 2,
+    "uborshchik": 1,
+    "voditel": 2,
+    "gruzchik": 1,
+    "kurer": 0,
+    "svarshchik": 0,
+    "slesar": 8,
+    "tokar": 1
+   }
+  }
+ ]
+}
