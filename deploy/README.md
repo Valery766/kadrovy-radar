@@ -11,4 +11,4 @@
 Откат: `ln -sfn /srv/stavka/releases/<прежний> /srv/stavka/current && sudo systemctl restart stavka`.
 
 ## Локально / у проверяющих
-`docker compose up --build` — см. README в корне.
+`docker compose up --build` – см. README в корне.
