@@ -7,15 +7,21 @@ import { Keyboard } from '@maxhub/max-bot-api';
 import type { Db, VacancyRow } from '../db/index.js';
 import { castVote, closeVacancy, deactivateSubscription, findResponseByCandidate, getCard, getUser, getVacancy, listResponsesByVacancy, listUserSubscriptions, listVacanciesByUser, putResponse, updateUser, upsertUser, upsertSubscription } from '../db/index.js';
 import { buildMarket, getProfile, MarketError, type MarketContext, type MarketResult } from '../services/market.js';
+import { buildStaffAssessment, MAX_STAFF_POSITIONS } from '../services/staff.js';
+import { compareRegions } from '../services/regions.js';
+import { MAX_DIGEST_PROFESSIONS, regionDigest } from '../services/region-digest.js';
 import { sendReportToChat, type ReportContext } from '../services/report.js';
 import {
   createVacancyFromCard, EXPERIENCE_LABEL, inboxButton, phoneFromVcf, renderVacancyQr, responseSummary,
   scoreResponse, sendToUser, verifyContactSignature,
   type CandidateAnswers, type ExperienceKey, type HiringContext,
 } from '../services/hiring.js';
-import { buildVacancyDraft, formatRub, normalizeText, type Pack } from '../core/index.js';
+import { buildVacancyDraft, formatRub, normalizeText, pluralRu, type Pack, type Profession } from '../core/index.js';
 import { isValidInn } from '../integrations/rmsp.js';
-import { regionByFnsCode, selectPack, type PackCatalog } from '../packs/loader.js';
+import {
+  isCustomProfessionKey, regionByFnsCode, resolveProfession, selectPack, suggestProfessions,
+  type PackCatalog, type RegionInfo,
+} from '../packs/loader.js';
 import * as T from './texts.js';
 import { randomUUID } from 'node:crypto';
 
@@ -29,12 +35,21 @@ export interface BotDeps {
   log: { info: (o: object, msg?: string) => void; warn: (o: object, msg?: string) => void; error: (o: object, msg?: string) => void };
 }
 
-type Step = 'idle' | 'inn' | 'region' | 'profession' | 'salary' | 'apply_exp' | 'apply_schedule' | 'apply_salary' | 'apply_phone';
+type Step = 'idle' | 'inn' | 'region' | 'profession' | 'salary' | 'staff' | 'regions' | 'regions_prof'
+  | 'apply_exp' | 'apply_schedule' | 'apply_salary' | 'apply_phone';
 interface State {
   step?: Step;
   professionKey?: string;
   regionFnsCode?: string | null;
   lastCardId?: string;
+  /** Тексты своих должностей по ключу «custom:<slug>»: из ключа текст не восстановить (это хеш). */
+  professionTexts?: Record<string, string>;
+  /** Собираемый список штата: строки «должность — ставка». */
+  staffRows?: { title: string; salary: number }[];
+  /** Должность, по которой идёт сравнение регионов. */
+  regionsProfessionKey?: string;
+  /** Что продолжить, когда пользователь назовёт регион. */
+  pending?: 'staff' | 'digest';
   /** Кандидатский контур: вакансия, по которой идёт отклик, и накопленные ответы. */
   vacancyId?: string;
   answers?: Partial<CandidateAnswers>;
@@ -44,11 +59,55 @@ const COMMANDS = [
   { name: 'start', description: 'Начать' },
   { name: 'stavka', description: 'Проверить ставку по должности' },
   { name: 'profile', description: 'Указать ИНН бизнеса' },
+  { name: 'staff', description: 'Мой штат: кто отстаёт от рынка' },
+  { name: 'regions', description: 'Сравнить регионы по должности' },
+  { name: 'digest', description: 'Сводка по рынку региона' },
   { name: 'vacancies', description: 'Мои вакансии и отклики' },
   { name: 'demo', description: 'Показать на примере' },
   { name: 'subs', description: 'Мои подписки на рынок' },
   { name: 'help', description: 'Как это работает' },
 ];
+
+/** Сколько регионов сравниваем из чата: больше — и таблица не читается, и ждать дольше минуты. */
+const BOT_MAX_REGIONS = 4;
+/** Сколько профессий берём в сводку из чата (в API — до MAX_DIGEST_PROFESSIONS). */
+const BOT_DIGEST_PROFESSIONS = Math.min(8, MAX_DIGEST_PROFESSIONS);
+/** Ограничение MAX на длину сообщения. */
+const MAX_MESSAGE_LENGTH = 4000;
+/** Пауза между сообщениями: MAX принимает не больше двух сообщений в секунду на чат. */
+const MESSAGE_PAUSE_MS = 600;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+
+/** Режет длинный текст по границам строк, не разрывая сообщение посередине слова без нужды. */
+export function splitText(text: string, limit = MAX_MESSAGE_LENGTH): string[] {
+  const out: string[] = [];
+  let buf = '';
+  for (const line of text.split('\n')) {
+    const pieces = line.length <= limit ? [line] : (line.match(new RegExp(`.{1,${limit}}`, 'gsu')) ?? [line]);
+    for (const piece of pieces) {
+      if (buf && buf.length + 1 + piece.length > limit) { out.push(buf); buf = piece; }
+      else buf = buf ? `${buf}\n${piece}` : piece;
+    }
+  }
+  if (buf) out.push(buf);
+  return out.length ? out : [''];
+}
+
+/**
+ * Строка штата «повар 60000» → должность и ставка. Ставка — последнее число строки,
+ * всё до него — название должности («повар 5 разряда — 60 тыс» тоже разбирается).
+ */
+export function parseStaffLine(line: string): { title: string; salary: number } | null {
+  const t = line.trim().replace(/\s+/g, ' ');
+  if (!t) return null;
+  const m = /^(.*?)[\s,;:—–-]*((?:\d[\d\s]*)(?:[.,]\d+)?\s*(?:тыс\.?|т\.?\s?р\.?|к|k)?)\s*(?:руб\.?|₽|р\.?)?$/iu.exec(t);
+  if (!m) return null;
+  const title = (m[1] ?? '').replace(/[,;:—–-]+$/u, '').trim();
+  const salary = parseSalary(m[2] ?? '');
+  if (!title || salary === null || salary === 'none') return null;
+  return { title, salary };
+}
 
 export function findRegion(catalog: PackCatalog, text: string) {
   const t = normalizeText(text);
@@ -72,6 +131,18 @@ export function findProfession(catalog: PackCatalog, pack: Pack, text: string) {
   return pool.find((p) => normalizeText(p.title) === t || p.synonyms.some((s) => t === normalizeText(s)))
     ?? pool.find((p) => p.synonyms.some((s) => t.includes(normalizeText(s))) && !p.exclude.some((e) => t.includes(normalizeText(e))))
     ?? null;
+}
+
+/** Список регионов из текста «СПб, Татарстан, Москва»: узнанные субъекты и то, что распознать не вышло. */
+export function parseRegionList(catalog: PackCatalog, text: string, limit: number): { regions: RegionInfo[]; unknown: string[] } {
+  const regions: RegionInfo[] = [];
+  const unknown: string[] = [];
+  for (const part of text.split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean)) {
+    const r = findRegion(catalog, part);
+    if (!r) { unknown.push(part); continue; }
+    if (!regions.some((x) => x.fnsCode === r.fnsCode)) regions.push(r);
+  }
+  return { regions: regions.slice(0, limit), unknown };
 }
 
 function parseSalary(text: string): number | null | 'none' {
@@ -102,6 +173,25 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const msg = ctx.message as { recipient?: { chat_type?: string } } | undefined;
     const isDialog = msg?.recipient?.chat_type ? msg.recipient.chat_type === 'dialog' : ctx.updateType === 'bot_started';
     return upsertUser(db, { maxUserId: uid, name: u?.first_name ?? null, username: u?.username ?? null, chatId: isDialog ? (ctx.chatId ?? null) : null });
+  };
+
+  type ReplyExtra = Parameters<Context['reply']>[1];
+
+  /** Длинный текст: режем по 4000 символов и держим паузу — лимит MAX 2 сообщения в секунду на чат. */
+  const replyLong = async (ctx: Context, text: string, extra?: ReplyExtra): Promise<void> => {
+    const parts = splitText(text);
+    for (const [i, part] of parts.entries()) {
+      const last = i === parts.length - 1;
+      await ctx.reply(part, last ? extra : undefined);
+      if (!last) await sleep(MESSAGE_PAUSE_MS);
+    }
+  };
+
+  /** Запоминаем тексты своих должностей: по ключу «custom:<slug>» название не восстановить. */
+  const rememberProfessionTexts = (uid: number, items: { key: string; text: string }[]) => {
+    const texts = { ...state(uid).professionTexts };
+    for (const it of items) if (isCustomProfessionKey(it.key)) texts[it.key] = it.text;
+    setState(uid, { professionTexts: Object.fromEntries(Object.entries(texts).slice(-20)) });
   };
 
   const packFor = (uid: number): Pack => {
@@ -148,16 +238,33 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     }
   }
 
+  /** Профессия по ключу: пакет → общий каталог → сохранённый текст своей должности. */
+  const professionByKey = (uid: number, key: string): Profession | null => {
+    const pack = packFor(uid);
+    const known = pack.professions.find((p) => p.key === key) ?? catalog.professions.find((p) => p.key === key);
+    if (known) return known;
+    if (!isCustomProfessionKey(key)) return null;
+    const text = state(uid).professionTexts?.[key];
+    return text ? resolveProfession(catalog, pack, text) : null;
+  };
+
   async function runMarket(ctx: Context, uid: number, offer: number | null, override?: { inn: string | null; regionFnsCode: string | null; professionKey: string }) {
     const st = state(uid);
     const u = getUser(db, uid)!;
     const professionKey = override?.professionKey ?? st.professionKey;
     if (!professionKey) { await startFlow(ctx, uid); return; }
     if (!override && !u.regionFnsCode && !u.inn) { setState(uid, { step: 'region' }); await ctx.reply('Сначала регион: напишите его название (например, «Санкт-Петербург») или укажите ИНН через /profile.'); return; }
+    // Своя должность живёт только текстом в состоянии: без него ядро не знает, что запрашивать у источника.
+    const profession = isCustomProfessionKey(professionKey) ? professionByKey(uid, professionKey) : null;
+    if (isCustomProfessionKey(professionKey) && !profession) {
+      setState(uid, { step: 'profession' });
+      await ctx.reply('Потерял название вашей должности — напишите её ещё раз или выберите из списка.', { attachments: [T.professionKeyboard(packFor(uid))] });
+      return;
+    }
     await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
     const waiting = await ctx.reply('Считаю: запрашиваю вакансии на «Работе России» и сверяю работодателей с реестром МСП. Обычно это 10–40 секунд…');
     try {
-      const result = await buildMarket(deps.market, { professionKey, regionFnsCode: override ? override.regionFnsCode : (u.regionFnsCode ?? null), inn: override ? override.inn : (u.inn ?? null), offer, maxUserId: uid });
+      const result = await buildMarket(deps.market, { professionKey, profession, regionFnsCode: override ? override.regionFnsCode : (u.regionFnsCode ?? null), inn: override ? override.inn : (u.inn ?? null), offer, maxUserId: uid });
       setState(uid, { step: 'idle', lastCardId: result.cardId });
       await ctx.api.editMessage(waiting.body.mid, { text: T.cardText(result), attachments: [T.cardKeyboard(result, deps.botUsername)] }).catch(async () => {
         await ctx.reply(T.cardText(result), { attachments: [T.cardKeyboard(result, deps.botUsername)] });
@@ -167,6 +274,142 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       log.error({ err: String(err) }, 'market failed');
       setState(uid, { step: 'idle' });
       await ctx.reply(`Не получилось: ${msg}. Нажмите «Повторить» или начните заново командой /stavka.`, { attachments: [Keyboard.inlineKeyboard([[Keyboard.button.callback('Повторить', `retry:${offer ?? 'none'}`)]])] });
+    }
+  }
+
+  /* ---------- свободный ввод должности ---------- */
+
+  /**
+   * Должность текстом: сначала каталог пакета, затем подсказки из справочника ОКПДТР,
+   * и в конце — расчёт по названию пользователя (профессия «custom:<slug>»).
+   * Возвращает false, если из текста не вышло ни одной должности.
+   * onlyKnown — для случайной реплики вне шага «должность»: без совпадений в справочниках
+   * не предлагаем считать рынок по чему попало.
+   */
+  async function handleProfessionText(ctx: Context, uid: number, text: string, opts: { onlyKnown?: boolean } = {}): Promise<boolean> {
+    const pack = packFor(uid);
+    const known = findProfession(catalog, pack, text);
+    if (known) {
+      setState(uid, { step: 'salary', professionKey: known.key });
+      await ctx.reply(T.askSalaryText(known.title));
+      return true;
+    }
+    const own = resolveProfession(catalog, pack, text);
+    if (!own) return false;
+    if (!isCustomProfessionKey(own.key)) {
+      setState(uid, { step: 'salary', professionKey: own.key });
+      await ctx.reply(T.askSalaryText(own.title));
+      return true;
+    }
+    const suggestions = suggestProfessions(catalog, text, 3);
+    if (opts.onlyKnown && suggestions.length === 0) return false;
+    rememberProfessionTexts(uid, [{ key: own.key, text: own.query }, ...suggestions.map((x) => ({ key: x.key, text: x.title }))]);
+    setState(uid, { step: 'profession' });
+    await ctx.reply(T.professionSuggestText(own.title, suggestions), { attachments: [T.professionSuggestKeyboard(own, suggestions)] });
+    return true;
+  }
+
+  /* ---------- штат ---------- */
+
+  async function startStaff(ctx: Context, uid: number) {
+    const u = getUser(db, uid);
+    if (!u?.regionFnsCode && !u?.inn) {
+      setState(uid, { step: 'region', pending: 'staff' });
+      await ctx.reply('Сначала регион: напишите его название (например, «Санкт-Петербург») или укажите ИНН через /profile.');
+      return;
+    }
+    setState(uid, { step: 'staff', staffRows: [] });
+    await ctx.reply(T.staffIntroText(regionByFnsCode(catalog, u?.regionFnsCode ?? null)?.name ?? null));
+  }
+
+  /** Оценка собранного штата: рынки по каждой должности, текст сводки и кнопка в мини-приложение. */
+  async function runStaff(ctx: Context, uid: number) {
+    const rows = state(uid).staffRows ?? [];
+    if (!rows.length) { await ctx.reply('Список пуст: пришлите хотя бы одну строку вида «повар 60000».'); return; }
+    const u = getUser(db, uid)!;
+    await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
+    await ctx.reply(`Считаю рынок по ${rows.length} ${pluralRu(rows.length, 'должности', 'должностям', 'должностям')}: запрашиваю вакансии и сверяю работодателей с реестром МСП. Это может занять до минуты…`);
+    try {
+      const result = await buildStaffAssessment(deps.market, {
+        positions: rows.map((r, i) => ({ id: `p${i + 1}`, title: r.title, salary: r.salary })),
+        inn: u.inn ?? null,
+        regionFnsCode: u.regionFnsCode ?? null,
+        maxUserId: uid,
+      });
+      setState(uid, { step: 'idle', staffRows: undefined });
+      await replyLong(ctx, result.text, { attachments: [T.staffKeyboard(deps.botUsername)] });
+    } catch (err) {
+      const msg = err instanceof MarketError ? err.message : 'что-то пошло не так';
+      log.error({ err: String(err) }, 'staff failed');
+      setState(uid, { step: 'staff' });
+      await ctx.reply(`Не получилось посчитать штат: ${msg}. Список сохранён — напишите «готово», чтобы повторить.`);
+    }
+  }
+
+  /* ---------- сравнение регионов ---------- */
+
+  async function startRegions(ctx: Context, uid: number) {
+    const st = state(uid);
+    const card = st.lastCardId ? getCard<MarketResult>(db, st.lastCardId) : null;
+    const prof = card?.payload.profession;
+    if (prof) {
+      rememberProfessionTexts(uid, [{ key: prof.key, text: prof.query }]);
+      setState(uid, { step: 'regions', regionsProfessionKey: prof.key });
+      await ctx.reply(T.askRegionsText(prof.title, BOT_MAX_REGIONS));
+      return;
+    }
+    setState(uid, { step: 'regions_prof' });
+    await ctx.reply(T.askRegionsProfessionText);
+  }
+
+  async function runRegions(ctx: Context, uid: number, profession: Profession, regions: RegionInfo[], unknown: string[]) {
+    await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
+    await ctx.reply(`Сравниваю «${profession.title}»: ${regions.map((r) => r.name).join(', ')}. Это может занять до минуты…`);
+    try {
+      const st = state(uid);
+      const card = st.lastCardId ? getCard<MarketResult>(db, st.lastCardId) : null;
+      const offer = card?.payload.profession.key === profession.key ? card.payload.card.offer?.value ?? null : null;
+      const result = await compareRegions(deps.market, {
+        profession,
+        regionFnsCodes: regions.map((r) => r.fnsCode),
+        offer,
+        maxUserId: uid,
+        inn: null,
+        persist: false,
+      });
+      setState(uid, { step: 'idle' });
+      const tail = unknown.length ? `\n\nНе узнал регионы: ${unknown.join(', ')}.` : '';
+      await replyLong(ctx, result.text + tail, { attachments: [T.regionsKeyboard(deps.botUsername)] });
+    } catch (err) {
+      const msg = err instanceof MarketError ? err.message : 'что-то пошло не так';
+      log.error({ err: String(err) }, 'regions failed');
+      setState(uid, { step: 'regions' });
+      await ctx.reply(`Не получилось сравнить регионы: ${msg}. Пришлите список регионов ещё раз или начните заново: /regions.`);
+    }
+  }
+
+  /* ---------- сводка по региону (партнёрам) ---------- */
+
+  async function runDigest(ctx: Context, uid: number) {
+    const u = getUser(db, uid);
+    const region = regionByFnsCode(catalog, u?.regionFnsCode ?? null);
+    if (!region) {
+      setState(uid, { step: 'region', pending: 'digest' });
+      await ctx.reply('Сначала регион: напишите название субъекта РФ (например, «Татарстан») или укажите ИНН через /profile.');
+      return;
+    }
+    const pack = packFor(uid);
+    const keys = pack.professions.slice(0, BOT_DIGEST_PROFESSIONS).map((p) => p.key);
+    await ctx.api.sendAction(ctx.chatId!, 'typing_on').catch(() => undefined);
+    await ctx.reply(`Собираю сводку по региону «${region.name}»: ${keys.length} ${pluralRu(keys.length, 'профессия', 'профессии', 'профессий')} пакета «${pack.title}». Это может занять до минуты…`);
+    try {
+      const result = await regionDigest(deps.market, region.fnsCode, keys, { persist: false });
+      setState(uid, { step: 'idle' });
+      await replyLong(ctx, result.text, { attachments: [T.digestKeyboard(deps.botUsername)] });
+    } catch (err) {
+      const msg = err instanceof MarketError ? err.message : 'что-то пошло не так';
+      log.error({ err: String(err) }, 'digest failed');
+      await ctx.reply(`Не получилось собрать сводку: ${msg}. Попробуйте ещё раз: /digest.`);
     }
   }
 
@@ -256,10 +499,22 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     setState(uid, { lastCardId: cardId });
   }
 
+  /** Веб-клиент MAX иногда шлёт `bot_started` дважды за одно открытие ссылки — повтор с тем же payload в течение 90 с игнорируем. */
+  const recentStarts = new Map<string, number>();
+  function isRepeatedStart(uid: number, payload: string | null | undefined): boolean {
+    const key = `${uid}:${payload ?? ''}`;
+    const now = Date.now();
+    const last = recentStarts.get(key);
+    if (recentStarts.size > 2000) for (const [k, t] of recentStarts) if (now - t > 90_000) recentStarts.delete(k);
+    recentStarts.set(key, now);
+    return last !== undefined && now - last < 90_000;
+  }
+
   bot.on('bot_started', async (ctx) => {
     const u = ensureUser(ctx);
     if (!u) return;
     const payload = ctx.startPayload;
+    if (isRepeatedStart(u.maxUserId, payload)) return;
     if (payload && payload.startsWith('card_')) { await sendCardById(ctx, u.maxUserId, payload.slice(5)); return; }
     if (payload && payload.startsWith('vac_')) { await showVacancyToCandidate(ctx, u.maxUserId, payload.slice(4)); return; }
     await ctx.reply(T.welcomeText(u.name), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
@@ -291,9 +546,9 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (payload.startsWith('prof:')) {
       await ack();
       const key = payload.slice(5);
-      const pack = packFor(uid);
-      const prof = pack.professions.find((p) => p.key === key) ?? catalog.professions.find((p) => p.key === key);
+      const prof = professionByKey(uid, key);
       if (!prof) { await ctx.reply('Не нашёл такую должность. Выберите из списка или напишите текстом.'); return; }
+      rememberProfessionTexts(uid, [{ key: prof.key, text: prof.query }]);
       setState(uid, { step: 'salary', professionKey: prof.key });
       await ctx.reply(T.askSalaryText(prof.title));
       return;
@@ -477,6 +732,9 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     }
     if (cmd === 'profile') { setState(uid, { step: 'inn' }); await ctx.reply(T.askInnText()); return; }
     if (cmd === 'stavka') { await startFlow(ctx, uid); return; }
+    if (cmd === 'staff') { await startStaff(ctx, uid); return; }
+    if (cmd === 'regions') { await startRegions(ctx, uid); return; }
+    if (cmd === 'digest') { await runDigest(ctx, uid); return; }
     if (cmd === 'subs') {
       const subs = listUserSubscriptions(db, uid);
       if (!subs.length) { await ctx.reply('Подписок пока нет. Их можно оформить из карточки рынка — кнопка «Следить за рынком».'); return; }
@@ -496,17 +754,55 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         const region = findRegion(catalog, text);
         if (!region) { await ctx.reply('Не узнал регион. Напишите название субъекта РФ, например «Московская область».'); return; }
         updateUser(db, uid, { regionFnsCode: region.fnsCode });
-        setState(uid, { step: 'profession' });
+        const pending = st.pending;
+        setState(uid, { step: 'profession', pending: undefined });
+        if (pending === 'staff') { await startStaff(ctx, uid); return; }
+        if (pending === 'digest') { await runDigest(ctx, uid); return; }
         const pack = packFor(uid);
         await ctx.reply(`Регион: ${region.name}. ${T.askProfessionText(pack)}`, { attachments: [T.professionKeyboard(pack)] });
         return;
       }
       case 'profession': {
+        if (await handleProfessionText(ctx, uid, text)) return;
+        await ctx.reply('Не понял должность. Выберите кнопкой или напишите название, например «повар», «продавец», «сварщик».', { attachments: [T.professionKeyboard(packFor(uid))] });
+        return;
+      }
+      case 'staff': {
+        const t = normalizeText(text);
+        if (/^(отмена|стоп|хватит)$/.test(t)) { setState(uid, { step: 'idle', staffRows: undefined }); await ctx.reply('Отменил. Вернуться к штату — /staff.'); return; }
+        if (/^(готово|готов|все|посчитать|оценить|конец)$/.test(t)) { await runStaff(ctx, uid); return; }
+        const rows = [...(st.staffRows ?? [])];
+        const skipped: string[] = [];
+        let added = 0;
+        for (const line of text.split('\n')) {
+          if (!line.trim()) continue;
+          if (rows.length >= MAX_STAFF_POSITIONS) break;
+          const parsed = parseStaffLine(line);
+          if (!parsed) { skipped.push(line.trim().slice(0, 40)); continue; }
+          rows.push(parsed);
+          added += 1;
+        }
+        setState(uid, { step: 'staff', staffRows: rows });
+        if (!added) { await ctx.reply('Не понял строку. Нужен формат «должность ставка», например «повар 60000». Когда закончите — напишите «готово».'); return; }
+        await ctx.reply(T.staffAddedText(added, rows.length, skipped) + (rows.length >= MAX_STAFF_POSITIONS ? `\nЭто максимум за раз (${MAX_STAFF_POSITIONS} строк) — считаю.` : ''));
+        if (rows.length >= MAX_STAFF_POSITIONS) { await sleep(MESSAGE_PAUSE_MS); await runStaff(ctx, uid); }
+        return;
+      }
+      case 'regions_prof': {
         const pack = packFor(uid);
-        const prof = findProfession(catalog, pack, text);
-        if (!prof) { await ctx.reply('Не нашёл такую должность в каталоге. Выберите кнопкой или попробуйте другое название (например, «повар», «продавец», «сварщик»).', { attachments: [T.professionKeyboard(pack)] }); return; }
-        setState(uid, { step: 'salary', professionKey: prof.key });
-        await ctx.reply(T.askSalaryText(prof.title));
+        const prof = findProfession(catalog, pack, text) ?? resolveProfession(catalog, pack, text);
+        if (!prof) { await ctx.reply('Не понял должность. Напишите название, например «повар».'); return; }
+        rememberProfessionTexts(uid, [{ key: prof.key, text: prof.query }]);
+        setState(uid, { step: 'regions', regionsProfessionKey: prof.key });
+        await ctx.reply(T.askRegionsText(prof.title, BOT_MAX_REGIONS));
+        return;
+      }
+      case 'regions': {
+        const profession = st.regionsProfessionKey ? professionByKey(uid, st.regionsProfessionKey) : null;
+        if (!profession) { setState(uid, { step: 'regions_prof' }); await ctx.reply(T.askRegionsProfessionText); return; }
+        const { regions, unknown } = parseRegionList(catalog, text, BOT_MAX_REGIONS);
+        if (!regions.length) { await ctx.reply('Не узнал ни одного региона. Напишите их через запятую, например «СПб, Татарстан, Москва».'); return; }
+        await runRegions(ctx, uid, profession, regions, unknown);
         return;
       }
       case 'salary': {
@@ -542,9 +838,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       default: {
         const inn = text.replace(/\D/g, '');
         if ((inn.length === 10 || inn.length === 12) && isValidInn(inn)) { await handleInn(ctx, uid, inn); return; }
-        const pack = packFor(uid);
-        const prof = findProfession(catalog, pack, text);
-        if (prof && (getUser(db, uid)?.regionFnsCode)) { setState(uid, { step: 'salary', professionKey: prof.key }); await ctx.reply(T.askSalaryText(prof.title)); return; }
+        // Регион уже известен — свободный текст считаем должностью (каталог, подсказки ОКПДТР или своя).
+        if (getUser(db, uid)?.regionFnsCode && await handleProfessionText(ctx, uid, text, { onlyKnown: true })) return;
         await ctx.reply('Чтобы проверить ставку, нажмите /stavka. Справка: /help', { attachments: [T.welcomeKeyboard(deps.botUsername)] });
       }
     }

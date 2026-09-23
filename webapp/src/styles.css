@@ -60,7 +60,45 @@ html, body { margin: 0; padding: 0; }
 .sv-progress { height: 6px; background: rgba(47,107,255,.15); border-radius: 3px; overflow: hidden; }
 .sv-progress__bar { height: 100%; width: 40%; background: var(--sv-accent); animation: sv-slide 1.2s infinite ease-in-out; }
 @keyframes sv-slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+
+/* Подсказки по должности (свободный ввод), чипы быстрого выбора */
+.sv-suggest { display: flex; flex-direction: column; border: 1px solid rgba(128,128,128,.25); border-radius: 12px; overflow: hidden; }
+.sv-suggest__item { display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; padding: 10px 12px; background: transparent; border: 0; border-top: 1px solid rgba(128,128,128,.15); color: inherit; font: inherit; cursor: pointer; }
+.sv-suggest__item:first-child { border-top: 0; }
+.sv-suggest__item:hover { background: rgba(47,107,255,.06); }
+.sv-chip { border: 1.5px solid rgba(47,107,255,.25); border-radius: 999px; padding: 6px 12px; background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.sv-chip--active { border-color: var(--sv-accent); background: rgba(47,107,255,.10); color: var(--sv-accent); }
+.sv-linkbtn { display: inline-block; margin-top: 2px; padding: 6px 0; background: transparent; border: 0; font: inherit; font-size: 12px; cursor: pointer; }
+
+/* Штат: строка редактора «должность + ставка + удалить» */
+.sv-staff-row { display: grid; grid-template-columns: 1fr 110px 36px; gap: 8px; align-items: center; }
+.sv-iconbtn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(128,128,128,.3); background: transparent; color: var(--sv-muted); font-size: 20px; line-height: 1; cursor: pointer; }
+
+/* Таблицы штата и регионов */
+.sv-table { display: flex; flex-direction: column; }
+.sv-table__row { display: grid; gap: 8px; align-items: start; padding: 8px 0; border-top: 1px solid rgba(128,128,128,.15); }
+.sv-table__row:first-child { border-top: 0; }
+.sv-table__row--staff { grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); }
+.sv-table__row--regions { grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)); }
+.sv-table__row > div:not(:first-child) { text-align: right; font-size: 13px; }
+.sv-table__head { font-size: 11px; color: var(--sv-muted); text-transform: uppercase; letter-spacing: .02em; }
+.sv-table__head > div:not(:first-child) { font-size: 11px; }
+/* Узкий экран: название занимает всю ширину, числа идут строкой с подписями. */
+@media (max-width: 560px) {
+  .sv-table__head { display: none; }
+  .sv-table__row--staff, .sv-table__row--regions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sv-table__row > div:first-child { grid-column: 1 / -1; }
+  .sv-table__row > div[data-label]::before { content: attr(data-label); display: block; font-size: 10px; font-weight: 400; line-height: 1.2; white-space: normal; color: var(--sv-muted); }
+}
+
+/* Сезонность набора: столбик на неделю */
+.sv-hist--weeks { gap: 1px; height: 84px; }
+.sv-hist--weeks .sv-hist__bar { border-radius: 2px 2px 0 0; }
+.sv-hist__bar--peak { background: #f97316; opacity: 1; }
+.sv-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--sv-muted); margin: 4px 0 6px; }
+
 @media (prefers-color-scheme: dark) {
   :root { --sv-card: var(--background-card, #1f2126); }
   .sv-scale__marker { box-shadow: 0 0 0 2px #1f2126; }
+  .sv-suggest__item:hover { background: rgba(47,107,255,.14); }
 }

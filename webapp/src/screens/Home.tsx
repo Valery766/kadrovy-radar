@@ -10,12 +10,14 @@ interface Props {
   onStart: (prefill?: { inn?: string | null; regionFnsCode?: string | null }) => void;
   onOpenCard: (id: string) => void;
   onInbox: () => void;
+  onStaff: () => void;
+  onRegions: () => void;
   onDemo: (pack: PackRef) => void;
 }
 
 const innValid = (s: string) => /^\d{10}$|^\d{12}$/.test(s);
 
-export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpenCard, onInbox, onDemo }: Props) {
+export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpenCard, onInbox, onStaff, onRegions, onDemo }: Props) {
   const [inn, setInn] = useState(boot.user.inn ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +82,13 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
         <div className="sv-h2">3. Найм</div>
         <div className="sv-muted sv-small">Опубликованные вакансии, отклики кандидатов с баллом совпадения, приглашения и найм. Публикация — из карточки рынка.</div>
         <Button stretched variant="secondary" onClick={onInbox}>Мои вакансии и отклики</Button>
+      </div>
+
+      <div className="sv-card sv-stack">
+        <div className="sv-h2">4. Штат и регионы</div>
+        <div className="sv-muted sv-small">Кто из ваших сотрудников уже ниже рынка и сколько стоит подтянуть до медианы; где в стране эта должность дешевле и где людей больше.</div>
+        <Button stretched variant="secondary" onClick={onStaff}>Мой штат</Button>
+        <Button stretched variant="secondary" onClick={onRegions}>Сравнить регионы</Button>
       </div>
 
       {boot.recentCards.length > 0 && (

@@ -195,14 +195,87 @@ export function vacanciesListText(items: { title: string; responses: number; new
   return lines.join('\n');
 }
 
+/* ---------- свободный ввод должности ---------- */
+
+/** Текст с подсказками, когда должности нет в каталоге: выбор из справочника или расчёт «как есть». */
+export function professionSuggestText(query: string, suggestions: { title: string; source: 'catalog' | 'okpdtr' }[]): string {
+  const lines = [`Должности «${query}» нет в каталоге пакета.`];
+  if (suggestions.length) {
+    lines.push('Похоже на справочник профессий ОКПДТР «Работы России» — выберите готовую позицию или считайте по своему названию:');
+  } else {
+    lines.push('Посчитаю по вашему названию — вакансии найду по этому же тексту.');
+  }
+  return lines.join('\n');
+}
+
+export function professionSuggestKeyboard(own: { key: string; title: string }, suggestions: { key: string; title: string }[]) {
+  const rows: KeyboardRows = suggestions.map((sug) => [Keyboard.button.callback(sug.title.slice(0, 60), `prof:${sug.key}`)]);
+  rows.push([Keyboard.button.callback(`Считать по «${own.title}»`.slice(0, 60), `prof:${own.key}`)]);
+  rows.push([Keyboard.button.callback('Выбрать из списка', 'prof:again')]);
+  return Keyboard.inlineKeyboard(rows);
+}
+
+/* ---------- штат ---------- */
+
+export function staffIntroText(regionName: string | null): string {
+  return [
+    `Оценю ваш штат против рынка${regionName ? ` (${regionName})` : ''}: кто уже ниже медианы и сколько стоит подтянуть.`,
+    '',
+    'Пришлите должности со ставками — по строке на человека, можно несколькими сообщениями или одним списком:',
+    'повар 60000',
+    'официант 45000',
+    'администратор 70 тыс',
+    '',
+    'Когда закончите — напишите «готово». Отменить — «отмена».',
+  ].join('\n');
+}
+
+export function staffAddedText(added: number, total: number, skipped: string[]): string {
+  const lines = [`Записал ${added} ${pluralRu(added, 'строку', 'строки', 'строк')}, всего в списке ${total}.`];
+  if (skipped.length) lines.push(`Не разобрал: ${skipped.slice(0, 3).map((x) => `«${x}»`).join(', ')} — нужна строка вида «повар 60000».`);
+  lines.push('Добавьте ещё или напишите «готово».');
+  return lines.join('\n');
+}
+
+export function staffKeyboard(botUsername: string) {
+  return Keyboard.inlineKeyboard([[Keyboard.button.openApp('Открыть «Мой штат»', botUsername, undefined, 'staff')]]);
+}
+
+/* ---------- сравнение регионов ---------- */
+
+export function askRegionsText(professionTitle: string, limit: number): string {
+  return [
+    `Сравню «${professionTitle}» по регионам: где люди дешевле и где их больше.`,
+    `Напишите до ${limit} регионов через запятую, например «СПб, Татарстан, Москва».`,
+  ].join('\n');
+}
+
+export const askRegionsProfessionText = 'По какой должности сравнить регионы? Напишите название, например «повар» или «обвальщик мяса».';
+
+export function regionsKeyboard(botUsername: string) {
+  return Keyboard.inlineKeyboard([[Keyboard.button.openApp('Открыть сравнение регионов', botUsername, undefined, 'regions')]]);
+}
+
+/* ---------- сводка по региону ---------- */
+
+export function digestKeyboard(botUsername: string) {
+  return Keyboard.inlineKeyboard([[openRadarButton(botUsername, null, 'Открыть радар')]]);
+}
+
 export function helpText(): string {
   return [
     'Команды:',
     '/stavka — проверить ставку по должности и региону',
     '/profile — указать или сменить ИНН бизнеса',
+    '/staff — мой штат: кто отстаёт от рынка и сколько стоит подтянуть',
+    '/regions — сравнить регионы по одной должности',
+    '/digest — сводка по рынку моего региона (для партнёров)',
+    '/vacancies — мои вакансии и отклики',
     '/demo — показать на примере реального микропредприятия',
     '/subs — мои подписки на изменения рынка',
     '/help — эта справка',
+    '',
+    'Должность можно не выбирать кнопкой, а написать текстом — любую, даже редкую: подскажу похожие позиции из справочника ОКПДТР «Работы России» (8 037 профессий) или посчитаю по вашему названию.',
     '',
     'Как считаю: беру живые вакансии портала «Работа России» по вашему региону, убираю дубли и лишние объявления одного работодателя, считаю медиану и перцентили заявленных ставок. Размер каждого работодателя узнаю в реестре МСП ФНС по ИНН. Никакой генерации: каждое число выводимо из источника.',
   ].join('\n');

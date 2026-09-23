@@ -1,11 +1,20 @@
 import { useMemo, useState } from 'react';
 import { Button, Input } from '@maxhub/max-ui';
+import { ProfessionPicker, type ProfessionChoice } from '../components/ProfessionPicker';
 import type { Bootstrap } from '../lib/api';
+
+export interface MarketQuery {
+  inn?: string | null;
+  regionFnsCode?: string | null;
+  professionKey?: string;
+  professionText?: string;
+  offer?: number | null;
+}
 
 interface Props {
   boot: Bootstrap;
-  prefill?: { professionKey?: string; offer?: number | null; inn?: string | null; regionFnsCode?: string | null };
-  onSubmit: (p: { inn?: string | null; regionFnsCode?: string | null; professionKey: string; offer?: number | null }) => void;
+  prefill?: { professionKey?: string; professionTitle?: string; offer?: number | null; inn?: string | null; regionFnsCode?: string | null };
+  onSubmit: (p: MarketQuery) => void;
   onBack: () => void;
 }
 
@@ -17,22 +26,38 @@ export function Query({ boot, prefill, onSubmit, onBack }: Props) {
     const byRegion = boot.packs.filter((p) => p.region?.fnsCode === regionFns);
     return byRegion.find((p) => p.industry && okved && p.industry.okvedPrefixes.some((x) => okved.startsWith(x))) ?? byRegion[0] ?? boot.packs.find((p) => !p.region)!;
   }, [boot, regionFns]);
-  const [professionKey, setProfessionKey] = useState<string>(prefill?.professionKey ?? pack.professions[0]?.key ?? '');
-  const [offer, setOffer] = useState<string>(prefill?.offer ? String(prefill.offer) : '');
-  const [error, setError] = useState<string | null>(null);
 
   const professions = useMemo(() => {
     const seen = new Set<string>();
     return [...pack.professions, ...boot.professions].filter((p) => (seen.has(p.key) ? false : (seen.add(p.key), true)));
   }, [pack, boot.professions]);
 
+  // Начальный выбор считаем один раз: дальше должность ведёт пользователь.
+  const [profession, setProfession] = useState<ProfessionChoice>(() => {
+    const key = prefill?.professionKey ?? null;
+    const found = key ? professions.find((p) => p.key === key) ?? null : null;
+    if (found) return { key: found.key, title: found.title };
+    if (key && prefill?.professionTitle) return { key, title: prefill.professionTitle };
+    const first = professions[0];
+    return first ? { key: first.key, title: first.title } : { key: null, title: '' };
+  });
+  const [offer, setOffer] = useState<string>(prefill?.offer ? String(prefill.offer) : '');
+  const [error, setError] = useState<string | null>(null);
+
   const submit = () => {
     setError(null);
     const o = offer.replace(/\D/g, '');
     const offerNum = o ? Number(o) : null;
     if (offerNum != null && (offerNum < 1000 || offerNum > 5_000_000)) { setError('Ставка — от 1 000 до 5 000 000 ₽ в месяц'); return; }
-    if (!professionKey) { setError('Выберите должность'); return; }
-    onSubmit({ inn, regionFnsCode: regionFns, professionKey, offer: offerNum });
+    const title = profession.title.trim();
+    if (!profession.key && !title) { setError('Выберите должность из списка или напишите её название'); return; }
+    onSubmit({
+      inn,
+      regionFnsCode: regionFns,
+      professionKey: profession.key ?? undefined,
+      professionText: title || undefined,
+      offer: offerNum,
+    });
   };
 
   return (
@@ -40,20 +65,15 @@ export function Query({ boot, prefill, onSubmit, onBack }: Props) {
       <div className="sv-title">Проверить ставку</div>
       <div className="sv-card sv-stack">
         <label className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2">Регион</span>
+          <span className="sv-h2" style={{ margin: 0 }}>Регион</span>
           <select className="sv-select" value={regionFns} onChange={(e) => setRegionFns(e.target.value)}>
             {boot.regions.map((r) => <option key={r.fnsCode} value={r.fnsCode}>{r.name}</option>)}
           </select>
           <span className="sv-muted sv-small">Пакет контекста: {pack.title}</span>
         </label>
+        <ProfessionPicker quick={pack.professions} value={profession} onChange={setProfession} />
         <label className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2">Должность</span>
-          <select className="sv-select" value={professionKey} onChange={(e) => setProfessionKey(e.target.value)}>
-            {professions.map((p) => <option key={p.key} value={p.key}>{p.title}</option>)}
-          </select>
-        </label>
-        <label className="sv-stack" style={{ gap: 6 }}>
-          <span className="sv-h2">Ваша ставка, ₽ в месяц</span>
+          <span className="sv-h2" style={{ margin: 0 }}>Ваша ставка, ₽ в месяц</span>
           <Input inputMode="numeric" placeholder="например 45000" value={offer} onChange={(e) => setOffer(e.target.value)} hint="Оклад до вычета НДФЛ. Можно оставить пустым — покажу рынок без сравнения." />
         </label>
         {error && <div className="sv-banner sv-banner--error">{error}</div>}

@@ -64,3 +64,90 @@ describe('api', () => {
     expect(r.statusCode).toBe(404);
   });
 });
+
+describe('api: свободный ввод должности', () => {
+  it('suggests professions offline: catalog first, then OKPDTR', async () => {
+    expect((await get('/api/professions/suggest?q=повар')).statusCode).toBe(401);
+    const token = (await post('/api/session', {})).json().token as string;
+    const r = await get('/api/professions/suggest?q=повар&limit=5', token);
+    expect(r.statusCode).toBe(200);
+    const { suggestions } = r.json() as { suggestions: { key: string; title: string; source: string; code?: string }[] };
+    expect(suggestions.length).toBeGreaterThan(1);
+    expect(suggestions.length).toBeLessThanOrEqual(5);
+    expect(suggestions[0]!.key).toBe('povar');
+    expect(suggestions[0]!.source).toBe('catalog');
+    expect(suggestions.some((x) => x.source === 'okpdtr' && x.code)).toBe(true);
+    // Слишком короткий запрос не гоняет справочник.
+    expect(((await get('/api/professions/suggest?q=п', token)).json() as { suggestions: unknown[] }).suggestions).toEqual([]);
+  });
+
+  it('refuses a custom profession key without its text', async () => {
+    const token = (await post('/api/session', {})).json().token as string;
+    const r = await post('/api/market', { professionKey: 'custom:obvalshchik-1234567890ab', regionFnsCode: '78' }, token);
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toBe('profession_text_required');
+    expect(r.json().message).toContain('professionText');
+    // Пустой текст и пустой ключ — тоже понятная ошибка, а не 500.
+    expect((await post('/api/market', { professionText: '   ', regionFnsCode: '78' }, token)).json().error).toBe('profession_required');
+    expect((await post('/api/market', { professionKey: 'kosmonavt' }, token)).json().error).toBe('profession_unknown');
+  });
+});
+
+describe('api: штат', () => {
+  it('validates the staff list before touching the sources', async () => {
+    const token = (await post('/api/session', {})).json().token as string;
+    expect((await post('/api/staff', { positions: [] }, token)).json().error).toBe('positions_required');
+    const many = Array.from({ length: 21 }, (_, i) => ({ title: `должность ${i}`, salary: 50000 }));
+    expect((await post('/api/staff', { positions: many }, token)).json().error).toBe('too_many_positions');
+    expect((await post('/api/staff', { positions: [{ title: '', salary: 50000 }] }, token)).json().error).toBe('position_invalid');
+    expect((await post('/api/staff', { positions: [{ title: 'повар', salary: 5 }] }, token)).json().error).toBe('position_invalid');
+    // Без региона и ИНН сравнивать не с чем.
+    const r = await post('/api/staff', { positions: [{ title: 'повар', salary: 50000 }] }, token);
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toBe('region_required');
+  });
+
+  it('has no saved report for a demo session', async () => {
+    const token = (await post('/api/session', {})).json().token as string;
+    const r = await get('/api/staff', token);
+    expect(r.statusCode).toBe(200);
+    expect(r.json().report).toBeNull();
+  });
+});
+
+describe('api: регионы', () => {
+  it('validates the region list', async () => {
+    const token = (await post('/api/session', {})).json().token as string;
+    expect((await post('/api/regions/compare', { professionKey: 'povar', regionFnsCodes: [] }, token)).json().error).toBe('regions_required');
+    const nine = ['78', '77', '16', '23', '66', '54', '52', '50', '47'];
+    const tooMany = await post('/api/regions/compare', { professionKey: 'povar', regionFnsCodes: nine }, token);
+    expect(tooMany.statusCode).toBe(400);
+    expect(tooMany.json().error).toBe('too_many_regions');
+    expect((await post('/api/regions/compare', { regionFnsCodes: ['78'] }, token)).json().error).toBe('profession_required');
+  });
+
+  it('keeps unknown regions in the table instead of failing the request', async () => {
+    const token = (await post('/api/session', {})).json().token as string;
+    const r = await post('/api/regions/compare', { professionKey: 'povar', regionFnsCodes: ['00', '97'] }, token);
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as { comparison: { rows: { fnsCode: string; error: string | null }[]; summary: { withData: number; failed: number } }; text: string };
+    expect(body.comparison.rows.map((x) => x.fnsCode).sort()).toEqual(['00', '97']);
+    expect(body.comparison.rows.every((x) => x.error)).toBe(true);
+    expect(body.comparison.summary.withData).toBe(0);
+    expect(body.comparison.summary.failed).toBe(2);
+    expect(body.text).toContain('Повар');
+  });
+
+  it('rejects a digest for an unknown region and survives an unknown profession', async () => {
+    const token = (await post('/api/session', {})).json().token as string;
+    const bad = await get('/api/regions/00/digest', token);
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error).toBe('region_unknown');
+    const r = await get('/api/regions/78/digest?professions=kosmonavt', token);
+    expect(r.statusCode).toBe(200);
+    const body = r.json() as { region: { name: string }; rows: { professionKey: string; error: string | null }[] };
+    expect(body.region.name).toBe('Санкт-Петербург');
+    expect(body.rows).toHaveLength(1);
+    expect(body.rows[0]!.error).toBeTruthy();
+  });
+});

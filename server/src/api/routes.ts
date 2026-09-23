@@ -12,14 +12,20 @@ import {
   updateUser, upsertSubscription, upsertUser,
 } from '../db/index.js';
 import { buildMarket, getProfile, MarketError, type MarketContext, type MarketResult } from '../services/market.js';
+import { buildStaffAssessment, MAX_STAFF_POSITIONS, type StaffPositionInput, type StaffResult } from '../services/staff.js';
+import { compareRegions, MAX_REGIONS } from '../services/regions.js';
+import { MAX_DIGEST_PROFESSIONS, regionDigest } from '../services/region-digest.js';
 import { sendReportToChat, type ReportContext } from '../services/report.js';
 import {
   createVacancyFromCard, EXPERIENCE_LABEL, inboxButton, MAX_SCORE, renderVacancyQr, sendToUser, timeToFirstResponse,
   timeToHire, vacancyDeepLink, type CandidateAnswers, type HiringContext,
 } from '../services/hiring.js';
-import { buildVacancyDraft } from '../core/index.js';
+import { buildVacancyDraft, type Profession, type RegionSort } from '../core/index.js';
 import { isValidInn } from '../integrations/rmsp.js';
-import { regionByFnsCode, selectPack, type PackCatalog } from '../packs/loader.js';
+import {
+  isCustomProfessionKey, professionPool, regionByFnsCode, resolveProfession, selectPack, suggestProfessions,
+  type PackCatalog, type ProfessionSuggestion,
+} from '../packs/loader.js';
 import { signSession, validateInitData, verifySession, type SessionPayload } from './auth.js';
 import type { Config } from '../config.js';
 
@@ -57,6 +63,66 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (err instanceof MarketError) return reply.code(err.code === 'source_unavailable' ? 503 : 400).send({ error: err.code, message: err.message });
     app.log.error({ err: String(err) }, 'api error');
     return reply.code(500).send({ error: 'internal', message: 'Внутренняя ошибка. Попробуйте ещё раз.' });
+  };
+
+  /**
+   * Состояние пользователя (users.state) — общее с ботом: шаг диалога, тексты своих должностей,
+   * последняя оценка штата. Демо-сессии строки в users не имеют и ничего не сохраняют.
+   */
+  interface ApiUserState {
+    step?: string;
+    professionKey?: string;
+    lastCardId?: string;
+    /** Текст своей должности по ключу «custom:<slug>»: из ключа его не восстановить (это хеш). */
+    professionTexts?: Record<string, string>;
+    staff?: StaffResult;
+    [key: string]: unknown;
+  }
+
+  /** Сколько текстов своих должностей помним на пользователя. */
+  const REMEMBERED_PROFESSION_TEXTS = 20;
+
+  const userState = (uid: number): ApiUserState => (getUser(db, uid)?.state as ApiUserState | undefined) ?? {};
+
+  const patchState = (s: SessionPayload, patch: ApiUserState): void => {
+    if (s.demo || s.uid < 0) return;
+    updateUser(db, s.uid, { state: { ...userState(s.uid), ...patch } });
+  };
+
+  /** Запоминаем текст своей должности, чтобы повторный запрос по ключу «custom:…» работал. */
+  const rememberProfession = (s: SessionPayload, profession: Profession): void => {
+    if (!isCustomProfessionKey(profession.key) || s.demo) return;
+    const texts = { ...userState(s.uid).professionTexts };
+    delete texts[profession.key];
+    const kept = Object.entries(texts).slice(-(REMEMBERED_PROFESSION_TEXTS - 1));
+    patchState(s, { professionTexts: Object.fromEntries([...kept, [profession.key, profession.query]]) });
+  };
+
+  type ProfessionBody = { professionKey?: string | null; professionText?: string | null };
+  type ResolvedProfession = { ok: true; profession: Profession } | { ok: false; code: string; message: string };
+
+  /**
+   * Должность запроса: ключ каталога → свободный ввод текстом → сохранённый текст ключа «custom:…».
+   * Пакет берём по региону (без обращения к источникам): он задаёт лишь приоритет отраслевых профессий.
+   */
+  const professionFrom = (s: SessionPayload, body: ProfessionBody, regionFnsCode: string | null): ResolvedProfession => {
+    const pack = selectPack(catalog, { fnsRegionCode: regionFnsCode, okved: null });
+    const key = String(body.professionKey ?? '').trim();
+    const text = String(body.professionText ?? '').trim();
+    const known = key ? professionPool(catalog, pack).find((p) => p.key === key) : undefined;
+    if (known) return { ok: true, profession: known };
+    if (text) {
+      const p = resolveProfession(catalog, pack, text);
+      return p ? { ok: true, profession: p } : { ok: false, code: 'profession_required', message: 'Укажите должность' };
+    }
+    if (!key) return { ok: false, code: 'profession_required', message: 'Укажите должность' };
+    if (isCustomProfessionKey(key)) {
+      const saved = userState(s.uid).professionTexts?.[key];
+      const p = saved ? resolveProfession(catalog, pack, saved) : null;
+      if (p) return { ok: true, profession: p };
+      return { ok: false, code: 'profession_text_required', message: 'Для своей должности пришлите её название в поле professionText: по ключу текст не восстановить.' };
+    }
+    return { ok: false, code: 'profession_unknown', message: `Профессия «${key}» не найдена в каталоге` };
   };
 
   app.get('/api/health', async () => ({
@@ -122,18 +188,22 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     } catch (err) { return fail(reply, err); }
   });
 
-  app.post<{ Body: { inn?: string | null; regionFnsCode?: string | null; professionKey?: string; offer?: number | null; forceRefresh?: boolean } }>('/api/market', async (req, reply) => {
+  app.post<{ Body: { inn?: string | null; regionFnsCode?: string | null; professionKey?: string; professionText?: string; offer?: number | null; forceRefresh?: boolean } }>('/api/market', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     const b = req.body ?? {};
-    const professionKey = String(b.professionKey ?? '');
-    if (!professionKey) return reply.code(400).send({ error: 'profession_required', message: 'Укажите должность' });
+    const u = s.demo ? null : getUser(db, s.uid);
+    const resolved = professionFrom(s, b, b.regionFnsCode ?? u?.regionFnsCode ?? null);
+    if (!resolved.ok) return reply.code(400).send({ error: resolved.code, message: resolved.message });
     const offer = b.offer == null || b.offer === 0 ? null : Number(b.offer);
     if (offer != null && (!Number.isFinite(offer) || offer < 1000 || offer > 5_000_000)) return reply.code(400).send({ error: 'offer_invalid', message: 'Ставка должна быть от 1 000 до 5 000 000 ₽ в месяц' });
     const inn = b.inn ? String(b.inn).replace(/\D/g, '') : null;
     if (inn && !isValidInn(inn)) return reply.code(400).send({ error: 'inn_invalid', message: 'Некорректный ИНН' });
     try {
-      const result = await buildMarket(deps.market, { professionKey, regionFnsCode: b.regionFnsCode ?? null, inn, offer, maxUserId: s.demo ? null : s.uid, forceRefresh: Boolean(b.forceRefresh) && !s.demo });
-      if (!s.demo) updateUser(db, s.uid, { regionFnsCode: result.region.fnsCode, packId: result.pack.id, state: { step: 'idle', professionKey, lastCardId: result.cardId } });
+      const result = await buildMarket(deps.market, { professionKey: resolved.profession.key, profession: resolved.profession, regionFnsCode: b.regionFnsCode ?? null, inn, offer, maxUserId: s.demo ? null : s.uid, forceRefresh: Boolean(b.forceRefresh) && !s.demo });
+      if (!s.demo) {
+        rememberProfession(s, result.profession);
+        updateUser(db, s.uid, { regionFnsCode: result.region.fnsCode, packId: result.pack.id, state: { ...userState(s.uid), step: 'idle', professionKey: result.profession.key, lastCardId: result.cardId } });
+      }
       return clientSummary(result);
     } catch (err) { return fail(reply, err); }
   });
@@ -181,6 +251,106 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   app.delete<{ Params: { id: string } }>('/api/subscriptions/:id', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     return { ok: !s.demo && deactivateSubscription(db, req.params.id, s.uid) };
+  });
+
+  /* ---------- свободный ввод должности, штат, регионы ---------- */
+
+  /** Подсказки по должности: сначала каталог пакетов, затем справочник ОКПДТР. Офлайн, без запросов к источникам. */
+  app.get<{ Querystring: { q?: string; limit?: string } }>('/api/professions/suggest', async (req, reply) => {
+    if (!auth(req, reply)) return;
+    const q = String(req.query?.q ?? '');
+    const raw = Number(req.query?.limit);
+    const limit = Number.isFinite(raw) && raw > 0 ? Math.min(25, Math.round(raw)) : 10;
+    const suggestions: ProfessionSuggestion[] = suggestProfessions(catalog, q, limit);
+    return { suggestions };
+  });
+
+  /**
+   * «Мой штат»: ставки сотрудников против рынка региона.
+   * Демо-сессия считает так же, но ничего не сохраняет — у неё нет строки в users.
+   */
+  app.post<{ Body: { positions?: StaffPositionInput[]; inn?: string | null; regionFnsCode?: string | null; forceRefresh?: boolean } }>('/api/staff', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    const b = req.body ?? {};
+    const rows = Array.isArray(b.positions) ? b.positions : [];
+    if (rows.length === 0) return reply.code(400).send({ error: 'positions_required', message: 'Добавьте хотя бы одну должность со ставкой' });
+    if (rows.length > MAX_STAFF_POSITIONS) return reply.code(400).send({ error: 'too_many_positions', message: `За один раз можно оценить не больше ${MAX_STAFF_POSITIONS} должностей` });
+    const positions: StaffPositionInput[] = [];
+    for (const [i, row] of rows.entries()) {
+      const title = String(row?.title ?? '').trim().replace(/\s+/g, ' ');
+      const salary = Number(row?.salary);
+      if (!title) return reply.code(400).send({ error: 'position_invalid', message: `Строка ${i + 1}: напишите должность` });
+      if (!Number.isFinite(salary) || salary < 1000 || salary > 5_000_000) {
+        return reply.code(400).send({ error: 'position_invalid', message: `Строка «${title}»: ставка должна быть от 1 000 до 5 000 000 ₽ в месяц` });
+      }
+      positions.push({
+        id: row?.id ? String(row.id).slice(0, 64) : `p${i + 1}`,
+        title: title.slice(0, 120),
+        salary: Math.round(salary),
+        professionKey: row?.professionKey ?? null,
+      });
+    }
+    const inn = b.inn ? String(b.inn).replace(/\D/g, '') : null;
+    if (inn && !isValidInn(inn)) return reply.code(400).send({ error: 'inn_invalid', message: 'Некорректный ИНН' });
+    const u = s.demo ? null : getUser(db, s.uid);
+    const regionFnsCode = (b.regionFnsCode ? String(b.regionFnsCode).trim() : null) || u?.regionFnsCode || null;
+    const effectiveInn = inn ?? u?.inn ?? null;
+    if (!regionFnsCode && !effectiveInn) return reply.code(400).send({ error: 'region_required', message: 'Укажите регион или ИНН бизнеса: без них рынок не с чем сравнивать' });
+    try {
+      const result = await buildStaffAssessment(deps.market, {
+        positions, inn: effectiveInn, regionFnsCode,
+        maxUserId: s.demo ? null : s.uid,
+        forceRefresh: Boolean(b.forceRefresh) && !s.demo,
+      });
+      patchState(s, { staff: result });
+      return result;
+    } catch (err) { return fail(reply, err); }
+  });
+
+  /** Последняя сохранённая оценка штата (демо-сессии её не имеют). */
+  app.get('/api/staff', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    return { report: s.demo ? null : userState(s.uid).staff ?? null };
+  });
+
+  /** Сравнение регионов по одной должности: карточки считаются, но в БД не сохраняются. */
+  app.post<{ Body: { professionKey?: string; professionText?: string; regionFnsCodes?: string[]; offer?: number | null; sortBy?: RegionSort; inn?: string | null; forceRefresh?: boolean } }>('/api/regions/compare', async (req, reply) => {
+    const s = auth(req, reply); if (!s) return;
+    const b = req.body ?? {};
+    const codes = [...new Set((Array.isArray(b.regionFnsCodes) ? b.regionFnsCodes : []).map((c) => String(c ?? '').trim()).filter(Boolean))];
+    if (codes.length === 0) return reply.code(400).send({ error: 'regions_required', message: 'Выберите хотя бы один регион для сравнения' });
+    if (codes.length > MAX_REGIONS) return reply.code(400).send({ error: 'too_many_regions', message: `Сравнивать можно не больше ${MAX_REGIONS} регионов за раз` });
+    const offer = b.offer == null || b.offer === 0 ? null : Number(b.offer);
+    if (offer != null && (!Number.isFinite(offer) || offer < 1000 || offer > 5_000_000)) return reply.code(400).send({ error: 'offer_invalid', message: 'Ставка должна быть от 1 000 до 5 000 000 ₽ в месяц' });
+    const inn = b.inn ? String(b.inn).replace(/\D/g, '') : null;
+    if (inn && !isValidInn(inn)) return reply.code(400).send({ error: 'inn_invalid', message: 'Некорректный ИНН' });
+    const resolved = professionFrom(s, b, codes[0] ?? null);
+    if (!resolved.ok) return reply.code(400).send({ error: resolved.code, message: resolved.message });
+    const sortBy: RegionSort = b.sortBy === 'affordability' || b.sortBy === 'vacancies' ? b.sortBy : 'median';
+    try {
+      const result = await compareRegions(deps.market, {
+        profession: resolved.profession, regionFnsCodes: codes, offer, sortBy,
+        maxUserId: s.demo ? null : s.uid, inn,
+        forceRefresh: Boolean(b.forceRefresh) && !s.demo,
+        persist: false,
+      });
+      rememberProfession(s, resolved.profession);
+      return result;
+    } catch (err) { return fail(reply, err); }
+  });
+
+  /** Партнёрская сводка по региону: медианы и выборки по профессиям пакета или по списку ключей. */
+  app.get<{ Params: { fnsCode: string }; Querystring: { professions?: string } }>('/api/regions/:fnsCode/digest', async (req, reply) => {
+    if (!auth(req, reply)) return;
+    const fnsCode = String(req.params.fnsCode ?? '').trim();
+    const region = regionByFnsCode(catalog, fnsCode);
+    if (!region) return reply.code(400).send({ error: 'region_unknown', message: `Регион с кодом ФНС ${fnsCode} не найден в справочнике` });
+    const asked = String(req.query?.professions ?? '').split(',').map((k) => k.trim()).filter(Boolean);
+    const pack = selectPack(catalog, { fnsRegionCode: fnsCode, okved: null });
+    const keys = (asked.length ? asked : pack.professions.map((p) => p.key)).slice(0, MAX_DIGEST_PROFESSIONS);
+    try {
+      return await regionDigest(deps.market, fnsCode, keys, { persist: false });
+    } catch (err) { return fail(reply, err); }
   });
 
   /* ---------- отклики и найм ---------- */

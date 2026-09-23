@@ -47,6 +47,15 @@ export interface Bootstrap {
 }
 
 export interface SalaryStats { n: number; median: number; p25: number; p75: number; min: number; max: number; mean: number }
+export interface SeasonalityWeek { week: string; from: string; to: string; count: number; share: number }
+export interface SeasonalityMonth { month: string; label: string; count: number; share: number }
+export interface Seasonality {
+  dated: number; weeks: SeasonalityWeek[]; months: SeasonalityMonth[];
+  from: string | null; to: string | null;
+  peak: SeasonalityWeek | null; peakMonth: SeasonalityMonth | null; peakRatio: number | null;
+}
+export interface SourceBadge { id: string; title: string; url: string; fetchedAt: string; note?: string }
+export type Confidence = 'ok' | 'low' | 'none';
 export interface MarketCard {
   professionKey: string; professionTitle: string; regionCode: string;
   sample: { fetched: number; vacancies: number; employers: number; topEmployerShare: number; dropped: Record<string, number> };
@@ -60,12 +69,14 @@ export interface MarketCard {
   examples: { id: string; title: string; employerName: string | null; employerInn: string | null; employerCategory?: 0 | 1 | 2 | 3 | null; salaryMin: number | null; salaryMax: number | null; value: number; schedule: string | null; url: string | null }[];
   requirements: { key: string; label: string; count: number; share: number }[];
   schedules: { label: string; share: number }[];
+  /** Распределение вакансий по неделям публикации; null — дат в выборке слишком мало. */
+  seasonality?: Seasonality | null;
   verdict: string;
 }
 export interface MarketResult {
   cardId: string; card: MarketCard; pack: { id: string; title: string; version: number };
   profession: ProfessionRef & { query: string }; region: Region; profile: Profile | null;
-  sources: { id: string; title: string; url: string; fetchedAt: string; note?: string }[];
+  sources: SourceBadge[];
   fetched: { total: number; records: number; cacheHit: boolean; fetchedAt: string };
   closure: { observedDays: number; total: number; closedAbove: number; totalAbove: number; closedBelow: number; totalBelow: number } | null;
   createdAt: string;
@@ -91,10 +102,97 @@ export interface ResponseView {
   createdAt: string; updatedAt: string;
 }
 
+/* ---------- свободный ввод должности ---------- */
+export interface ProfessionSuggestion { key: string; title: string; source: 'catalog' | 'okpdtr'; code?: string }
+
+/* ---------- штат ---------- */
+export type StaffRisk = 'high' | 'medium' | 'none' | 'unknown';
+
+export interface StaffAssessment {
+  id: string; title: string; salary: number;
+  professionKey: string | null; professionTitle: string | null;
+  percentile: number | null; band: 'low' | 'below_median' | 'market' | 'above' | null;
+  median: number | null; p25: number | null; p75: number | null;
+  gapRub: number; gapPct: number; risk: StaffRisk; note: string | null;
+}
+
+export interface StaffSummary {
+  positions: number; assessed: number; unknown: number;
+  highRisk: number; mediumRisk: number; inMarket: number;
+  payroll: number; costToMedian: number; costShare: number; medianPercentile: number | null;
+}
+
+export interface StaffMarketRef {
+  professionKey: string; professionTitle: string; cardId: string | null;
+  median: number | null; p25: number | null; p75: number | null;
+  vacancies: number; employers: number; confidence: Confidence | null;
+  fetchedAt: string | null; error: string | null;
+}
+
+export interface StaffResult {
+  report: { positions: StaffAssessment[]; summary: StaffSummary };
+  markets: StaffMarketRef[];
+  region: Region;
+  profile: Profile | null;
+  pack: { id: string; title: string; version: number };
+  sources: SourceBadge[];
+  text: string;
+  createdAt: string;
+}
+
+export interface StaffPositionInput { id?: string; title: string; salary: number; professionKey?: string | null }
+
+/* ---------- сравнение регионов ---------- */
+export type RegionSort = 'median' | 'affordability' | 'vacancies';
+
+export interface RegionComparisonRow {
+  fnsCode: string; regionCode: string | null; regionName: string; avgSalary: number | null;
+  median: number | null; p25: number | null; p75: number | null;
+  vacancies: number; employers: number;
+  affordability: number | null; offerPercentile: number | null;
+  confidence: Confidence | null; error: string | null; rank: number;
+}
+
+export interface RegionsResult {
+  profession: ProfessionRef & { query: string };
+  comparison: {
+    sortBy: RegionSort;
+    rows: RegionComparisonRow[];
+    summary: {
+      regions: number; withData: number; failed: number;
+      cheapest: string | null; mostVacancies: string | null; bestAffordability: string | null;
+      medianMin: number | null; medianMax: number | null; spreadPct: number | null;
+    };
+  };
+  cardIds: Record<string, string>;
+  sources: SourceBadge[];
+  text: string;
+  createdAt: string;
+}
+
+/* ---------- сводка по региону (партнёрам) ---------- */
+export interface RegionDigestRow {
+  professionKey: string; professionTitle: string;
+  median: number | null; p25: number | null; p75: number | null; recentMedian: number | null;
+  vacancies: number; employers: number; total: number;
+  confidence: Confidence | null; microMedian: number | null;
+  peakWeek: SeasonalityWeek | null; error: string | null;
+}
+export interface RegionDigestResult {
+  region: Region; rows: RegionDigestRow[]; avgSalary: number | null;
+  sources: SourceBadge[]; text: string; createdAt: string;
+}
+
 export const api = {
   bootstrap: () => request<Bootstrap>('GET', '/api/bootstrap'),
   profile: (inn: string) => request<{ profile: Profile; region: Region | null; pack: { id: string; title: string; professions: ProfessionRef[] } }>('POST', '/api/profile', { inn }),
-  market: (p: { inn?: string | null; regionFnsCode?: string | null; professionKey: string; offer?: number | null; forceRefresh?: boolean }) => request<MarketResult>('POST', '/api/market', p),
+  market: (p: { inn?: string | null; regionFnsCode?: string | null; professionKey?: string; professionText?: string; offer?: number | null; forceRefresh?: boolean }) => request<MarketResult>('POST', '/api/market', p),
+  suggestProfessions: (q: string, limit = 8) => request<{ suggestions: ProfessionSuggestion[] }>('GET', `/api/professions/suggest?q=${encodeURIComponent(q)}&limit=${limit}`),
+  staff: (p: { positions: StaffPositionInput[]; inn?: string | null; regionFnsCode?: string | null }) => request<StaffResult>('POST', '/api/staff', p),
+  staffLast: () => request<{ report: StaffResult | null }>('GET', '/api/staff'),
+  compareRegions: (p: { professionKey?: string; professionText?: string; regionFnsCodes: string[]; offer?: number | null; sortBy?: RegionSort }) => request<RegionsResult>('POST', '/api/regions/compare', p),
+  regionDigest: (fnsCode: string, professionKeys?: string[]) =>
+    request<RegionDigestResult>('GET', `/api/regions/${encodeURIComponent(fnsCode)}/digest${professionKeys?.length ? `?professions=${encodeURIComponent(professionKeys.join(','))}` : ''}`),
   card: (id: string) => request<MarketResult>('GET', `/api/cards/${encodeURIComponent(id)}`),
   report: (id: string) => request<{ mid: string; chatType: 'DIALOG' | 'CHAT'; reused: boolean }>('POST', `/api/cards/${encodeURIComponent(id)}/report`),
   subscribe: (id: string) => request<{ subscription: { id: string } }>('POST', `/api/cards/${encodeURIComponent(id)}/subscribe`),
@@ -124,6 +222,12 @@ export const fmtDuration = (minutes: number | null): string => {
   const days = Math.floor(hours / 24);
   return `${days} дн${hours % 24 ? ` ${hours % 24} ч` : ''}`;
 };
+
+export const staffRiskLabel = (r: StaffRisk): string =>
+  (r === 'high' ? 'высокий риск ухода' : r === 'medium' ? 'умеренный риск' : r === 'none' ? 'в рынке' : 'нет данных');
+
+export const staffRiskClass = (r: StaffRisk): string =>
+  (r === 'high' ? 'sv-badge--bad' : r === 'medium' ? 'sv-badge--warn' : r === 'none' ? 'sv-badge--ok' : 'sv-badge--muted');
 
 export const responseStatusLabel = (s: ResponseStatus): string =>
   (s === 'new' ? 'новый' : s === 'invited' ? 'приглашён' : s === 'rejected' ? 'отказ' : 'нанят');

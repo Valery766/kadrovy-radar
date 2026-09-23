@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolve } from 'node:path';
 import { loadCatalog, selectPack } from '../src/packs/loader.js';
-import { findProfession, findRegion } from '../src/bot/scenario.js';
+import { findProfession, findRegion, parseRegionList, parseStaffLine, splitText } from '../src/bot/scenario.js';
 import { isValidInn } from '../src/integrations/rmsp.js';
 import { updateKey } from '../src/bot/updates.js';
 
@@ -33,6 +33,37 @@ describe('bot helpers', () => {
     expect(isValidInn('123')).toBe(false);
     expect(isValidInn('781512345678')).toBe(false);
   });
+  it('parses staff lines «должность ставка»', () => {
+    expect(parseStaffLine('повар 60000')).toEqual({ title: 'повар', salary: 60000 });
+    expect(parseStaffLine('  официант — 45 000 ₽ ')).toEqual({ title: 'официант', salary: 45000 });
+    expect(parseStaffLine('администратор 70 тыс')).toEqual({ title: 'администратор', salary: 70000 });
+    expect(parseStaffLine('повар 5 разряда 60000')).toEqual({ title: 'повар 5 разряда', salary: 60000 });
+    expect(parseStaffLine('повар')).toBeNull();
+    expect(parseStaffLine('60000')).toBeNull();
+    expect(parseStaffLine('повар 60')).toEqual({ title: 'повар', salary: 60000 }); // «60» — это 60 тысяч
+    expect(parseStaffLine('сушист 0')).toBeNull(); // ставка ниже минимальной — строка не принимается
+  });
+
+  it('parses a region list and reports what it did not recognise', () => {
+    const r = parseRegionList(catalog, 'СПб, Татарстан, Москва, Атлантида', 4);
+    expect(r.regions.map((x) => x.fnsCode)).toEqual(['78', '16', '77']);
+    expect(r.unknown).toEqual(['Атлантида']);
+    expect(parseRegionList(catalog, 'СПб, спб, Санкт-Петербург', 4).regions).toHaveLength(1);
+    expect(parseRegionList(catalog, 'СПб, Москва, Татарстан, Свердловская, Новосибирск', 3).regions).toHaveLength(3);
+    expect(parseRegionList(catalog, 'абракадабра', 4).regions).toHaveLength(0);
+  });
+
+  it('splits long texts within the MAX message limit by line boundaries', () => {
+    const line = 'а'.repeat(120);
+    const text = Array.from({ length: 60 }, () => line).join('\n');
+    const parts = splitText(text, 1000);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((x) => x.length <= 1000)).toBe(true);
+    expect(parts.join('\n')).toBe(text);
+    expect(splitText('короткий текст')).toEqual(['короткий текст']);
+    expect(splitText('б'.repeat(2500), 1000).every((x) => x.length <= 1000)).toBe(true);
+  });
+
   it('builds stable idempotency keys for updates', () => {
     const u = { update_type: 'message_created', timestamp: 1, message: { body: { mid: 'mid.1' } } } as never;
     expect(updateKey(u)).toBe('message_created:1:mid.1');

@@ -11,7 +11,44 @@ interface Props {
   onAnother: () => void;
   onText: (salary: number) => void;
   onOpenInbox: (vacancyId: string) => void;
+  onCompareRegions: () => void;
   onHome: () => void;
+}
+
+const MONTH_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+/** Подпись месяца по дате «2026-08-24» → «авг 2026». */
+const monthLabel = (day: string): string => `${MONTH_SHORT[Number(day.slice(5, 7)) - 1] ?? ''} ${day.slice(0, 4)}`;
+
+/**
+ * Сезонность набора: столбик на неделю публикации вакансий, пик выделен цветом.
+ * Ось подписываем тремя месяцами (начало, середина, конец) — на узком экране
+ * подписи у каждого столбика налезают друг на друга.
+ */
+function Seasons({ seasonality }: { seasonality: NonNullable<MarketResult['card']['seasonality']> }) {
+  const weeks = seasonality.weeks;
+  const max = Math.max(...weeks.map((w) => w.count), 1);
+  const middle = weeks[Math.floor(weeks.length / 2)];
+  return (
+    <>
+      <div className="sv-hist sv-hist--weeks">
+        {weeks.map((w) => (
+          <div key={w.week} className="sv-hist__col">
+            <div
+              className={`sv-hist__bar ${seasonality.peak?.week === w.week ? 'sv-hist__bar--peak' : ''}`}
+              style={{ height: `${Math.max(2, (w.count / max) * 100)}%` }}
+              title={`${w.from} — ${w.to}: ${w.count}`}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="sv-axis">
+        <span>{weeks[0] ? monthLabel(weeks[0].from) : ''}</span>
+        <span>{middle ? monthLabel(middle.from) : ''}</span>
+        <span>{weeks.length > 1 ? monthLabel(weeks[weeks.length - 1]!.to) : ''}</span>
+      </div>
+    </>
+  );
 }
 
 const BAND: Record<string, { label: string; cls: string }> = {
@@ -36,7 +73,7 @@ function Scale({ stats, offer }: { stats: NonNullable<MarketResult['card']['stat
   );
 }
 
-export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOpenInbox, onHome }: Props) {
+export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOpenInbox, onCompareRegions, onHome }: Props) {
   const { card, profession, region, profile, sources, fetched, closure } = result;
   const [selected, setSelected] = useState<string>(card.options.find((o) => o.kind === 'median')?.kind ?? 'keep');
   const [busy, setBusy] = useState<string | null>(null);
@@ -185,6 +222,20 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
         </div>
       )}
 
+      {card.seasonality && card.seasonality.weeks.length > 1 && (
+        <div className="sv-card">
+          <div className="sv-h2">Сезонность набора</div>
+          <Seasons seasonality={card.seasonality} />
+          <div className="sv-muted sv-small">
+            {card.seasonality.peakMonth
+              ? `Пик набора — ${card.seasonality.peakMonth.label}: ${card.seasonality.peakMonth.share} % вакансий периода.`
+              : 'Пик набора определить не удалось.'}
+            {card.seasonality.peak && ` Самая активная неделя — ${card.seasonality.peak.from} — ${card.seasonality.peak.to} (${card.seasonality.peak.count} вакансий${card.seasonality.peakRatio ? `, в ${card.seasonality.peakRatio} раза выше средней недели` : ''}).`}
+            {` По датам публикации ${card.seasonality.dated} вакансий${card.seasonality.from && card.seasonality.to ? ` за период ${card.seasonality.from} — ${card.seasonality.to}` : ''}. Начинайте набор до пика: в пик конкуренция за людей выше.`}
+          </div>
+        </div>
+      )}
+
       {card.byCategory.length > 0 && (
         <div className="sv-card">
           <div className="sv-h2">Кто нанимает: размер работодателя</div>
@@ -238,6 +289,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
         <div className="sv-actions">
           {!mid && <Button stretched onClick={sendReport} loading={busy === 'report'} disabled={busy !== null || notInMax}>Отправить PDF-отчёт в чат</Button>}
           {mid && <Button stretched onClick={share} loading={busy === 'share'} disabled={busy !== null}>Поделиться отчётом в MAX</Button>}
+          <Button stretched variant="secondary" onClick={onCompareRegions}>Сравнить регионы по этой должности</Button>
           <Button stretched variant="secondary" onClick={shareCardLink}>Поделиться ссылкой на карточку</Button>
           <Button stretched variant="secondary" onClick={subscribe} loading={busy === 'sub'} disabled={busy !== null || notInMax}>Следить за рынком (раз в неделю)</Button>
           <Button stretched variant="ghost" onClick={onAnother}>Другая должность</Button>

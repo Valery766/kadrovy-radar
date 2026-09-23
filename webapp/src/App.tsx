@@ -4,19 +4,23 @@ import { api, ApiError, openSession, type Bootstrap, type MarketResult, type Pro
 import { insideMax, platform, startParam } from './lib/bridge';
 import { useBackButton } from './lib/state';
 import { Home } from './screens/Home';
-import { Query } from './screens/Query';
+import { Query, type MarketQuery } from './screens/Query';
 import { Card } from './screens/Card';
 import { VacancyText } from './screens/VacancyText';
 import { Inbox } from './screens/Inbox';
+import { Staff } from './screens/Staff';
+import { Regions } from './screens/Regions';
 
 type Screen =
   | { name: 'boot' }
   | { name: 'home' }
-  | { name: 'query'; prefill?: { professionKey?: string; offer?: number | null; inn?: string | null; regionFnsCode?: string | null } }
+  | { name: 'query'; prefill?: { professionKey?: string; professionTitle?: string; offer?: number | null; inn?: string | null; regionFnsCode?: string | null } }
   | { name: 'loading'; label: string }
   | { name: 'card'; result: MarketResult }
   | { name: 'text'; result: MarketResult; salary: number }
   | { name: 'inbox'; vacancyId: string | null }
+  | { name: 'staff' }
+  | { name: 'regions'; prefill?: { professionKey?: string; professionTitle?: string; regionFnsCode?: string | null; offer?: number | null } }
   | { name: 'error'; message: string; retry?: () => void };
 
 export function App() {
@@ -49,6 +53,8 @@ export function App() {
           try { const r = await api.card(sp.slice(5)); setScreen({ name: 'card', result: r }); return; } catch { /* карточка не найдена — на главную */ }
         }
         if (sp && sp.startsWith('inbox_')) { setScreen({ name: 'inbox', vacancyId: sp.slice(6) }); return; }
+        if (sp === 'staff') { setScreen({ name: 'staff' }); return; }
+        if (sp === 'regions') { setScreen({ name: 'regions' }); return; }
         void b;
         setScreen({ name: 'home' });
       } catch (err) {
@@ -57,7 +63,7 @@ export function App() {
     })();
   }, [reloadBoot]);
 
-  const runMarket = useCallback(async (p: { inn?: string | null; regionFnsCode?: string | null; professionKey: string; offer?: number | null; forceRefresh?: boolean }) => {
+  const runMarket = useCallback(async (p: MarketQuery & { forceRefresh?: boolean }) => {
     go({ name: 'loading', label: 'Запрашиваю вакансии на «Работе России» и сверяю работодателей с реестром МСП. Обычно 10–40 секунд.' });
     try {
       const r = await api.market(p);
@@ -85,6 +91,8 @@ export function App() {
         onStart={(prefill) => go({ name: 'query', prefill })}
         onOpenCard={async (id) => { try { const r = await api.card(id); go({ name: 'card', result: r }); } catch (e) { setScreen({ name: 'error', message: e instanceof ApiError ? e.message : 'Карточка не найдена' }); } }}
         onInbox={() => go({ name: 'inbox', vacancyId: null })}
+        onStaff={() => go({ name: 'staff' })}
+        onRegions={() => go({ name: 'regions' })}
         onDemo={(pack) => { if (pack.demo) void runMarket({ inn: pack.demo.inn, regionFnsCode: pack.region?.fnsCode ?? null, professionKey: pack.demo.profession, offer: pack.demo.salary }); }} />;
     case 'query':
       return <Query boot={boot} prefill={screen.prefill} onSubmit={(p) => void runMarket(p)} onBack={back} />;
@@ -97,15 +105,24 @@ export function App() {
       </div>;
     case 'card':
       return <Card result={screen.result} boot={boot} notInMax={notInMax}
-        onRecalc={(offer) => void runMarket({ inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode, professionKey: screen.result.profession.key, offer })}
+        onRecalc={(offer) => void runMarket({ inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode, professionKey: screen.result.profession.key, professionText: screen.result.profession.query, offer })}
         onAnother={() => go({ name: 'query', prefill: { inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode } })}
         onText={(salary) => go({ name: 'text', result: screen.result, salary })}
         onOpenInbox={(vacancyId) => go({ name: 'inbox', vacancyId })}
+        onCompareRegions={() => go({ name: 'regions', prefill: { professionKey: screen.result.profession.key, professionTitle: screen.result.profession.title, regionFnsCode: screen.result.region.fnsCode, offer: screen.result.card.offer?.value ?? null } })}
         onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
     case 'text':
       return <VacancyText result={screen.result} salary={screen.salary} onBack={back} />;
     case 'inbox':
       return <Inbox boot={boot} notInMax={notInMax} initialVacancyId={screen.vacancyId}
+        onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
+    case 'staff':
+      return <Staff boot={boot}
+        onOpenCard={async (id) => { try { const r = await api.card(id); go({ name: 'card', result: r }); } catch (e) { setScreen({ name: 'error', message: e instanceof ApiError ? e.message : 'Карточка не найдена' }); } }}
+        onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
+    case 'regions':
+      return <Regions boot={boot} prefill={screen.prefill}
+        onOpenMarket={(p) => void runMarket(p)}
         onHome={() => { setHistory([]); setScreen({ name: 'home' }); }} />;
     case 'error':
       return <div className="sv-page sv-stack" style={{ paddingTop: 40 }}>
