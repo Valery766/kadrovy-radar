@@ -1,0 +1,18 @@
+id: generic
+title: Универсальный пакет (любой регион и отрасль)
+version: 1
+region: null
+industry: null
+professions: [povar, konditer, pekar, ofitsiant, barmen, administrator, kassir, prodavets, uborshchik, kurer, voditel, gruzchik, svarshchik, slesar, tokar]
+thresholds:
+  minEmployers: 10
+  minVacancies: 20
+  salaryMin: 15000
+  salaryMax: 500000
+  perEmployerCap: 3
+vacancyTemplate:
+  conditions:
+    - официальное оформление по ТК РФ
+    - график обсуждается
+    - обучение на рабочем месте
+demo: null

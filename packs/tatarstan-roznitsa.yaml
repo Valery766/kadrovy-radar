@@ -1,0 +1,27 @@
+id: tatarstan-roznitsa
+title: Розница · Республика Татарстан
+version: 1
+region:
+  fnsCode: "16"
+  name: Республика Татарстан
+industry:
+  okvedPrefixes: ["47"]
+  title: Розничная торговля
+professions: [prodavets, kassir, pekar, povar, gruzchik, voditel, uborshchik, administrator, kurer]
+thresholds:
+  minEmployers: 10
+  minVacancies: 20
+  salaryMin: 15000
+  salaryMax: 500000
+  perEmployerCap: 3
+vacancyTemplate:
+  conditions:
+    - официальное оформление по ТК РФ
+    - график 2/2 или 5/2, обсуждаем при встрече
+    - скидки на продукцию магазина
+    - обучение на рабочем месте
+demo:
+  inn: "1601000159"
+  profession: prodavets
+  salary: 35000
+  note: Агрызское районное потребительское общество — малое предприятие, ОКВЭД 47.11, Республика Татарстан (данные реестра МСП)

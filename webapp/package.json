@@ -1,0 +1,25 @@
+{
+  "name": "@stavka/webapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Мини-приложение «Ставка» для MAX: React + MAX UI + MAX Bridge",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@maxhub/max-ui": "0.5.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  }
+}

@@ -1,0 +1,27 @@
+id: spb-obschepit
+title: Общепит · Санкт-Петербург
+version: 1
+region:
+  fnsCode: "78"
+  name: Санкт-Петербург
+industry:
+  okvedPrefixes: ["56"]
+  title: Общественное питание
+professions: [povar, konditer, pekar, ofitsiant, barmen, administrator, kassir, prodavets, uborshchik, kurer]
+thresholds:
+  minEmployers: 10
+  minVacancies: 20
+  salaryMin: 15000
+  salaryMax: 500000
+  perEmployerCap: 3
+vacancyTemplate:
+  conditions:
+    - официальное оформление по ТК РФ, белая зарплата
+    - питание в смену за счёт заведения
+    - форма и инвентарь за счёт заведения
+    - стабильный график, смены обсуждаем
+demo:
+  inn: "7801633015"
+  profession: povar
+  salary: 45000
+  note: ООО «Малый 43» — микропредприятие, ОКВЭД 56.10, Санкт-Петербург (данные реестра МСП)

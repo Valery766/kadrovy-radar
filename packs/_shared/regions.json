@@ -1,0 +1,643 @@
+{
+ "source": "https://opendata.trudvsem.ru/json/regions.json",
+ "fetchedAt": "2026-09-23",
+ "regions": [
+  {
+   "code": "0100000000000",
+   "fnsCode": "01",
+   "name": "Адыгея республика",
+   "avgSalary": 63759,
+   "unemployment": 2
+  },
+  {
+   "code": "0200000000000",
+   "fnsCode": "02",
+   "name": "Башкортостан республика",
+   "avgSalary": 74391,
+   "unemployment": 2
+  },
+  {
+   "code": "0300000000000",
+   "fnsCode": "03",
+   "name": "Бурятия республика",
+   "avgSalary": 83574,
+   "unemployment": 4
+  },
+  {
+   "code": "0400000000000",
+   "fnsCode": "04",
+   "name": "Алтай республика",
+   "avgSalary": 72941,
+   "unemployment": 6
+  },
+  {
+   "code": "0500000000000",
+   "fnsCode": "05",
+   "name": "Дагестан республика",
+   "avgSalary": 49925,
+   "unemployment": 11
+  },
+  {
+   "code": "0600000000000",
+   "fnsCode": "06",
+   "name": "Ингушетия республика",
+   "avgSalary": 44652,
+   "unemployment": 26
+  },
+  {
+   "code": "0700000000000",
+   "fnsCode": "07",
+   "name": "Кабардино-Балкарская республика",
+   "avgSalary": 53252,
+   "unemployment": 2
+  },
+  {
+   "code": "0800000000000",
+   "fnsCode": "08",
+   "name": "Калмыкия республика",
+   "avgSalary": 55806,
+   "unemployment": 3
+  },
+  {
+   "code": "0900000000000",
+   "fnsCode": "09",
+   "name": "Карачаево-Черкесская республика",
+   "avgSalary": 54755,
+   "unemployment": 7
+  },
+  {
+   "code": "1000000000000",
+   "fnsCode": "10",
+   "name": "Карелия республика",
+   "avgSalary": 81569,
+   "unemployment": 3
+  },
+  {
+   "code": "1100000000000",
+   "fnsCode": "11",
+   "name": "Коми республика",
+   "avgSalary": 95980,
+   "unemployment": 3
+  },
+  {
+   "code": "1200000000000",
+   "fnsCode": "12",
+   "name": "Марий Эл республика",
+   "avgSalary": 70460,
+   "unemployment": 2
+  },
+  {
+   "code": "1300000000000",
+   "fnsCode": "13",
+   "name": "Мордовия республика",
+   "avgSalary": 67262,
+   "unemployment": 2
+  },
+  {
+   "code": "1400000000000",
+   "fnsCode": "14",
+   "name": "Саха (Якутия) республика",
+   "avgSalary": 139435,
+   "unemployment": 3
+  },
+  {
+   "code": "1500000000000",
+   "fnsCode": "15",
+   "name": "Северная Осетия - Алания республика",
+   "avgSalary": 53721,
+   "unemployment": 6
+  },
+  {
+   "code": "1600000000000",
+   "fnsCode": "16",
+   "name": "Татарстан республика",
+   "avgSalary": 90515,
+   "unemployment": 2
+  },
+  {
+   "code": "1700000000000",
+   "fnsCode": "17",
+   "name": "Тыва республика",
+   "avgSalary": 75253,
+   "unemployment": 4
+  },
+  {
+   "code": "1800000000000",
+   "fnsCode": "18",
+   "name": "Удмуртская республика",
+   "avgSalary": 77925,
+   "unemployment": 1
+  },
+  {
+   "code": "1900000000000",
+   "fnsCode": "19",
+   "name": "Хакасия республика",
+   "avgSalary": 80227,
+   "unemployment": 2
+  },
+  {
+   "code": "2000000000000",
+   "fnsCode": "20",
+   "name": "Чеченская республика",
+   "avgSalary": 46652,
+   "unemployment": 6
+  },
+  {
+   "code": "2100000000000",
+   "fnsCode": "21",
+   "name": "Чувашская Республика - чувашия",
+   "avgSalary": 68379,
+   "unemployment": 2
+  },
+  {
+   "code": "2200000000000",
+   "fnsCode": "22",
+   "name": "Алтайский край",
+   "avgSalary": 63971,
+   "unemployment": 4
+  },
+  {
+   "code": "2300000000000",
+   "fnsCode": "23",
+   "name": "Краснодарский край",
+   "avgSalary": 76115,
+   "unemployment": 2
+  },
+  {
+   "code": "2400000000000",
+   "fnsCode": "24",
+   "name": "Красноярский край",
+   "avgSalary": 105571,
+   "unemployment": 1
+  },
+  {
+   "code": "2500000000000",
+   "fnsCode": "25",
+   "name": "Приморский край",
+   "avgSalary": 96177,
+   "unemployment": 2
+  },
+  {
+   "code": "2600000000000",
+   "fnsCode": "26",
+   "name": "Ставропольский край",
+   "avgSalary": 63673,
+   "unemployment": 3
+  },
+  {
+   "code": "2700000000000",
+   "fnsCode": "27",
+   "name": "Хабаровский край",
+   "avgSalary": 97025,
+   "unemployment": 1
+  },
+  {
+   "code": "2800000000000",
+   "fnsCode": "28",
+   "name": "Амурская область",
+   "avgSalary": 99073,
+   "unemployment": 1
+  },
+  {
+   "code": "2900000000000",
+   "fnsCode": "29",
+   "name": "Архангельская область",
+   "avgSalary": 91121,
+   "unemployment": 3
+  },
+  {
+   "code": "3000000000000",
+   "fnsCode": "30",
+   "name": "Астраханская область",
+   "avgSalary": 69820,
+   "unemployment": 2
+  },
+  {
+   "code": "3100000000000",
+   "fnsCode": "31",
+   "name": "Белгородская область",
+   "avgSalary": 73891,
+   "unemployment": 2
+  },
+  {
+   "code": "3200000000000",
+   "fnsCode": "32",
+   "name": "Брянская область",
+   "avgSalary": 65803,
+   "unemployment": 2
+  },
+  {
+   "code": "3300000000000",
+   "fnsCode": "33",
+   "name": "Владимирская область",
+   "avgSalary": 73285,
+   "unemployment": 2
+  },
+  {
+   "code": "3400000000000",
+   "fnsCode": "34",
+   "name": "Волгоградская область",
+   "avgSalary": 68340,
+   "unemployment": 2
+  },
+  {
+   "code": "3500000000000",
+   "fnsCode": "35",
+   "name": "Вологодская область",
+   "avgSalary": 80975,
+   "unemployment": 2
+  },
+  {
+   "code": "3600000000000",
+   "fnsCode": "36",
+   "name": "Воронежская область",
+   "avgSalary": 75525,
+   "unemployment": 2
+  },
+  {
+   "code": "3700000000000",
+   "fnsCode": "37",
+   "name": "Ивановская область",
+   "avgSalary": 57122,
+   "unemployment": 2
+  },
+  {
+   "code": "3800000000000",
+   "fnsCode": "38",
+   "name": "Иркутская область",
+   "avgSalary": 95318,
+   "unemployment": 3
+  },
+  {
+   "code": "3900000000000",
+   "fnsCode": "39",
+   "name": "Калининградская область",
+   "avgSalary": 77022,
+   "unemployment": 2
+  },
+  {
+   "code": "4000000000000",
+   "fnsCode": "40",
+   "name": "Калужская область",
+   "avgSalary": 83930,
+   "unemployment": 1
+  },
+  {
+   "code": "4100000000000",
+   "fnsCode": "41",
+   "name": "Камчатский край",
+   "avgSalary": 151016,
+   "unemployment": 2
+  },
+  {
+   "code": "4200000000000",
+   "fnsCode": "42",
+   "name": "Кемеровская область - Кузбасс область",
+   "avgSalary": 83017,
+   "unemployment": 3
+  },
+  {
+   "code": "4300000000000",
+   "fnsCode": "43",
+   "name": "Кировская область",
+   "avgSalary": 67199,
+   "unemployment": 2
+  },
+  {
+   "code": "4400000000000",
+   "fnsCode": "44",
+   "name": "Костромская область",
+   "avgSalary": 63292,
+   "unemployment": 1
+  },
+  {
+   "code": "4500000000000",
+   "fnsCode": "45",
+   "name": "Курганская область",
+   "avgSalary": 72992,
+   "unemployment": 2
+  },
+  {
+   "code": "4600000000000",
+   "fnsCode": "46",
+   "name": "Курская область",
+   "avgSalary": 75521,
+   "unemployment": 1
+  },
+  {
+   "code": "4700000000000",
+   "fnsCode": "47",
+   "name": "Ленинградская область",
+   "avgSalary": 94348,
+   "unemployment": 3
+  },
+  {
+   "code": "4800000000000",
+   "fnsCode": "48",
+   "name": "Липецкая область",
+   "avgSalary": 76460,
+   "unemployment": 2
+  },
+  {
+   "code": "4900000000000",
+   "fnsCode": "49",
+   "name": "Магаданская область",
+   "avgSalary": 178076,
+   "unemployment": 2
+  },
+  {
+   "code": "5000000000000",
+   "fnsCode": "50",
+   "name": "Московская область",
+   "avgSalary": 116008,
+   "unemployment": 2
+  },
+  {
+   "code": "5100000000000",
+   "fnsCode": "51",
+   "name": "Мурманская область",
+   "avgSalary": 125302,
+   "unemployment": 2
+  },
+  {
+   "code": "5200000000000",
+   "fnsCode": "52",
+   "name": "Нижегородская область",
+   "avgSalary": 80778,
+   "unemployment": 1
+  },
+  {
+   "code": "5300000000000",
+   "fnsCode": "53",
+   "name": "Новгородская область",
+   "avgSalary": 72178,
+   "unemployment": 1
+  },
+  {
+   "code": "5400000000000",
+   "fnsCode": "54",
+   "name": "Новосибирская область",
+   "avgSalary": 86546,
+   "unemployment": 2
+  },
+  {
+   "code": "5500000000000",
+   "fnsCode": "55",
+   "name": "Омская область",
+   "avgSalary": 73100,
+   "unemployment": 3
+  },
+  {
+   "code": "5600000000000",
+   "fnsCode": "56",
+   "name": "Оренбургская область",
+   "avgSalary": 74294,
+   "unemployment": 2
+  },
+  {
+   "code": "5700000000000",
+   "fnsCode": "57",
+   "name": "Орловская область",
+   "avgSalary": 63817,
+   "unemployment": 2
+  },
+  {
+   "code": "5800000000000",
+   "fnsCode": "58",
+   "name": "Пензенская область",
+   "avgSalary": 67293,
+   "unemployment": 2
+  },
+  {
+   "code": "5900000000000",
+   "fnsCode": "59",
+   "name": "Пермский край",
+   "avgSalary": 83646,
+   "unemployment": 2
+  },
+  {
+   "code": "6000000000000",
+   "fnsCode": "60",
+   "name": "Псковская область",
+   "avgSalary": 63454,
+   "unemployment": 2
+  },
+  {
+   "code": "6100000000000",
+   "fnsCode": "61",
+   "name": "Ростовская область",
+   "avgSalary": 70813,
+   "unemployment": 2
+  },
+  {
+   "code": "6200000000000",
+   "fnsCode": "62",
+   "name": "Рязанская область",
+   "avgSalary": 73393,
+   "unemployment": 2
+  },
+  {
+   "code": "6300000000000",
+   "fnsCode": "63",
+   "name": "Самарская область",
+   "avgSalary": 76626,
+   "unemployment": 2
+  },
+  {
+   "code": "6400000000000",
+   "fnsCode": "64",
+   "name": "Саратовская область",
+   "avgSalary": 67353,
+   "unemployment": 1
+  },
+  {
+   "code": "6500000000000",
+   "fnsCode": "65",
+   "name": "Сахалинская область",
+   "avgSalary": 148172,
+   "unemployment": 2
+  },
+  {
+   "code": "6600000000000",
+   "fnsCode": "66",
+   "name": "Свердловская область",
+   "avgSalary": 89286,
+   "unemployment": 1
+  },
+  {
+   "code": "6700000000000",
+   "fnsCode": "67",
+   "name": "Смоленская область",
+   "avgSalary": 68468,
+   "unemployment": 2
+  },
+  {
+   "code": "6800000000000",
+   "fnsCode": "68",
+   "name": "Тамбовская область",
+   "avgSalary": 63024,
+   "unemployment": 1
+  },
+  {
+   "code": "6900000000000",
+   "fnsCode": "69",
+   "name": "Тверская область",
+   "avgSalary": 72783,
+   "unemployment": 2
+  },
+  {
+   "code": "7000000000000",
+   "fnsCode": "70",
+   "name": "Томская область",
+   "avgSalary": 85829,
+   "unemployment": 3
+  },
+  {
+   "code": "7100000000000",
+   "fnsCode": "71",
+   "name": "Тульская область",
+   "avgSalary": 84212,
+   "unemployment": 1
+  },
+  {
+   "code": "7200000000000",
+   "fnsCode": "72",
+   "name": "Тюменская область",
+   "avgSalary": 94124,
+   "unemployment": 2
+  },
+  {
+   "code": "7300000000000",
+   "fnsCode": "73",
+   "name": "Ульяновская область",
+   "avgSalary": 69676,
+   "unemployment": 2
+  },
+  {
+   "code": "7400000000000",
+   "fnsCode": "74",
+   "name": "Челябинская область",
+   "avgSalary": 81366,
+   "unemployment": 2
+  },
+  {
+   "code": "7500000000000",
+   "fnsCode": "75",
+   "name": "Забайкальский край",
+   "avgSalary": 99768,
+   "unemployment": 5
+  },
+  {
+   "code": "7600000000000",
+   "fnsCode": "76",
+   "name": "Ярославская область",
+   "avgSalary": 73832,
+   "unemployment": 3
+  },
+  {
+   "code": "7700000000000",
+   "fnsCode": "77",
+   "name": "г Москва",
+   "avgSalary": 180861,
+   "unemployment": 1
+  },
+  {
+   "code": "7800000000000",
+   "fnsCode": "78",
+   "name": "г Санкт-Петербург",
+   "avgSalary": 121475,
+   "unemployment": 2
+  },
+  {
+   "code": "7900000000000",
+   "fnsCode": "79",
+   "name": "Еврейская автономная область",
+   "avgSalary": 91167,
+   "unemployment": 1
+  },
+  {
+   "code": "8300000000000",
+   "fnsCode": "83",
+   "name": "Ненецкий автономный округ",
+   "avgSalary": 146957,
+   "unemployment": 4
+  },
+  {
+   "code": "8600000000000",
+   "fnsCode": "86",
+   "name": "Ханты-Мансийский Автономный округ - Югра автономный округ",
+   "avgSalary": 135914,
+   "unemployment": 1
+  },
+  {
+   "code": "8700000000000",
+   "fnsCode": "87",
+   "name": "Чукотский автономный округ",
+   "avgSalary": 214604,
+   "unemployment": 2
+  },
+  {
+   "code": "8900000000000",
+   "fnsCode": "89",
+   "name": "Ямало-Ненецкий автономный округ",
+   "avgSalary": 177711,
+   "unemployment": 1
+  },
+  {
+   "code": "9000000000000",
+   "fnsCode": "90",
+   "name": "Запорожская область",
+   "avgSalary": null,
+   "unemployment": null
+  },
+  {
+   "code": "9100000000000",
+   "fnsCode": "91",
+   "name": "Крым республика",
+   "avgSalary": 63834,
+   "unemployment": 2
+  },
+  {
+   "code": "9200000000000",
+   "fnsCode": "92",
+   "name": "г Севастополь",
+   "avgSalary": 66605,
+   "unemployment": 2
+  },
+  {
+   "code": "9300000000000",
+   "fnsCode": "93",
+   "name": "Донецкая Народная республика",
+   "avgSalary": null,
+   "unemployment": null
+  },
+  {
+   "code": "9400000000000",
+   "fnsCode": "94",
+   "name": "Луганская Народная республика",
+   "avgSalary": null,
+   "unemployment": null
+  },
+  {
+   "code": "9500000000000",
+   "fnsCode": "95",
+   "name": "Херсонская область",
+   "avgSalary": null,
+   "unemployment": null
+  },
+  {
+   "code": "9800000000000",
+   "fnsCode": "98",
+   "name": "Сириус федеральная территория",
+   "avgSalary": null,
+   "unemployment": null
+  },
+  {
+   "code": "9900000000000",
+   "fnsCode": "99",
+   "name": "г Байконур",
+   "avgSalary": null,
+   "unemployment": null
+  }
+ ]
+}

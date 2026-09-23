@@ -1,0 +1,16 @@
+{
+  "name": "stavka",
+  "version": "0.1.0",
+  "private": true,
+  "description": "«Ставка» — зарплатный радар для малого бизнеса: чат-бот и мини-приложение MAX (хакатон MAX 2026, трек «Эффективный бизнес»)",
+  "workspaces": ["server", "webapp"],
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "build": "npm run build -w webapp && npm run build -w server",
+    "test": "npm run test -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w webapp",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w webapp",
+    "packs:validate": "npm run packs:validate -w server"
+  }
+}

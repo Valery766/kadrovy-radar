@@ -1,0 +1,24 @@
+# systemd-служба «Ставки» на сервере без Docker (общий университетский сервер, nginx впереди).
+# Установка: sudo cp deploy/stavka.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now stavka
+[Unit]
+Description=Stavka — MAX bot and mini-app (hackathon MAX 2026)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+WorkingDirectory=/srv/stavka/current
+EnvironmentFile=/srv/stavka/.env
+Environment=NODE_ENV=production
+Environment=NODE_EXTRA_CA_CERTS=/srv/stavka/current/server/certs/russian_trusted_bundle.pem
+ExecStart=/usr/bin/node /srv/stavka/current/server/dist/main.js
+Restart=always
+RestartSec=5
+MemoryMax=768M
+TasksMax=256
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
