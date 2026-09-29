@@ -285,7 +285,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
         {vacancy?.link && <Muted>Ссылка для кандидатов: {vacancy.link}</Muted>}
         {publishDraft !== null && !vacancy && <div className="sv-stack">
           <Banner>Это шаблон, а не проверенные условия вашего бизнеса. Исправьте график, требования и льготы перед публикацией.</Banner>
-          <label htmlFor="publish-vacancy-text">Текст вакансии<Textarea id="publish-vacancy-text" className="sv-textarea" value={publishDraft} maxLength={3500} style={{ minHeight: 220 }} onChange={(e) => { setPublishDraft(e.target.value); setConfirmed(false); }} /></label>
+          <label htmlFor="publish-vacancy-text">Текст вакансии<Textarea id="publish-vacancy-text" className="sv-textarea sv-textarea--md" value={publishDraft} maxLength={3500} onChange={(e) => { setPublishDraft(e.target.value); setConfirmed(false); }} /></label>
           <label className="sv-consent"><input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} /> Показывать всем в каталоге «Найти работу». Текст вакансии станет общедоступным; проверьте, нет ли в нём лишних персональных данных.</label>
           <label className="sv-consent"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Подтверждаю, что условия в тексте соответствуют моей вакансии.</label>
         </div>}

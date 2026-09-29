@@ -10,12 +10,15 @@
  *   node tools/seed-demo-catalog.mjs --db <путь> --apply        # без --apply только показывает план
  *   node tools/seed-demo-catalog.mjs --db <путь> --remove --apply  # откат: удалить строки партии
  *
- * Перед записью инструмент делает резервную копию базы (VACUUM INTO) рядом с ней и печатает путь.
- * Чужие строки не трогаются: запись идёт только по идентификаторам своей партии.
+ * Перед записью инструмент делает резервную копию базы (VACUUM INTO) и печатает путь.
+ * Вакансии пишутся только по идентификаторам своей партии. Единственное исключение -
+ * флаг --unlist-legacy: он снимает с показа прежние объявления указанного владельца,
+ * поэтому требует явного --owner и записывает снятые идентификаторы в файл рядом
+ * с резервной копией, чтобы --remove вернул их в каталог.
  */
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, chmodSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -36,6 +39,10 @@ const withResponses = flag('with-responses');
 const datasetPath = resolve(value('dataset', join(import.meta.dirname, 'demo-catalog.json')));
 const dataset = JSON.parse(readFileSync(datasetPath, 'utf8'));
 const batch = dataset.batch;
+if (!/^[a-zA-Z0-9._-]{1,64}$/.test(batch ?? '')) {
+  console.error(`Ключ партии «${batch}» недопустим: разрешены буквы, цифры, точка, дефис и подчёркивание, не длиннее 64 символов.`);
+  process.exit(2);
+}
 const idOf = (key) => createHash('sha256').update(`${batch}:${key}`).digest('hex').slice(0, 32);
 
 const db = new DatabaseSync(resolve(dbPath));
@@ -55,8 +62,15 @@ const before = {
 
 /** Владелец учебных вакансий: явно заданный id или тот, кто уже публиковал в этой базе. */
 const ownerArg = value('owner', 'auto');
+const unlistLegacy = flag('unlist-legacy');
 let owner = Number(ownerArg);
 if (ownerArg === 'auto') {
+  // Автовыбор годится только для наполнения: он берёт последнего публиковавшего, а это может быть
+  // посторонний пользователь. Снимать чужие объявления с показа по догадке недопустимо.
+  if (unlistLegacy) {
+    console.error('--unlist-legacy требует явного --owner <maxUserId>: снимать с показа объявления угаданного владельца нельзя.');
+    process.exit(2);
+  }
   const row = one(`SELECT max_user_id AS uid FROM vacancies WHERE id NOT IN (${placeholders}) AND max_user_id > 0 ORDER BY created_at DESC LIMIT 1`, ...ids);
   owner = row?.uid ?? null;
 }
@@ -80,12 +94,15 @@ if (!apply) {
 const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 const backupDir = resolve(value('backup-dir', dirname(resolve(dbPath))));
 const backup = join(backupDir, `stavka-before-${batch}-${stamp}.db`);
+const unlistedLog = join(backupDir, `unlisted-${batch}.json`);
 if (existsSync(backup)) { console.error(`Резервная копия уже существует: ${backup}`); process.exit(2); }
 db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
 const check = new DatabaseSync(backup, { readOnly: true });
 const integrity = check.prepare('PRAGMA integrity_check').get();
 check.close();
+chmodSync(backup, 0o600); // в копии есть персональные данные пользователей и откликов
 console.log(`Резервная копия: ${backup} (${(statSync(backup).size / 1e6).toFixed(1)} МБ, integrity_check: ${Object.values(integrity)[0]})`);
+console.log('В резервной копии есть персональные данные: держите её на сервере и удалите, когда она больше не нужна.');
 
 const now = Date.now();
 const iso = (ms) => new Date(ms).toISOString();
@@ -94,9 +111,20 @@ const CANDIDATE_BASE = -9_000_000; // вне диапазона демо-сес�
 db.exec('BEGIN IMMEDIATE');
 try {
   if (remove) {
-    const del = db.prepare(`DELETE FROM responses WHERE vacancy_id IN (${placeholders})`).run(...ids);
-    const delV = db.prepare(`DELETE FROM vacancies WHERE id IN (${placeholders})`).run(...ids);
-    console.log(`Удалено: вакансий ${delV.changes}, откликов ${del.changes}`);
+    // Отклики настоящих людей на учебные вакансии не наши: удаляем только синтетические
+    // (их идентификаторы пользователей заведомо ниже CANDIDATE_BASE) и предупреждаем об остальных.
+    const foreign = one(`SELECT COUNT(*) AS n FROM responses WHERE vacancy_id IN (${placeholders}) AND candidate_user_id > ?`, ...ids, CANDIDATE_BASE).n;
+    const del = db.prepare(`DELETE FROM responses WHERE vacancy_id IN (${placeholders}) AND candidate_user_id <= ?`).run(...ids, CANDIDATE_BASE);
+    const delV = db.prepare(`DELETE FROM vacancies WHERE id IN (${placeholders}) AND id NOT IN (SELECT vacancy_id FROM responses)`).run(...ids);
+    console.log(`Удалено: вакансий ${delV.changes}, учебных откликов ${del.changes}`);
+    if (foreign) console.log(`Оставлено вакансий с настоящими откликами: ${foreign} откликов не наши, эти вакансии не удалены`);
+    if (existsSync(unlistedLog)) {
+      const back = JSON.parse(readFileSync(unlistedLog, 'utf8'));
+      const restore = db.prepare('UPDATE vacancies SET listed = 1 WHERE id = ?');
+      let n = 0;
+      for (const id of back.ids ?? []) n += restore.run(id).changes;
+      console.log(`Возвращено в каталог прежних объявлений: ${n} (список ${unlistedLog})`);
+    }
   } else {
     const upsert = db.prepare(`INSERT INTO vacancies (id, max_user_id, card_id, profession_key, region_code, title, salary, text, employer_name, status, listed, created_at)
       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'open', 1, ?)
@@ -111,10 +139,12 @@ try {
 
     // Прежние учебные публикации того же владельца убираем из каталога, но не удаляем:
     // ссылки и QR продолжают работать, а каталог показывает один актуальный набор.
-    if (flag('unlist-legacy')) {
+    if (unlistLegacy) {
       const legacy = all(`SELECT id, title FROM vacancies WHERE max_user_id = ? AND listed = 1 AND id NOT IN (${placeholders})`, owner, ...ids);
       db.prepare(`UPDATE vacancies SET listed = 0 WHERE max_user_id = ? AND listed = 1 AND id NOT IN (${placeholders})`).run(owner, ...ids);
+      writeFileSync(unlistedLog, JSON.stringify({ batch, owner, at: iso(now), ids: legacy.map((r) => r.id), titles: legacy.map((r) => r.title) }, null, 1), { mode: 0o600 });
       console.log(`Снято с показа прежних объявлений: ${legacy.length}${legacy.length ? ` (${legacy.slice(0, 5).map((r) => r.title).join(', ')}${legacy.length > 5 ? ', …' : ''})` : ''}`);
+      console.log(`Список для возврата: ${unlistedLog}`);
     }
 
     if (withResponses) {

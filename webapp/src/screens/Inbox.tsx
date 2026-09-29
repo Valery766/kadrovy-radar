@@ -225,7 +225,7 @@ export function Inbox({ boot, notInMax, vacancyId: selectedId, onSelectVacancy, 
 
           {inviteFor === r.id && (
             <div className="sv-stack">
-              <Textarea className="sv-textarea" style={{ minHeight: 90 }} value={inviteText} onChange={(e) => setInviteText(e.target.value)}
+              <Textarea className="sv-textarea sv-textarea--sm" value={inviteText} onChange={(e) => setInviteText(e.target.value)}
                 placeholder="Например: ждём вас завтра в 11:00, Невский 20, спросить Ольгу" />
               <div className="sv-actions">
                 <Button stretched loading={busy === `invite:${r.id}`} disabled={busy !== null}

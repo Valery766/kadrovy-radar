@@ -149,7 +149,11 @@ html, body { margin: 0; padding: 0; }
 
 /* ---------- формы ---------- */
 .sv-field { display: flex; flex-direction: column; gap: 6px; }
-.sv-textarea { width: 100%; min-height: 260px; box-sizing: border-box; font: inherit; }
+/* Высоту задаём самому textarea: класс попадает на обёртку MAX UI, а внутреннее поле остаётся в две строки. */
+.sv-textarea { width: 100%; box-sizing: border-box; font: inherit; }
+.sv-textarea textarea { min-height: 260px; box-sizing: border-box; font: inherit; }
+.sv-textarea--md textarea { min-height: 220px; }
+.sv-textarea--sm textarea { min-height: 90px; }
 .sv-select { width: 100%; padding: 12px; border-radius: var(--sv-radius-s); border: 1px solid rgba(128,128,128,.3); background: var(--sv-card); color: inherit; font: inherit; font-size: 16px; }
 .sv-progress { height: 6px; background: rgba(47,107,255,.15); border-radius: 3px; overflow: hidden; }
 .sv-progress__bar { height: 100%; width: 40%; background: var(--sv-accent); animation: sv-slide 1.2s infinite ease-in-out; }
