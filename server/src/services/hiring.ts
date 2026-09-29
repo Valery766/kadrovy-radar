@@ -12,7 +12,7 @@ import QRCode from 'qrcode';
 import type { Bot } from '@maxhub/max-bot-api';
 import { Keyboard } from '@maxhub/max-bot-api';
 import type { Db, ResponseRow, VacancyRow } from '../db/index.js';
-import { putVacancy } from '../db/index.js';
+import { findResponseByCandidate, getUser, getVacancy, HiringStateError, putResponse, putVacancy } from '../db/index.js';
 import type { Config } from '../config.js';
 
 export interface HiringContext { db: Db; config: Config; bot: Bot; botUsername: string }
@@ -94,13 +94,16 @@ export interface CreateVacancyInput {
   maxUserId: number;
   salary: number | null;
   text: string;
+  listed?: boolean;
+  /** Stable server-derived identifier for an HTTP retry; never a client-selected database key. */
+  id?: string;
 }
 
 export interface CreatedVacancy { vacancy: VacancyRow; link: string; payload: string }
 
 /** Создаёт вакансию из карточки рынка и возвращает её вместе с диплинком. */
 export function createVacancyFromCard(ctx: HiringContext, input: CreateVacancyInput): CreatedVacancy {
-  const id = newVacancyId();
+  const id = input.id ?? newVacancyId();
   const payload = vacancyStartPayload(id);
   if (!isValidStartPayload(payload)) throw new Error(`Некорректный параметр запуска: ${payload}`);
   const vacancy = putVacancy(ctx.db, {
@@ -113,6 +116,7 @@ export function createVacancyFromCard(ctx: HiringContext, input: CreateVacancyIn
     salary: input.salary,
     text: input.text,
     employerName: input.card.employerName,
+    listed: input.listed ?? false,
   });
   return { vacancy, link: vacancyDeepLink(ctx.botUsername, id), payload };
 }
@@ -141,8 +145,10 @@ export function verifyContactSignature(botToken: string, vcfInfo: string, hash: 
   const given = hash.trim();
   const candidates = [mac.toString('hex'), mac.toString('base64'), mac.toString('base64url')];
   return candidates.some((expected) => {
-    const a = Buffer.from(expected.toLowerCase());
-    const b = Buffer.from(given.toLowerCase());
+    // Только hex нечувствителен к регистру; base64/base64url чувствительны.
+    const hex = expected === candidates[0];
+    const a = Buffer.from(hex ? expected.toLowerCase() : expected);
+    const b = Buffer.from(hex ? given.toLowerCase() : given);
     return a.length === b.length && timingSafeEqual(a, b);
   });
 }
@@ -165,9 +171,26 @@ export function timeToFirstResponse(v: Pick<VacancyRow, 'createdAt' | 'firstResp
 }
 
 /** Срок закрытия вакансии, минут (null – вакансия ещё открыта). */
-export function timeToHire(v: Pick<VacancyRow, 'createdAt' | 'closedAt'>): number | null {
-  if (!v.closedAt) return null;
+export function timeToHire(v: Pick<VacancyRow, 'createdAt' | 'closedAt' | 'hiredResponseId'>): number | null {
+  if (!v.closedAt || !v.hiredResponseId) return null;
   return Math.max(0, Math.round((Date.parse(v.closedAt) - Date.parse(v.createdAt)) / 60_000));
+}
+
+/** Общий атомарный путь сохранения отклика для чата и мини-приложения. Повтор возвращает ту же запись. */
+export function submitCandidateResponse(db: Db, uid: number, vacancyId: string, answers: CandidateAnswers, phone: string | null = null, phoneVerified = false): { response: ResponseRow<CandidateAnswers>; vacancy: VacancyRow; created: boolean } {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const existing = findResponseByCandidate<CandidateAnswers>(db, vacancyId, uid);
+    const vacancy = getVacancy(db, vacancyId);
+    if (!vacancy) throw new HiringStateError('Вакансия не найдена');
+    if (vacancy.maxUserId === uid) throw new HiringStateError('Нельзя откликнуться на собственную вакансию');
+    if (existing) { db.exec('COMMIT'); return { response: existing, vacancy, created: false }; }
+    if (vacancy.status !== 'open') throw new HiringStateError('Вакансия уже закрыта');
+    const response = putResponse<CandidateAnswers>(db, { id: randomUUID(), vacancyId, candidateUserId: uid, candidateName: getUser(db, uid)?.name ?? null,
+      answers, phone, phoneVerified, score: scoreResponse(vacancy, answers, Boolean(phone)) });
+    db.exec('COMMIT');
+    return { response, vacancy: getVacancy(db, vacancyId)!, created: true };
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 
 /** Человекочитаемая длительность: «12 мин», «3 ч 20 мин», «2 дн 4 ч». */

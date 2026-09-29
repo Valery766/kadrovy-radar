@@ -30,6 +30,23 @@ export interface BuildAppOptions {
   logger?: boolean | object;
 }
 
+/** Allow the documented MAX bridge and real MAX web parents, not arbitrary framing or scripts.
+ * React applies dynamic chart styles via DOM properties; bundled stylesheets are same-origin.
+ * Do not add X-Frame-Options: SAMEORIGIN/DENY would break the cross-origin MAX miniapp.
+ */
+export const MINIAPP_CSP = [
+  "default-src 'none'",
+  "script-src 'self' https://st.max.ru",
+  "style-src 'self'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'self' https://web.max.ru https://max.ru",
+].join('; ');
+
 /**
  * В журнал запросов не попадает строка запроса: в ней бывают ИНН (`/api/inspections?inn=…`)
  * и свободный текст подсказок (`?q=…`), а ИНН ИП – персональные данные.
@@ -52,11 +69,17 @@ export async function buildApp(opts: BuildAppOptions): Promise<AppParts> {
     trustProxy: config.trustProxy,
     bodyLimit: 1024 * 1024,
   });
-  // Защитные заголовки. X-Frame-Options и CSP с frame-ancestors не ставим: мини-приложение живёт в webview/iframe MAX.
+  // Shared headers; HTML receives a CSP with a narrow MAX frame allowlist below.
   app.addHook('onRequest', (_req, reply, done) => {
     reply.header('x-content-type-options', 'nosniff');
     reply.header('referrer-policy', 'no-referrer');
     done();
+  });
+  app.addHook('onSend', (_req, reply, payload, done) => {
+    if (String(reply.getHeader('content-type') ?? '').includes('text/html') && !reply.hasHeader('content-security-policy')) {
+      reply.header('content-security-policy', MINIAPP_CSP);
+    }
+    done(null, payload);
   });
   const db = openDb(opts.dbPath ?? join(config.dataDir, 'stavka.db'));
   const catalog = loadCatalog(config.packsDir);
@@ -67,7 +90,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<AppParts> {
 
   const webDist = opts.webDist ?? resolve(import.meta.dirname, '../../webapp/dist');
   if (existsSync(webDist)) {
-    await app.register(fastifyStatic, { root: webDist, prefix: '/app/', decorateReply: true, setHeaders: (res, path) => { if (path.endsWith('.html')) res.setHeader('cache-control', 'no-cache'); } });
+    await app.register(fastifyStatic, { root: webDist, prefix: '/app/', decorateReply: true, setHeaders: (reply, path) => { if (path.endsWith('.html')) reply.header('cache-control', 'no-cache'); } });
     app.get('/app', (_req, reply) => reply.redirect('/app/'));
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/app/') && !req.url.includes('.')) return reply.sendFile('index.html');

@@ -2,13 +2,13 @@
  * HTTP API мини-приложения. Авторизация: сессия, выданная после проверки initData (HMAC).
  * Вне MAX доступен демо-режим (публичные данные, без отправки в чат).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Keyboard } from '@maxhub/max-bot-api';
 import type { Db, ResponseRow, VacancyRow } from '../db/index.js';
 import {
   closeVacancy, countResponses, deactivateSubscription, getCard, getMeta, getResponse, getUser, getVacancy,
-  listCardsByUser, listResponsesByVacancy, listUserSubscriptions, listVacanciesByUser, updateResponseStatus,
+  listCardsByUser, listResponsesByVacancy, listUserSubscriptions, listVacanciesByUser, transitionResponse, HiringStateError,
   updateUser, upsertSubscription, upsertUser,
 } from '../db/index.js';
 import { buildMarket, getProfile, MarketError, type MarketContext, type MarketResult } from '../services/market.js';
@@ -29,6 +29,7 @@ import {
 } from '../packs/loader.js';
 import { signSession, validateInitData, verifySession, type SessionPayload } from './auth.js';
 import type { Config } from '../config.js';
+import { registerJobsApi } from './jobs.js';
 
 export interface ApiDeps {
   db: Db;
@@ -60,6 +61,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (!s) { void reply.code(401).send({ error: 'unauthorized', message: 'Сессия не найдена или истекла: откройте приложение заново' }); return null; }
     return s;
   };
+  registerJobsApi(app, deps, auth);
 
   const fail = (reply: FastifyReply, err: unknown) => {
     if (err instanceof MarketError) return reply.code(err.code === 'source_unavailable' ? 503 : 400).send({ error: err.code, message: err.message });
@@ -457,6 +459,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     text: v.text,
     employerName: v.employerName,
     status: v.status,
+    listed: v.listed,
     createdAt: v.createdAt,
     closedAt: v.closedAt,
     hiredResponseId: v.hiredResponseId,
@@ -504,7 +507,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   };
 
   /** Публикация вакансии из карточки: запись, диплинк и карточка с QR в чат работодателя. */
-  app.post<{ Params: { id: string }; Body: { salary?: number | null; text?: string } }>('/api/cards/:id/vacancy', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { salary?: number | null; text?: string; listed?: boolean; requestId?: string } }>('/api/cards/:id/vacancy', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     if (demoBlocked(reply, s)) return;
     if (!deps.hiring || !deps.bot) return reply.code(503).send({ error: 'no_bot', message: 'Сервер запущен без бота: публикация вакансии недоступна' });
@@ -512,21 +515,33 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (!row) return reply.code(404).send({ error: 'not_found', message: 'Карточка не найдена' });
     if (!ownsCard(reply, row, s)) return;
     const r = row.payload;
+    const requestId = req.body?.requestId;
+    if (requestId !== undefined && (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,80}$/.test(requestId))) return reply.code(400).send({ error: 'request_invalid', message: 'Некорректный идентификатор публикации' });
+    if (req.body?.text !== undefined && (typeof req.body.text !== 'string' || req.body.text.length > 3500)) return reply.code(400).send({ error: 'text_invalid', message: 'Текст вакансии должен быть не длиннее 3 500 символов' });
     const rawSalary = req.body?.salary;
-    const salary = rawSalary == null || rawSalary === 0
-      ? (r.card.options.find((o) => o.kind === 'median')?.value ?? r.card.offer?.value ?? r.card.stats?.median ?? null)
+    if (req.body?.listed !== undefined && typeof req.body.listed !== 'boolean') return reply.code(400).send({ error: 'listing_invalid', message: 'Некорректный режим публикации' });
+    const salary = rawSalary == null
+      ? (r.card.offer?.value ?? r.card.options.find((o) => o.kind === 'median')?.value ?? r.card.stats?.median ?? null)
       : Number(rawSalary);
-    if (salary != null && (!Number.isFinite(salary) || salary < 1000 || salary > 5_000_000)) {
+    if (salary != null && (!Number.isSafeInteger(salary) || salary < 1000 || salary > 5_000_000)) {
       return reply.code(400).send({ error: 'salary_invalid', message: 'Ставка должна быть от 1 000 до 5 000 000 ₽ в месяц' });
     }
     const pack = catalog.packs.find((p) => p.id === r.pack.id) ?? catalog.packs.find((p) => !p.region)!;
     const text = (String(req.body?.text ?? '').trim() || buildVacancyDraft({ card: r.card, profession: r.profession, pack, salary: salary ?? 0, companyName: r.profile?.name ?? null, cityName: r.region.name })).slice(0, 3500);
+    const id = requestId ? createHash('sha256').update(JSON.stringify([s.uid, r.cardId, requestId])).digest('hex').slice(0, 32) : undefined;
+    const existing = id ? getVacancy(db, id) : null;
+    if (existing) {
+      if (existing.salary !== salary || existing.text !== text || existing.listed !== (req.body?.listed ?? false)) return reply.code(409).send({ error: 'request_conflict', message: 'Эта публикация уже сохранена с другими условиями. Откройте «Мои вакансии».' });
+      return { vacancy: vacancyView(existing), link: vacancyDeepLink(deps.bot.username, existing.id), qrSent: false, reused: true };
+    }
     try {
       const { vacancy, link } = createVacancyFromCard(deps.hiring, {
+        id,
         card: { cardId: r.cardId, professionKey: r.profession.key, professionTitle: r.profession.title, regionCode: r.region.code, regionName: r.region.name, employerName: r.profile?.name ?? null },
         maxUserId: s.uid,
         salary,
         text,
+        listed: req.body?.listed ?? false,
       });
       let qrSent = false;
       const u = getUser(db, s.uid);
@@ -573,46 +588,57 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     return { response: r, vacancy: v };
   };
 
+  const changeResponse = (reply: FastifyReply, id: string, uid: number, target: 'invited' | 'rejected' | 'hired') => {
+    try { return transitionResponse<CandidateAnswers>(db, id, uid, target); }
+    catch (error) {
+      if (!(error instanceof HiringStateError)) throw error;
+      void reply.code(409).send({ error: 'invalid_transition', message: error.message });
+      return null;
+    }
+  };
+  const notify = async (uid: number, text: string): Promise<'sent' | 'failed'> => {
+    if (!deps.hiring) return 'failed';
+    try { await sendToUser(deps.hiring, uid, text); return 'sent'; }
+    catch { app.log.warn({ recipientId: uid }, 'решение сохранено, сообщение кандидату не отправлено'); return 'failed'; }
+  };
+
   app.post<{ Params: { id: string }; Body: { message?: string } }>('/api/responses/:id/invite', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     if (demoBlocked(reply, s)) return;
     const found = ownedResponse(reply, req.params.id, s.uid); if (!found) return;
+    if (req.body?.message !== undefined && typeof req.body.message !== 'string') return reply.code(400).send({ error: 'message_invalid', message: 'Приглашение должно быть текстом' });
     const message = (req.body?.message ?? '').trim();
-    const updated = updateResponseStatus<CandidateAnswers>(db, found.response.id, 'invited') ?? found.response;
-    if (deps.hiring) {
-      const text = `Вас приглашают на собеседование: ${message || `по вакансии «${found.vacancy.title}». Работодатель свяжется с вами здесь, в MAX.`}`;
-      await sendToUser(deps.hiring, found.response.candidateUserId, text).catch((err) => app.log.warn({ err: String(err) }, 'приглашение кандидату не доставлено'));
-    }
-    return { response: responseView(updated) };
+    if (message.length > 2000) return reply.code(400).send({ error: 'message_invalid', message: 'Приглашение не длиннее 2 000 символов' });
+    const changed = changeResponse(reply, found.response.id, s.uid, 'invited'); if (!changed) return;
+    const delivery = changed.changed ? await notify(found.response.candidateUserId, `Вас приглашают на собеседование: ${message || `по вакансии «${found.vacancy.title}». Работодатель свяжется с вами здесь, в MAX.`}`) : 'unchanged';
+    return { response: responseView(changed.response), delivery };
   });
 
   app.post<{ Params: { id: string } }>('/api/responses/:id/reject', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     if (demoBlocked(reply, s)) return;
     const found = ownedResponse(reply, req.params.id, s.uid); if (!found) return;
-    const updated = updateResponseStatus<CandidateAnswers>(db, found.response.id, 'rejected') ?? found.response;
-    if (deps.hiring) {
-      await sendToUser(deps.hiring, found.response.candidateUserId, `По вакансии «${found.vacancy.title}» работодатель выбрал другого кандидата. Спасибо за отклик!`)
-        .catch((err) => app.log.warn({ err: String(err) }, 'отказ кандидату не доставлен'));
-    }
-    return { response: responseView(updated) };
+    const changed = changeResponse(reply, found.response.id, s.uid, 'rejected'); if (!changed) return;
+    const delivery = changed.changed ? await notify(found.response.candidateUserId, `По вакансии «${found.vacancy.title}» работодатель выбрал другого кандидата. Спасибо за отклик!`) : 'unchanged';
+    return { response: responseView(changed.response), delivery };
   });
 
   app.post<{ Params: { id: string } }>('/api/responses/:id/hire', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     if (demoBlocked(reply, s)) return;
     const found = ownedResponse(reply, req.params.id, s.uid); if (!found) return;
-    const updated = updateResponseStatus<CandidateAnswers>(db, found.response.id, 'hired') ?? found.response;
-    const vacancy = closeVacancy(db, found.vacancy.id, s.uid, found.response.id) ?? found.vacancy;
-    if (deps.hiring) {
-      await sendToUser(deps.hiring, found.response.candidateUserId, `Вы приняты на вакансию «${found.vacancy.title}». Работодатель свяжется с вами для выхода на работу.`)
-        .catch((err) => app.log.warn({ err: String(err) }, 'сообщение о найме не доставлено'));
+    const changed = changeResponse(reply, found.response.id, s.uid, 'hired'); if (!changed) return;
+    const { vacancy } = changed;
+    let delivery: 'sent' | 'failed' | 'unchanged' = 'unchanged';
+    let otherNotificationsFailed = 0;
+    if (changed.changed) {
+      delivery = await notify(found.response.candidateUserId, `Вы приняты на вакансию «${vacancy.title}». Работодатель свяжется с вами для выхода на работу.`);
       for (const other of listResponsesByVacancy<CandidateAnswers>(db, vacancy.id)) {
         if (other.id === found.response.id || other.status === 'rejected' || other.status === 'hired') continue;
-        await sendToUser(deps.hiring, other.candidateUserId, `Вакансия «${vacancy.title}» закрыта. Спасибо за отклик!`).catch(() => undefined);
+        if (await notify(other.candidateUserId, `Вакансия «${vacancy.title}» закрыта. Спасибо за отклик!`) === 'failed') otherNotificationsFailed += 1;
       }
     }
-    return { response: responseView(updated), vacancy: vacancyView(vacancy) };
+    return { response: responseView(changed.response), vacancy: vacancyView(vacancy), delivery, otherNotificationsFailed };
   });
 
   app.post<{ Params: { id: string } }>('/api/vacancies/:id/close', async (req, reply) => {
@@ -620,13 +646,14 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (demoBlocked(reply, s)) return;
     const v = ownedVacancy(reply, req.params.id, s.uid); if (!v) return;
     const closed = closeVacancy(db, v.id, s.uid) ?? v;
-    if (deps.hiring) {
+    let notificationsFailed = 0;
+    if (v.status === 'open') {
       for (const r of listResponsesByVacancy<CandidateAnswers>(db, closed.id)) {
         if (r.status === 'hired' || r.status === 'rejected') continue;
-        await sendToUser(deps.hiring, r.candidateUserId, `Вакансия «${closed.title}» закрыта. Спасибо за отклик!`).catch(() => undefined);
+        if (await notify(r.candidateUserId, `Вакансия «${closed.title}» закрыта. Спасибо за отклик!`) === 'failed') notificationsFailed += 1;
       }
     }
-    return { vacancy: vacancyView(closed) };
+    return { vacancy: vacancyView(closed), notificationsFailed };
   });
 
   app.post<{ Params: { id: string }; Body: { salary?: number } }>('/api/cards/:id/vacancy-text', async (req, reply) => {
@@ -636,7 +663,8 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
     if (!ownsCard(reply, row, s)) return;
     const r = row.payload;
     const pack = catalog.packs.find((p) => p.id === r.pack.id) ?? catalog.packs.find((p) => p.region === null)!;
-    const salary = Number(req.body?.salary) || r.card.options.find((o) => o.kind === 'median')?.value || r.card.offer?.value || r.card.stats?.median || 0;
+    const salary = req.body?.salary == null ? (r.card.offer?.value ?? r.card.stats?.median ?? 0) : Number(req.body.salary);
+    if (!Number.isSafeInteger(salary) || salary < 1000 || salary > 5_000_000) return reply.code(400).send({ error: 'salary_invalid', message: 'Введите целую зарплату от 1 000 до 5 000 000 ₽' });
     return { text: buildVacancyDraft({ card: r.card, profession: r.profession, pack, salary, companyName: r.profile?.name ?? null, cityName: r.region.name }), salary };
   });
 }

@@ -19,7 +19,7 @@ const config = loadConfig({ MAX_UPDATES_MODE: 'none', PACKS_DIR: resolve(import.
 const catalog = loadCatalog(config.packsDir);
 const USER = 701;
 const CHAT_ID = 910;
-const GUIDE_COMMANDS = ['/stavka', '/vacancies', '/staff', '/regions', '/digest', '/checks'];
+const GUIDE_COMMANDS = ['/stavka', '/vacancies', '/jobs'];
 
 interface Reply { text: string; attachments: unknown[] }
 
@@ -79,11 +79,11 @@ const expectGuide = (text: string) => {
 };
 
 describe('путеводитель', () => {
-  it('/start: приветствие в 2–3 строки с кнопкой «Проверить ставку», затем «Что умеет бот» со всеми командами', async () => {
+  it('/start: одно короткое приветствие с основными действиями, без дублирующей справки', async () => {
     const h = harness();
     await h.message('/start');
-    expect(h.replies).toHaveLength(2);
-    const [welcome, guide] = h.replies as [Reply, Reply];
+    expect(h.replies).toHaveLength(1);
+    const welcome = h.replies[0]!;
     expect(welcome.text).toContain('Валерий');
     expect(welcome.text).toContain('Кадровый радар');
     expect(welcome.text.split('\n').filter(Boolean).length).toBeLessThanOrEqual(3);
@@ -91,15 +91,15 @@ describe('путеводитель', () => {
     const welcomeButtons = buttonTexts(welcome.attachments);
     expect(welcomeButtons[0]).toBe('Проверить ставку');
     expect(welcomeButtons).toContain('Что умеет бот');
-    expectGuide(guide.text);
-    expect(buttonTexts(guide.attachments)).toHaveLength(6);
+    expect(welcomeButtons).toContain('Найти работу');
+    expect(welcomeButtons).toContain('Мои вакансии');
   });
 
-  it('bot_started без payload: те же два сообщения', async () => {
+  it('bot_started без payload: одно приветствие', async () => {
     const h = harness();
     await h.started();
-    expect(h.replies).toHaveLength(2);
-    expectGuide(h.replies[1]!.text);
+    expect(h.replies).toHaveLength(1);
+    expect(h.replies[0]!.text).toContain('Кадровый радар');
   });
 
   it('кнопка «Что умеет бот» и /help повторяют путеводитель; /help добавляет группы команд', async () => {

@@ -154,7 +154,7 @@ describe('тексты бота по словарю', () => {
     walk(keyboards);
     expect(labels.length).toBeGreaterThan(30);
     for (const label of labels) expect(label.length, label).toBeLessThanOrEqual(T.MAX_BUTTON_LABEL);
-    expect(labels).toContain('Опубликовать 65 тыс.');
+    expect(labels).toContain('Создать вакансию');
     expect(labels).toContain('Обычная: 65 тыс.');
   });
 });

@@ -5,7 +5,7 @@
 import type { Bot, Context } from '@maxhub/max-bot-api';
 import { Keyboard } from '@maxhub/max-bot-api';
 import type { CardRow, Db, VacancyRow } from '../db/index.js';
-import { castVote, closeVacancy, deactivateSubscription, findResponseByCandidate, getCard, getUser, getVacancy, listResponsesByVacancy, listUserSubscriptions, listVacanciesByUser, putResponse, updateUser, upsertUser, upsertSubscription } from '../db/index.js';
+import { closeVacancy, deactivateSubscription, findResponseByCandidate, getCard, getUser, getVacancy, listOpenJobs, listResponsesByVacancy, listUserSubscriptions, listVacanciesByUser, setVacancyListed, updateUser, upsertUser, upsertSubscription } from '../db/index.js';
 import { buildMarket, getProfile, MarketError, type MarketContext, type MarketResult } from '../services/market.js';
 import { buildStaffAssessment, MAX_STAFF_POSITIONS } from '../services/staff.js';
 import { compareRegions } from '../services/regions.js';
@@ -14,7 +14,7 @@ import { inspectionsForBusiness, inspectionsProfileLine, inspectionsText } from 
 import { sendReportToChat, type ReportContext } from '../services/report.js';
 import {
   createVacancyFromCard, EXPERIENCE_LABEL, inboxButton, phoneFromVcf, renderVacancyQr, responseSummary,
-  scoreResponse, sendToUser, verifyContactSignature,
+  sendToUser, submitCandidateResponse, verifyContactSignature,
   type CandidateAnswers, type ExperienceKey, type HiringContext,
 } from '../services/hiring.js';
 import { buildVacancyDraft, formatRub, normalizeText, pluralRu, type Pack, type Profession } from '../core/index.js';
@@ -37,7 +37,8 @@ export interface BotDeps {
 }
 
 type Step = 'idle' | 'inn' | 'region' | 'profession' | 'salary' | 'staff' | 'regions' | 'regions_prof'
-  | 'apply_exp' | 'apply_schedule' | 'apply_salary' | 'apply_phone';
+  | 'apply_exp' | 'apply_schedule' | 'apply_salary' | 'apply_phone' | 'vac_salary' | 'vac_review' | 'vac_text';
+interface PublicationDraft { cardId: string; salary: number | null; text: string; listed: boolean; vacancyId?: string }
 interface State {
   step?: Step;
   professionKey?: string;
@@ -54,6 +55,7 @@ interface State {
   /** Кандидатский контур: вакансия, по которой идёт отклик, и накопленные ответы. */
   vacancyId?: string;
   answers?: Partial<CandidateAnswers>;
+  publication?: PublicationDraft;
 }
 
 /**
@@ -67,10 +69,8 @@ const COMMANDS = [
   { name: 'stavka', description: 'Сколько платить: проверить ставку' },
   { name: 'staff', description: 'Мой штат: кто получает меньше рынка' },
   { name: 'vacancies', description: 'Мои вакансии и отклики' },
-  { name: 'checks', description: 'Плановые проверки по моему ИНН' },
+  { name: 'jobs', description: 'Найти работу: каталог вакансий' },
   // Ещё
-  { name: 'regions', description: 'Сравнить регионы по должности' },
-  { name: 'digest', description: 'Зарплаты по всему моему региону' },
   { name: 'subs', description: 'Мои подписки: следить за рынком' },
   { name: 'demo', description: 'Показать на готовом примере' },
   // Настройки и справка
@@ -205,8 +205,6 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   /** Приветствие и следом путеводитель «Что умеет бот»: два сообщения с паузой под лимит MAX. */
   async function sendWelcome(ctx: Context, name: string | null) {
     await ctx.reply(T.welcomeText(name), { attachments: [T.welcomeKeyboard(deps.botUsername)] });
-    await sleep(MESSAGE_PAUSE_MS);
-    await ctx.reply(T.guideText(), { attachments: [T.guideKeyboard()] });
   }
   const sendGuide = (ctx: Context) => ctx.reply(T.guideText(), { attachments: [T.guideKeyboard()] });
   const sendHelp = (ctx: Context) => replyLong(ctx, T.helpText(), { attachments: [T.guideKeyboard()] });
@@ -485,6 +483,21 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     await replyLong(ctx, T.vacanciesListText(items), { attachments: [T.vacanciesKeyboard(deps.botUsername, items)] });
   }
 
+  /** Кандидату не нужен QR: пять свежих вакансий в чате, полный поиск в приложении. */
+  async function showJobs(ctx: Context, uid: number, page = 0) {
+    setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined });
+    const offset = Math.max(0, Math.min(10000, page));
+    const { vacancies, total } = listOpenJobs(db, { offset, limit: 5 });
+    const lines = ['Найти работу · каталог вакансий', '', total ? `Открытых вакансий: ${total}. Показаны ${offset + 1}–${offset + vacancies.length}.` : 'Пока нет вакансий в каталоге. Здесь появятся объявления, которые работодатели сами разрешили показывать всем.'];
+    vacancies.forEach((v, i) => lines.push(`${offset + i + 1}. ${v.title} · ${regionNameOf(v.regionCode)} · ${v.salary ? `от ${formatRub(v.salary)}` : 'зарплата не указана'}`));
+    lines.push('', 'Выберите вакансию кнопкой. Для фильтров по региону, должности и зарплате откройте «Поиск с фильтрами».');
+    const buttons: Parameters<typeof Keyboard.inlineKeyboard>[0] = vacancies.map((v, i) => [Keyboard.button.callback(`${offset + i + 1}. ${v.title}`.slice(0, T.MAX_BUTTON_LABEL), `job:${v.id}`)]);
+    if (offset + vacancies.length < total) buttons.push([Keyboard.button.callback('Ещё вакансии', `jobs:${offset + 5}`)]);
+    if (offset > 0) buttons.push([Keyboard.button.callback('В начало', 'jobs')]);
+    buttons.push([Keyboard.button.openApp('Поиск с фильтрами', deps.botUsername, undefined, 'jobs')]);
+    await ctx.reply(lines.join('\n'), { attachments: [Keyboard.inlineKeyboard(buttons)] });
+  }
+
   /** /subs: подписки с нумерацией, кнопка «Отписаться: N» по каждой. */
   async function showSubs(ctx: Context, uid: number) {
     const subs = listUserSubscriptions(db, uid);
@@ -496,10 +509,8 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
   }
 
   /** Публикация вакансии из карточки рынка: черновик текста + диплинк + QR. */
-  async function publishVacancy(ctx: Context, uid: number, result: MarketResult) {
-    const pack = catalog.packs.find((p) => p.id === result.pack.id) ?? catalog.packs.find((p) => !p.region)!;
-    const salary = T.publishSalary(result);
-    const text = buildVacancyDraft({ card: result.card, profession: result.profession, pack, salary: salary ?? 0, companyName: result.profile?.name ?? null, cityName: result.region.name });
+  async function publishVacancy(ctx: Context, uid: number, result: MarketResult, draft: PublicationDraft) {
+    const { salary, text, listed } = draft;
     const { vacancy, link } = createVacancyFromCard(hiring, {
       card: {
         cardId: result.cardId,
@@ -512,7 +523,10 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       maxUserId: uid,
       salary,
       text,
+      listed,
     });
+    // Store the result before any await: repeated confirmation cannot insert a second vacancy.
+    setState(uid, { step: 'idle', publication: { ...draft, vacancyId: vacancy.id } });
     const body = T.publishedVacancyText(vacancy, result.region.name, link);
     const keyboard = T.publishedVacancyKeyboard(vacancy, deps.botUsername, link);
     let attachments: unknown[] = [keyboard];
@@ -527,6 +541,20 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     return vacancy;
   }
 
+  async function reviewPublication(ctx: Context, uid: number, r: MarketResult, salary: number) {
+    const pack = catalog.packs.find((p) => p.id === r.pack.id) ?? catalog.packs.find((p) => !p.region)!;
+    const previous = state(uid).publication;
+    const text = buildVacancyDraft({ card: r.card, profession: r.profession, pack, salary, companyName: r.profile?.name ?? null, cityName: r.region.name }).slice(0, 3000);
+    const draft: PublicationDraft = { cardId: r.cardId, salary, text, listed: previous?.cardId === r.cardId ? previous.listed : false };
+    setState(uid, { step: 'vac_review', publication: draft });
+    await replyLong(ctx, T.publicationReviewText(salary, text, draft.listed), { attachments: [T.publicationReviewKeyboard(r.cardId, draft.listed)] });
+  }
+
+  async function askPublicationSalary(ctx: Context, uid: number, r: MarketResult) {
+    setState(uid, { step: 'vac_salary', publication: { cardId: r.cardId, salary: null, text: '', listed: false } });
+    await ctx.reply(T.publicationSalaryText(r), { attachments: [T.publicationSalaryKeyboard(r)] });
+  }
+
   /** Карточка вакансии кандидату, пришедшему по диплинку `vac_<id>`. */
   async function showVacancyToCandidate(ctx: Context, uid: number, vacancyId: string) {
     const vacancy = getVacancy(db, vacancyId);
@@ -537,27 +565,22 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
 
   /** Сохранение отклика, ответ кандидату и уведомление работодателя. */
   async function finishResponse(ctx: Context, uid: number, vacancy: VacancyRow, answers: CandidateAnswers, phone: string | null, phoneVerified: boolean) {
-    const u = getUser(db, uid);
-    const score = scoreResponse(vacancy, answers, Boolean(phone));
-    const response = putResponse(db, {
-      id: randomUUID(),
-      vacancyId: vacancy.id,
-      candidateUserId: uid,
-      candidateName: u?.name ?? ctx.user?.first_name ?? null,
-      answers,
-      phone,
-      phoneVerified,
-      score,
-    });
+    const { response, created } = submitCandidateResponse(db, uid, vacancy.id, answers, phone, phoneVerified);
     setState(uid, { step: 'idle', vacancyId: undefined, answers: undefined });
-    await ctx.reply(T.responseSentText(Boolean(phone)), { attachments: [T.responseSentKeyboard()] });
+    if (!created) {
+      await ctx.reply('Вы уже откликнулись на эту вакансию. Повторный отклик не создан.', { attachments: [T.responseSentKeyboard()] });
+      return;
+    }
+    let notified = false;
     try {
       await sendToUser(hiring, vacancy.maxUserId, responseSummary({ ...response, answers }, vacancy), {
         attachments: [Keyboard.inlineKeyboard([[inboxButton(deps.botUsername, vacancy.id)]])],
       });
+      notified = true;
     } catch (err) {
       log.warn({ err: String(err), vacancyId: vacancy.id }, 'не удалось уведомить работодателя об отклике');
     }
+    await ctx.reply(T.responseSentText(Boolean(phone), notified), { attachments: [T.responseSentKeyboard()] });
   }
 
   /** Вакансия, по которой кандидат сейчас отвечает; null – шаг устарел. */
@@ -616,6 +639,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (isRepeatedStart(u.maxUserId, payload)) return;
     if (payload && payload.startsWith('card_')) { await sendCardById(ctx, u.maxUserId, payload.slice(5)); return; }
     if (payload && payload.startsWith('vac_')) { await showVacancyToCandidate(ctx, u.maxUserId, payload.slice(4)); return; }
+    if (payload === 'jobs') { await showJobs(ctx, u.maxUserId); return; }
     await sendWelcome(ctx, u.name);
   });
 
@@ -634,6 +658,21 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     if (payload === 'guide') { await ack(); await sendGuide(ctx); return; }
     if (payload === 'help') { await ack(); await sendHelp(ctx); return; }
     if (payload === 'vacancies') { await ack(); await showVacancies(ctx, uid); return; }
+    if (payload === 'jobs' || /^jobs:\d{1,5}$/.test(payload)) { await ack(); await showJobs(ctx, uid, payload === 'jobs' ? 0 : Number(payload.slice(5))); return; }
+    if (payload.startsWith('job:')) {
+      const vacancy = getVacancy(db, payload.slice(4));
+      if (!vacancy?.listed || vacancy.status !== 'open') { await ack('Вакансия уже недоступна в каталоге'); return; }
+      await ack(); await showVacancyToCandidate(ctx, uid, vacancy.id); return;
+    }
+    if (payload.startsWith('listjob:')) {
+      const vacancy = getVacancy(db, payload.slice(8));
+      if (!vacancy || vacancy.maxUserId !== uid || vacancy.status !== 'open') { await ack('Вакансия не ваша или уже закрыта'); return; }
+      // Кнопка явно сообщает, что текст станет доступен всем; старые объявления автоматически не публикуем.
+      setVacancyListed(db, vacancy.id, uid, true);
+      await ack('Вакансия в каталоге');
+      await ctx.reply('Вакансия добавлена в общий каталог. Теперь любой пользователь найдёт её через /jobs и сможет откликнуться без QR. Убрать из каталога можно в приложении: «Вакансии и отклики».');
+      return;
+    }
     if (payload === 'subs') { await ack(); await showSubs(ctx, uid); return; }
     if (payload === 'staff') { await ack(); await startStaff(ctx, uid); return; }
     if (payload === 'regions') { await ack(); await startRegions(ctx, uid); return; }
@@ -678,15 +717,16 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await runMarket(ctx, uid, offer);
       return;
     }
-    if (payload.startsWith('vote:')) {
+    // Existing messages may still carry vote payloads: migrate them to salary selection, never a poll.
+    if (payload.startsWith('choose:') || payload.startsWith('vote:')) {
       const [, kind, cardId] = payload.split(':');
-      const row = cardId ? getCard<MarketResult>(db, cardId) : null;
-      if (!row || !kind) { await ack('Карточка не найдена'); return; }
-      const mid = ctx.messageId ?? `card:${cardId}`;
-      const tally = castVote(db, mid, uid, kind);
+      const row = cardId ? await cardFor(ack, uid, cardId, 'manage') : null;
+      if (!row) return;
+      if (!kind) { await ack('Карточка не найдена'); return; }
       const opt = row.payload.card.options.find((o) => o.kind === kind);
-      await ack(opt ? `Учёл ваш голос: ${formatRub(opt.value)}` : 'Голос учтён');
-      await ctx.reply(T.voteText(row.payload.profession.title, opt ?? null, row.payload.card.options, tally.counts, tally.total));
+      if (!opt) { await ack('Выберите доступную сумму или введите свою'); return; }
+      await ack(`Зарплата вакансии: ${formatRub(opt.value)}`);
+      await reviewPublication(ctx, uid, row.payload, opt.value);
       return;
     }
     if (payload.startsWith('pdf:')) {
@@ -717,16 +757,52 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ack(ok ? 'Подписка отключена' : 'Подписка не найдена');
       return;
     }
-    if (payload.startsWith('pub:')) {
-      const cardId = payload.slice(4);
+    if (payload.startsWith('pub:') || payload.startsWith('custom:')) {
+      const cardId = payload.slice(payload.startsWith('custom:') ? 7 : 4);
       const row = await cardFor(ack, uid, cardId, 'manage');
       if (!row) return;
+      await ack();
+      await askPublicationSalary(ctx, uid, row.payload);
+      return;
+    }
+    if (payload === 'draftcancel') {
+      if (state(uid).publication?.vacancyId) { await ack('Вакансия уже опубликована'); await showVacancies(ctx, uid); return; }
+      setState(uid, { step: 'idle', publication: undefined });
+      await ack('Публикация отменена');
+      await ctx.reply('Черновик отменён. Вакансия не опубликована.', { attachments: [T.welcomeKeyboard(deps.botUsername)] });
+      return;
+    }
+    if (payload.startsWith('draftedit:') || payload.startsWith('draftlist:')) {
+      const cardId = payload.slice(10);
+      const row = await cardFor(ack, uid, cardId, 'manage');
+      if (!row) return;
+      const draft = state(uid).publication;
+      if (!draft || draft.cardId !== cardId || draft.salary === null || draft.vacancyId) { await ack('Черновик устарел: создайте его заново'); return; }
+      await ack();
+      if (payload.startsWith('draftedit:')) {
+        setState(uid, { step: 'vac_text' });
+        await ctx.reply('Пришлите полный текст вакансии одним сообщением (до 3 000 символов). Укажите реальный график, место работы и обязанности. После этого покажу текст для проверки. Зарплата сохраняется отдельно; не указывайте в тексте другую сумму.');
+      } else {
+        const updated = { ...draft, listed: !draft.listed };
+        setState(uid, { step: 'vac_review', publication: updated });
+        await replyLong(ctx, T.publicationReviewText(updated.salary!, updated.text, updated.listed), { attachments: [T.publicationReviewKeyboard(cardId, updated.listed)] });
+      }
+      return;
+    }
+    if (payload.startsWith('pubconfirm:')) {
+      const cardId = payload.slice(11);
+      const row = await cardFor(ack, uid, cardId, 'manage');
+      if (!row) return;
+      const draft = state(uid).publication;
+      if (draft?.cardId === cardId && draft.vacancyId) { await ack('Вакансия уже опубликована'); await showVacancies(ctx, uid); return; }
+      if (!draft || draft.cardId !== cardId || state(uid).step !== 'vac_review' || draft.salary === null || !draft.text.trim()) { await ack('Сначала выберите зарплату и проверьте черновик'); return; }
       await ack('Публикую вакансию…');
+      if (state(uid).publication?.vacancyId) return;
       try {
-        await publishVacancy(ctx, uid, row.payload);
+        await publishVacancy(ctx, uid, row.payload, draft);
       } catch (err) {
         log.error({ err: String(err), cardId }, 'publish vacancy failed');
-        await ctx.reply('Не удалось опубликовать вакансию.\n\nЧто дальше: попробуйте ещё раз через минуту, кнопка «Опубликовать» под карточкой.');
+        await ctx.reply(state(uid).publication?.vacancyId ? 'Вакансия сохранена, но карточка не отправилась. Откройте «Мои вакансии»: /vacancies. Повторная публикация не нужна.' : 'Не удалось сохранить вакансию. Проверьте черновик и попробуйте подтвердить ещё раз.');
       }
       return;
     }
@@ -807,7 +883,7 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
       await ack();
       const r = row.payload;
       const pack = catalog.packs.find((p) => p.id === r.pack.id)!;
-      const salary = r.card.options.find((o) => o.kind === 'median')?.value ?? r.card.offer?.value ?? r.card.stats?.median ?? 0;
+      const salary = T.publishSalary(r) ?? 0;
       const text = buildVacancyDraft({ card: r.card, profession: r.profession, pack, salary, companyName: r.profile?.name ?? null, cityName: r.region.name });
       await replyLong(ctx, T.draftText(text), { attachments: [T.draftKeyboard(r, deps.botUsername)] });
       return;
@@ -854,12 +930,14 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
     const cmd = /^\/(\w+)/.exec(text)?.[1]?.toLowerCase();
     if (cmd === 'start') {
       const arg = text.slice(text.indexOf('start') + 5).trim();
+      if (arg === 'jobs') { await showJobs(ctx, uid); return; }
       if (arg.startsWith('vac_')) { await showVacancyToCandidate(ctx, uid, arg.slice(4)); return; }
       if (arg.startsWith('card_')) { await sendCardById(ctx, uid, arg.slice(5)); return; }
       await sendWelcome(ctx, u.name);
       return;
     }
     if (cmd === 'vacancies') { await showVacancies(ctx, uid); return; }
+    if (cmd === 'jobs') { await showJobs(ctx, uid); return; }
     if (cmd === 'help') { await sendHelp(ctx); return; }
     if (cmd === 'demo') {
       const demos = catalog.packs.filter((p) => p.demo);
@@ -947,6 +1025,28 @@ export function registerBot(bot: Bot, deps: BotDeps): void {
         const s = parseSalary(text);
         if (s === null) { await ctx.reply('Не понял сумму.\n\nЧто дальше: напишите число в рублях в месяц, например 45000, или нажмите «Пока без ставки».', { attachments: [T.askSalaryKeyboard()] }); return; }
         await runMarket(ctx, uid, s === 'none' ? null : s);
+        return;
+      }
+      case 'vac_salary': {
+        const draft = st.publication;
+        const row = draft ? getCard<MarketResult>(db, draft.cardId) : null;
+        if (!row || row.maxUserId !== uid) { setState(uid, { step: 'idle', publication: undefined }); await ctx.reply('Черновик устарел. Начните заново: /stavka'); return; }
+        const salary = parseSalary(text);
+        if (salary === null || salary === 'none') { await ctx.reply('Нужна зарплата от 1 000 до 5 000 000 ₽ в месяц. Напишите сумму, например 75000.'); return; }
+        await reviewPublication(ctx, uid, row.payload, salary);
+        return;
+      }
+      case 'vac_text': {
+        const draft = st.publication;
+        if (!draft || draft.salary === null || draft.vacancyId) { setState(uid, { step: 'idle' }); await ctx.reply('Создайте новый черновик: /stavka'); return; }
+        if (!text.trim() || text.length > 3000) { await ctx.reply('Текст должен быть от 1 до 3 000 символов. Пришлите сокращённую вакансию одним сообщением.'); return; }
+        const updated = { ...draft, text: text.trim() };
+        setState(uid, { step: 'vac_review', publication: updated });
+        await replyLong(ctx, T.publicationReviewText(updated.salary!, updated.text, updated.listed), { attachments: [T.publicationReviewKeyboard(updated.cardId, updated.listed)] });
+        return;
+      }
+      case 'vac_review': {
+        await ctx.reply('Черновик ожидает подтверждения. Нажмите «Изменить текст», «Изменить зарплату» или «Подтвердить публикацию» под ним.');
         return;
       }
       case 'apply_exp':

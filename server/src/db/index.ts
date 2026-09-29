@@ -192,6 +192,12 @@ export function openDb(path: string): Db {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
+  // Старые вакансии остаются доступными только по своей ссылке: каталог требует явного действия владельца.
+  const columns = db.prepare('PRAGMA table_info(vacancies)').all() as { name: string }[];
+  if (!columns.some((c) => c.name === 'listed')) db.exec('ALTER TABLE vacancies ADD COLUMN listed INTEGER NOT NULL DEFAULT 0');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_vacancies_catalog ON vacancies(listed, status, region_code, created_at)');
+  // SQLite lower() без ICU не меняет регистр кириллицы. Поиск остаётся параметризованным.
+  db.function('search_fold', { deterministic: true }, (value) => String(value ?? '').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е'));
   return db;
 }
 
@@ -271,7 +277,7 @@ export function updateUser(db: Db, maxUserId: number, patch: Partial<Pick<UserRo
   const cur = getUser(db, maxUserId);
   if (!cur) return;
   db.prepare('UPDATE users SET inn = ?, region_fns_code = ?, pack_id = ?, state = ?, chat_id = ?, updated_at = ? WHERE max_user_id = ?')
-    .run(patch.inn ?? cur.inn, patch.regionFnsCode ?? cur.regionFnsCode, patch.packId ?? cur.packId, JSON.stringify(patch.state ?? cur.state), patch.chatId ?? cur.chatId, nowIso(), maxUserId);
+    .run(patch.inn === undefined ? cur.inn : patch.inn, patch.regionFnsCode === undefined ? cur.regionFnsCode : patch.regionFnsCode, patch.packId === undefined ? cur.packId : patch.packId, JSON.stringify(patch.state ?? cur.state), patch.chatId === undefined ? cur.chatId : patch.chatId, nowIso(), maxUserId);
 }
 
 /* ---------- карточки ---------- */
@@ -346,6 +352,7 @@ export interface VacancyRow {
   closedAt: string | null;
   hiredResponseId: string | null;
   firstResponseAt: string | null;
+  listed: boolean;
 }
 
 export interface ResponseRow<A = Record<string, unknown>> {
@@ -369,6 +376,7 @@ function mapVacancy(r: Record<string, unknown>): VacancyRow {
     salary: r.salary as number | null, text: r.text as string, employerName: r.employer_name as string | null,
     status: r.status as VacancyStatus, createdAt: r.created_at as string, closedAt: r.closed_at as string | null,
     hiredResponseId: r.hired_response_id as string | null, firstResponseAt: r.first_response_at as string | null,
+    listed: r.listed === 1,
   };
 }
 
@@ -381,15 +389,34 @@ function mapResponse<A>(r: Record<string, unknown>): ResponseRow<A> {
   };
 }
 
-export function putVacancy(db: Db, v: { id: string; maxUserId: number; cardId: string | null; professionKey: string; regionCode: string; title: string; salary: number | null; text: string; employerName: string | null }): VacancyRow {
-  db.prepare('INSERT INTO vacancies (id, max_user_id, card_id, profession_key, region_code, title, salary, text, employer_name, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, \'open\', ?)')
-    .run(v.id, v.maxUserId, v.cardId, v.professionKey, v.regionCode, v.title, v.salary, v.text, v.employerName, nowIso());
+export function putVacancy(db: Db, v: { id: string; maxUserId: number; cardId: string | null; professionKey: string; regionCode: string; title: string; salary: number | null; text: string; employerName: string | null; listed?: boolean }): VacancyRow {
+  db.prepare('INSERT INTO vacancies (id, max_user_id, card_id, profession_key, region_code, title, salary, text, employer_name, status, created_at, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, \'open\', ?, ?)')
+    .run(v.id, v.maxUserId, v.cardId, v.professionKey, v.regionCode, v.title, v.salary, v.text, v.employerName, nowIso(), v.listed ? 1 : 0);
   return getVacancy(db, v.id)!;
 }
 
 export function getVacancy(db: Db, id: string): VacancyRow | null {
   const r = db.prepare('SELECT * FROM vacancies WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   return r ? mapVacancy(r) : null;
+}
+
+export interface JobFilters { q?: string; regionCode?: string; minSalary?: number; offset?: number; limit?: number }
+
+/** Только добровольно размещённые открытые вакансии. Публичный DTO собирается отдельно от инбокса. */
+export function listOpenJobs(db: Db, filters: JobFilters = {}): { vacancies: VacancyRow[]; total: number } {
+  const q = (filters.q ?? '').trim().toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
+  const where = "listed = 1 AND status = 'open' AND (? = '' OR instr(search_fold(title), ?) > 0) AND (? = '' OR region_code = ?) AND (? = 0 OR salary >= ?)";
+  const args = [q, q, filters.regionCode ?? '', filters.regionCode ?? '', filters.minSalary ?? 0, filters.minSalary ?? 0];
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM vacancies WHERE ${where}`).get(...args) as { n: number }).n;
+  const limit = Math.max(1, Math.min(50, filters.limit ?? 12));
+  const offset = Math.max(0, filters.offset ?? 0);
+  const rows = db.prepare(`SELECT * FROM vacancies WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`).all(...args, limit, offset) as Record<string, unknown>[];
+  return { vacancies: rows.map(mapVacancy), total };
+}
+
+export function setVacancyListed(db: Db, id: string, uid: number, listed: boolean): VacancyRow | null {
+  const result = db.prepare("UPDATE vacancies SET listed = ? WHERE id = ? AND max_user_id = ? AND status = 'open'").run(listed ? 1 : 0, id, uid);
+  return result.changes ? getVacancy(db, id) : null;
 }
 
 /** Вакансии пользователя с числом откликов (всего и новых) – для списка «Мои вакансии». */
@@ -407,7 +434,11 @@ export function countResponses(db: Db, vacancyId: string): { total: number; fres
 }
 
 export function closeVacancy(db: Db, id: string, maxUserId: number, hiredResponseId: string | null = null): VacancyRow | null {
-  const res = db.prepare("UPDATE vacancies SET status = 'closed', closed_at = COALESCE(closed_at, ?), hired_response_id = COALESCE(?, hired_response_id) WHERE id = ? AND max_user_id = ?")
+  const current = getVacancy(db, id);
+  if (!current || current.maxUserId !== maxUserId) return null;
+  if (current.status === 'closed') return hiredResponseId === null || hiredResponseId === current.hiredResponseId ? current : null;
+  if (hiredResponseId && getResponse(db, hiredResponseId)?.vacancyId !== id) return null;
+  const res = db.prepare("UPDATE vacancies SET status = 'closed', closed_at = COALESCE(closed_at, ?), hired_response_id = COALESCE(?, hired_response_id) WHERE id = ? AND max_user_id = ? AND status = 'open'")
     .run(nowIso(), hiredResponseId, id, maxUserId);
   return res.changes > 0 ? getVacancy(db, id) : null;
 }
@@ -417,12 +448,12 @@ export function markFirstResponse(db: Db, vacancyId: string, at: string): void {
   db.prepare('UPDATE vacancies SET first_response_at = COALESCE(first_response_at, ?) WHERE id = ?').run(at, vacancyId);
 }
 
-export function putResponse(db: Db, r: { id: string; vacancyId: string; candidateUserId: number; candidateName: string | null; answers: unknown; phone: string | null; phoneVerified: boolean; score: number }): ResponseRow {
+export function putResponse<A = Record<string, unknown>>(db: Db, r: { id: string; vacancyId: string; candidateUserId: number; candidateName: string | null; answers: unknown; phone: string | null; phoneVerified: boolean; score: number }): ResponseRow<A> {
   const now = nowIso();
   db.prepare('INSERT INTO responses (id, vacancy_id, candidate_user_id, candidate_name, answers, phone, phone_verified, score, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'new\', ?, ?)')
     .run(r.id, r.vacancyId, r.candidateUserId, r.candidateName, JSON.stringify(r.answers), r.phone, r.phoneVerified ? 1 : 0, Math.round(r.score), now, now);
   markFirstResponse(db, r.vacancyId, now);
-  return getResponse(db, r.id)!;
+  return getResponse<A>(db, r.id)!;
 }
 
 export function getResponse<A = Record<string, unknown>>(db: Db, id: string): ResponseRow<A> | null {
@@ -445,6 +476,26 @@ export function findResponseByCandidate<A = Record<string, unknown>>(db: Db, vac
 export function updateResponseStatus<A = Record<string, unknown>>(db: Db, id: string, status: ResponseStatus): ResponseRow<A> | null {
   const res = db.prepare('UPDATE responses SET status = ?, updated_at = ? WHERE id = ?').run(status, nowIso(), id);
   return res.changes > 0 ? getResponse<A>(db, id) : null;
+}
+
+export class HiringStateError extends Error {}
+
+/** Проверка и изменение отклика + закрытие вакансии проходят одной синхронной транзакцией, без сетевых ожиданий. */
+export function transitionResponse<A>(db: Db, id: string, ownerId: number, target: 'invited' | 'rejected' | 'hired'): { response: ResponseRow<A>; vacancy: VacancyRow; changed: boolean } {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const response = getResponse<A>(db, id);
+    const vacancy = response ? getVacancy(db, response.vacancyId) : null;
+    if (!response || !vacancy || vacancy.maxUserId !== ownerId) throw new HiringStateError('Отклик не найден или принадлежит другому работодателю');
+    if (response.status === target) { db.exec('COMMIT'); return { response, vacancy, changed: false }; }
+    if (vacancy.status !== 'open') throw new HiringStateError('Вакансия уже закрыта: изменить решение нельзя');
+    if (response.status === 'hired' || response.status === 'rejected') throw new HiringStateError('По этому отклику уже принято окончательное решение');
+    const updated = updateResponseStatus<A>(db, id, target)!;
+    const updatedVacancy = target === 'hired' ? closeVacancy(db, vacancy.id, ownerId, id) : vacancy;
+    if (!updatedVacancy) throw new HiringStateError('Вакансия уже закрыта');
+    db.exec('COMMIT');
+    return { response: updated, vacancy: updatedVacancy, changed: true };
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
 
 /* ---------- идемпотентность ---------- */
@@ -595,33 +646,44 @@ export interface InspectionsLoader {
   abort(): void;
 }
 
+const inspectionLoads = new WeakSet<Db>();
+
 /**
  * Потоковая загрузка набора: строки копятся в промежуточной таблице пачками, а в рабочую
  * переносятся одной короткой транзакцией. Так в памяти не лежит весь набор, а читатели
  * не видят половину загрузки и не ждут её (перезаливка идемпотентна: повтор даёт тот же результат).
  */
 export function beginInspectionsLoad(db: Db, year: number, batchSize = 1000): InspectionsLoader {
+  if (inspectionLoads.has(db)) throw new Error('Загрузка набора проверок уже выполняется');
+  inspectionLoads.add(db);
   db.exec('DROP TABLE IF EXISTS inspections_staging');
   db.exec(STAGING_SCHEMA);
   const insert = db.prepare(`INSERT OR REPLACE INTO inspections_staging (${INSPECTION_COLUMNS}) VALUES (${'?, '.repeat(21)}?)`);
-  let inBatch = 0;
+  let pending: InspectionRow[] = [];
   let records = 0;
   let withRegion = 0;
-  let open = false;
-  const begin = () => { if (!open) { db.prepare('BEGIN').run(); open = true; } };
-  const flush = () => { if (open) { db.prepare('COMMIT').run(); open = false; inBatch = 0; } };
-  return {
-    add(r) {
-      begin();
-      insert.run(r.id, year, r.erpId, r.inn, r.ogrn, r.subjectName, r.subjectType, r.mspCode, r.okved, r.okved2,
+  let ended = false;
+  const flush = () => {
+    if (!pending.length) return;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const r of pending) insert.run(r.id, year, r.erpId, r.inn, r.ogrn, r.subjectName, r.subjectType, r.mspCode, r.okved, r.okved2,
         r.kind, r.kindControl, r.kindKnm, r.typeName, r.status, r.startDate, r.stopDate, r.organization, r.prosecutorOffice,
         r.address, r.regionCode, r.regionFnsCode);
+      db.exec('COMMIT'); pending = [];
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  };
+  const cleanup = () => { db.exec('DROP TABLE IF EXISTS inspections_staging'); inspectionLoads.delete(db); ended = true; };
+  return {
+    add(r) {
+      if (ended) throw new Error('Загрузка набора уже завершена');
+      pending.push(r);
       records += 1;
       if (r.regionCode) withRegion += 1;
-      inBatch += 1;
-      if (inBatch >= batchSize) flush();
+      if (pending.length >= Math.max(1, Math.min(10000, batchSize))) flush();
     },
     commit(dataset) {
+      if (ended || dataset.year !== year) throw new Error('Некорректный год или завершённая загрузка набора');
       flush();
       const loadedAt = nowIso();
       db.prepare('BEGIN').run();
@@ -636,12 +698,13 @@ export function beginInspectionsLoad(db: Db, year: number, batchSize = 1000): In
         throw e;
       }
       // Промежуточную таблицу убираем: её страницы возвращаются в файл базы и переиспользуются следующей загрузкой.
-      db.exec('DROP TABLE IF EXISTS inspections_staging');
+      cleanup();
       return { ...dataset, records, withRegion, loadedAt };
     },
     abort() {
-      if (open) { db.prepare('ROLLBACK').run(); open = false; }
-      db.exec('DROP TABLE IF EXISTS inspections_staging');
+      if (ended) return;
+      pending = [];
+      cleanup();
     },
   };
 }

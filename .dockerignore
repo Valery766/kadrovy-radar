@@ -12,4 +12,6 @@ deploy
 .DS_Store
 coverage
 out
+tools/.venv
+tools/preview-jobs.mjs
 *.log

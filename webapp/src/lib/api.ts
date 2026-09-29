@@ -91,8 +91,16 @@ export interface VacancyView {
   salary: number | null; text: string; employerName: string | null; status: VacancyStatus;
   createdAt: string; closedAt: string | null; hiredResponseId: string | null; firstResponseAt: string | null;
   responses: number; newResponses: number; link: string | null;
+  listed: boolean;
   metrics: { timeToFirstResponseMin: number | null; timeToHireMin: number | null };
 }
+
+export interface JobView {
+  id: string; title: string; salary: number | null; employerName: string | null;
+  regionCode: string; regionName: string; createdAt: string; status: VacancyStatus; own: boolean; link: string | null;
+}
+export interface JobDetail extends JobView { text: string; myResponse: ResponseStatus | null }
+export type Delivery = 'sent' | 'failed' | 'unchanged';
 
 export interface CandidateAnswers { experience: 'none' | 'lt1' | 'mid' | 'senior'; schedule: boolean; expectedSalary: number | null }
 
@@ -221,6 +229,10 @@ export interface RegionDigestResult {
 }
 
 export const api = {
+  jobs: (filters: { q: string; region: string; minSalary: string; offset: number }) => request<{ jobs: JobView[]; total: number; offset: number; limit: number }>('GET', `/api/jobs?${new URLSearchParams({ ...filters, offset: String(filters.offset), limit: '12' })}`),
+  job: (id: string) => request<{ job: JobDetail }>('GET', `/api/jobs/${encodeURIComponent(id)}`),
+  apply: (id: string, answers: CandidateAnswers & { consent: true }) => request<{ response: { id: string; status: ResponseStatus }; created: boolean; employerNotified: boolean }>('POST', `/api/jobs/${encodeURIComponent(id)}/apply`, answers),
+  listing: (id: string, listed: boolean) => request<{ listed: boolean }>('POST', `/api/vacancies/${encodeURIComponent(id)}/listing`, { listed }),
   bootstrap: () => request<Bootstrap>('GET', '/api/bootstrap'),
   profile: (inn: string) => request<{ profile: Profile; region: Region | null; pack: { id: string; title: string; professions: ProfessionRef[] } }>('POST', '/api/profile', { inn }),
   market: (p: { inn?: string | null; regionFnsCode?: string | null; professionKey?: string; professionText?: string; offer?: number | null; forceRefresh?: boolean; keepRegion?: boolean }) => request<MarketResult>('POST', '/api/market', p),
@@ -237,14 +249,14 @@ export const api = {
   vacancyText: (id: string, salary?: number) => request<{ text: string; salary: number }>('POST', `/api/cards/${encodeURIComponent(id)}/vacancy-text`, { salary }),
   subscriptions: () => request<{ subscriptions: { id: string; professionTitle: string; regionName: string; offer: number | null; lastMedian: number | null }[] }>('GET', '/api/subscriptions'),
   unsubscribe: (id: string) => request<{ ok: boolean }>('DELETE', `/api/subscriptions/${encodeURIComponent(id)}`),
-  publishVacancy: (cardId: string, body: { salary?: number | null; text?: string }) =>
+  publishVacancy: (cardId: string, body: { salary?: number | null; text?: string; listed?: boolean; requestId?: string }) =>
     request<{ vacancy: VacancyView; link: string; qrSent: boolean }>('POST', `/api/cards/${encodeURIComponent(cardId)}/vacancy`, body),
   vacancies: () => request<{ vacancies: VacancyView[]; demo: boolean }>('GET', '/api/vacancies'),
   vacancyResponses: (id: string) => request<{ vacancy: VacancyView; responses: ResponseView[] }>('GET', `/api/vacancies/${encodeURIComponent(id)}/responses`),
-  invite: (responseId: string, message: string) => request<{ response: ResponseView }>('POST', `/api/responses/${encodeURIComponent(responseId)}/invite`, { message }),
-  reject: (responseId: string) => request<{ response: ResponseView }>('POST', `/api/responses/${encodeURIComponent(responseId)}/reject`, {}),
-  hire: (responseId: string) => request<{ response: ResponseView; vacancy: VacancyView }>('POST', `/api/responses/${encodeURIComponent(responseId)}/hire`, {}),
-  closeVacancy: (id: string) => request<{ vacancy: VacancyView }>('POST', `/api/vacancies/${encodeURIComponent(id)}/close`, {}),
+  invite: (responseId: string, message: string) => request<{ response: ResponseView; delivery: Delivery }>('POST', `/api/responses/${encodeURIComponent(responseId)}/invite`, { message }),
+  reject: (responseId: string) => request<{ response: ResponseView; delivery: Delivery }>('POST', `/api/responses/${encodeURIComponent(responseId)}/reject`, {}),
+  hire: (responseId: string) => request<{ response: ResponseView; vacancy: VacancyView; delivery: Delivery; otherNotificationsFailed: number }>('POST', `/api/responses/${encodeURIComponent(responseId)}/hire`, {}),
+  closeVacancy: (id: string) => request<{ vacancy: VacancyView; notificationsFailed: number }>('POST', `/api/vacancies/${encodeURIComponent(id)}/close`, {}),
 };
 
 /** «65 000 ₽»: перед знаком рубля неразрывный пробел, чтобы «₽» не уезжал на новую строку. */

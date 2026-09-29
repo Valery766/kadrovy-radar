@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Button } from '@maxhub/max-ui';
+import { useRef, useState } from 'react';
+import { Button, Input, Textarea } from '@maxhub/max-ui';
 import { api, ApiError, categoryLabel, fmtDate, rub, type Bootstrap, type MarketResult, type VacancyView } from '../lib/api';
 import { haptic, shareLink, shareMid } from '../lib/bridge';
 import {
@@ -90,24 +90,43 @@ function Scale({ stats, offer }: { stats: NonNullable<MarketResult['card']['stat
 
 export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOpenInbox, onCompareRegions, onBack, onHome }: Props) {
   const { card, profession, region, profile, sources, fetched, closure } = result;
-  const [selected, setSelected] = useState<string>(card.options.find((o) => o.kind === 'median')?.kind ?? 'keep');
+  const [selected, setSelected] = useState<string>(card.offer ? 'keep' : card.options.find((o) => o.kind === 'median')?.kind ?? 'custom');
+  const [salaryInput, setSalaryInput] = useState(String(card.offer?.value ?? card.stats?.median ?? ''));
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
   const [mid, setMid] = useState<string | null>(null);
   const [vacancy, setVacancy] = useState<VacancyView | null>(null);
   const [pubNote, setPubNote] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
+  const [publishDraft, setPublishDraft] = useState<string | null>(null);
+  const [listed, setListed] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const publicationRequest = useRef({ signature: '', id: '' });
+  const publicationSignature = JSON.stringify([result.cardId, salaryInput, publishDraft, listed]);
+  if (publicationRequest.current.signature !== publicationSignature) publicationRequest.current = { signature: publicationSignature, id: crypto.randomUUID() };
   const selectedOpt = card.options.find((o) => o.kind === selected) ?? card.options[0] ?? null;
+  const salary = /^\d+$/.test(salaryInput.replace(/\s/g, '')) ? Number(salaryInput.replace(/\s/g, '')) : NaN;
+  const salaryValid = Number.isSafeInteger(salary) && salary >= 1000 && salary <= 5_000_000;
+  const changeSalary = (value: string, kind = 'custom') => { setSalaryInput(value); setSelected(kind); setPublishDraft(null); setConfirmed(false); setPubNote(null); };
   const stats = card.stats;
   const offer = card.offer;
 
   const publish = async () => {
+    if (!confirmed || !publishDraft?.trim() || !salaryValid) return;
     setPubNote(null); setBusy('publish');
     try {
-      const r = await api.publishVacancy(result.cardId, { salary: selectedOpt?.value ?? null });
+      const r = await api.publishVacancy(result.cardId, { salary, text: publishDraft, listed, requestId: publicationRequest.current.id });
       setVacancy(r.vacancy);
       haptic('success');
       setPubNote({ kind: 'info', text: r.qrSent ? 'Вакансия опубликована: карточка с QR-кодом отправлена в ваш чат с ботом.' : 'Вакансия опубликована. Ссылку можно скопировать ниже.' });
     } catch (e) { setPubNote({ kind: 'error', text: e instanceof ApiError ? e.message : 'Не удалось опубликовать вакансию' }); haptic('error'); }
+    finally { setBusy(null); }
+  };
+
+  const preparePublish = async () => {
+    if (!salaryValid) return;
+    setBusy('draft'); setPubNote(null);
+    try { const draft = await api.vacancyText(result.cardId, salary); setPublishDraft(draft.text.slice(0, 3500)); setConfirmed(false); }
+    catch (e) { setPubNote({ kind: 'error', text: e instanceof ApiError ? e.message : 'Не удалось подготовить черновик' }); }
     finally { setBusy(null); }
   };
 
@@ -233,41 +252,47 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
         </Section>
       )}
 
-      {card.options.length > 0 && (
-        <Section title="Что дальше: выберите ставку">
-          <Muted>Варианты по рынку. Нажмите на вариант: по нему соберу текст вакансии и опубликую её.</Muted>
+        <Section title="1. Выберите зарплату вакансии">
+          <Muted>Рынок – ориентир, не ограничение. Можно выбрать вариант или указать любую свою сумму от 1 000 до 5 000 000 ₽ в месяц до НДФЛ. Это не голосование.</Muted>
           <div className="sv-options" role="radiogroup" aria-label="Варианты ставки">
             {card.options.map((o) => (
-              <button key={o.kind} type="button" role="radio" aria-checked={selected === o.kind} className={`sv-option ${selected === o.kind ? 'sv-option--active' : ''}`} onClick={() => setSelected(o.kind)}>
+              <button key={o.kind} type="button" role="radio" disabled={busy !== null || vacancy !== null} aria-checked={selected === o.kind} className={`sv-option ${selected === o.kind ? 'sv-option--active' : ''}`} onClick={() => changeSalary(String(o.value), o.kind)}>
                 <div className="sv-option__value">{rub(o.value)}</div>
                 <div className="sv-option__label">{OPTION_LABEL[o.kind] ?? o.label}</div>
                 <div className="sv-option__label">больше платят {100 - o.percentile} из 100</div>
               </button>
             ))}
           </div>
-          {selectedOpt && (
+          <label htmlFor="vacancy-salary">Своя зарплата, ₽ в месяц<Input id="vacancy-salary" inputMode="numeric" value={salaryInput} disabled={busy !== null || vacancy !== null} onChange={(e) => changeSalary(e.target.value)} placeholder="Например 75000" /></label>
+          {!salaryValid && <Muted>Введите целую сумму от 1 000 до 5 000 000 ₽.</Muted>}
+          {selectedOpt && selected !== 'custom' && (
             <Text>
               С {rub(selectedOpt.value)} вы будете платить больше, чем {selectedOpt.percentile} из 100 работодателей
               {offer && selectedOpt.kind !== 'keep' ? `: это на ${rub(selectedOpt.value - offer.value)} больше нынешней ставки` : ''}.
             </Text>
           )}
           <div className="sv-actions">
-            <Button stretched onClick={() => selectedOpt && onText(selectedOpt.value)}>Текст вакансии</Button>
-            {selectedOpt && selectedOpt.kind !== 'keep' && <Button stretched variant="secondary" onClick={() => onRecalc(selectedOpt.value)}>Пересчитать с {rub(selectedOpt.value)}</Button>}
+            <Button stretched disabled={!salaryValid || busy !== null} onClick={() => onText(salary)}>Посмотреть текст</Button>
+            {salaryValid && salary !== offer?.value && <Button stretched variant="secondary" onClick={() => onRecalc(salary)}>Пересчитать с {rub(salary)}</Button>}
           </div>
         </Section>
-      )}
 
-      <Section title="Опубликовать вакансию">
+      <Section title="2. Проверьте и опубликуйте">
         <Muted>
-          Бот пришлёт карточку вакансии со ссылкой и QR-кодом. Перешлите её в чаты сотрудников и партнёров или распечатайте QR. Кандидат ответит на три вопроса прямо в MAX, отклики придут в раздел «Вакансии и отклики».
+          Сначала покажу черновик для правки. После подтверждения получите ссылку для кандидатов. Чтобы вакансия была видна без ссылки и QR, включите общий каталог ниже.
         </Muted>
         {pubNote && <Banner kind={pubNote.kind === 'error' ? 'error' : 'info'}>{pubNote.text}</Banner>}
         {vacancy?.link && <Muted>Ссылка для кандидатов: {vacancy.link}</Muted>}
+        {publishDraft !== null && !vacancy && <div className="sv-stack">
+          <Banner>Это шаблон, а не проверенные условия вашего бизнеса. Исправьте график, требования и льготы перед публикацией.</Banner>
+          <label htmlFor="publish-vacancy-text">Текст вакансии<Textarea id="publish-vacancy-text" className="sv-textarea" value={publishDraft} maxLength={3500} style={{ minHeight: 220 }} onChange={(e) => { setPublishDraft(e.target.value); setConfirmed(false); }} /></label>
+          <label className="sv-consent"><input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} /> Показывать всем в каталоге «Найти работу». Текст вакансии станет общедоступным; проверьте, нет ли в нём лишних персональных данных.</label>
+          <label className="sv-consent"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> Подтверждаю, что условия в тексте соответствуют моей вакансии.</label>
+        </div>}
         <div className="sv-actions">
           {!vacancy && (
-            <Button stretched onClick={publish} loading={busy === 'publish'} disabled={busy !== null || notInMax}>
-              Опубликовать{selectedOpt ? ` на ${rub(selectedOpt.value)}` : ' вакансию'}
+            <Button stretched onClick={publishDraft === null ? preparePublish : publish} loading={busy === 'publish' || busy === 'draft'} disabled={busy !== null || notInMax || !salaryValid || (publishDraft !== null && (!confirmed || !publishDraft.trim()))}>
+              {publishDraft === null ? 'Подготовить публикацию' : `Опубликовать на ${rub(salary)}`}
             </Button>
           )}
           {vacancy && <Button stretched disabled={!vacancy.link} onClick={shareVacancy}>Поделиться в MAX</Button>}
@@ -276,6 +301,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
         {notInMax && !vacancy && <Muted>Публикация работает внутри MAX: откройте приложение из чата с ботом.</Muted>}
       </Section>
 
+      <details className="sv-stack"><summary className="sv-h2">Подробности расчёта и PDF</summary>
       {card.histogram.length > 1 && (
         <Section title="Сколько платят другие">
           <div className="sv-hist">
@@ -380,6 +406,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
         {notInMax && <Muted>Отчёт, подписка и публикация работают внутри MAX: откройте приложение из чата с ботом.</Muted>}
       </Section>
 
+      </details>
       <Sources sources={sources}>
         <Muted>
           {sampleWords(card.sample, fetched.total)}{dropped ? ` Не подошли: ${dropped}.` : ''} Если в объявлении указан диапазон, берём его середину. Повторы одного работодателя считаем один раз, не больше трёх объявлений от компании; крупнейший работодатель даёт {card.sample.topEmployerShare} % объявлений. Обычная ставка – середина рынка: половина платит меньше, половина больше. Все цифры взяты из объявлений на «Работе России», ничего не придумано. Отрасль: {result.pack.title}.

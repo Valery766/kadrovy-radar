@@ -11,6 +11,7 @@ import { VacancyText } from './screens/VacancyText';
 import { Inbox } from './screens/Inbox';
 import { Staff } from './screens/Staff';
 import { Regions } from './screens/Regions';
+import { Jobs } from './screens/Jobs';
 
 type Screen =
   | { name: 'boot' }
@@ -20,6 +21,7 @@ type Screen =
   | { name: 'card'; result: MarketResult }
   | { name: 'text'; result: MarketResult; salary: number }
   | { name: 'inbox'; vacancyId: string | null }
+  | { name: 'jobs'; jobId: string | null }
   | { name: 'staff' }
   | { name: 'regions'; prefill?: { professionKey?: string; professionTitle?: string; regionFnsCode?: string | null; offer?: number | null } }
   | { name: 'error'; message: string; retry?: () => void };
@@ -72,6 +74,8 @@ export function App() {
         }
         if (sp && sp.startsWith('inbox_')) { setScreen({ name: 'inbox', vacancyId: sp.slice(6) }); return; }
         if (sp === 'inbox') { setScreen({ name: 'inbox', vacancyId: null }); return; }
+        if (sp === 'jobs') { setScreen({ name: 'jobs', jobId: null }); return; }
+        if (sp?.startsWith('job_')) { setScreen({ name: 'jobs', jobId: sp.slice(4) }); return; }
         if (sp === 'staff') { setScreen({ name: 'staff' }); return; }
         if (sp === 'regions') { setScreen({ name: 'regions' }); return; }
         void b;
@@ -112,6 +116,7 @@ export function App() {
         onStart={(prefill) => go({ name: 'query', prefill })}
         onOpenCard={async (id) => { try { const r = await api.card(id); go({ name: 'card', result: r }); } catch (e) { setScreen({ name: 'error', message: e instanceof ApiError ? e.message : 'Карточка не найдена' }); } }}
         onInbox={() => go({ name: 'inbox', vacancyId: null })}
+        onJobs={() => go({ name: 'jobs', jobId: null })}
         onStaff={() => go({ name: 'staff' })}
         onRegions={() => go({ name: 'regions' })}
         onDemo={(pack) => { if (pack.demo) void runMarket({ inn: pack.demo.inn, regionFnsCode: pack.region?.fnsCode ?? null, professionKey: pack.demo.profession, offer: pack.demo.salary }); }} />;
@@ -120,7 +125,7 @@ export function App() {
     case 'loading':
       return <Loading title="Считаю по живым объявлениям" text={screen.label} />;
     case 'card':
-      return <Card result={screen.result} boot={boot} notInMax={notInMax} onBack={back}
+      return <Card key={screen.result.cardId} result={screen.result} boot={boot} notInMax={notInMax} onBack={back}
         onRecalc={(offer) => void runMarket({ inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode, professionKey: screen.result.profession.key, professionText: screen.result.profession.query, offer })}
         onAnother={() => go({ name: 'query', prefill: { inn: screen.result.profile?.inn ?? null, regionFnsCode: screen.result.region.fnsCode } })}
         onText={(salary) => go({ name: 'text', result: screen.result, salary })}
@@ -135,6 +140,8 @@ export function App() {
         onVacancies={backToVacancies}
         onBack={back}
         onHome={home} />;
+    case 'jobs':
+      return <Jobs key={screen.jobId ?? 'catalog'} boot={boot} jobId={screen.jobId} onSelect={(id) => go({ name: 'jobs', jobId: id })} onBack={back} onHome={home} onEmployer={(id) => go({ name: 'inbox', vacancyId: id })} />;
     case 'staff':
       return <Staff boot={boot} onBack={back}
         onOpenCard={async (id) => { try { const r = await api.card(id); go({ name: 'card', result: r }); } catch (e) { setScreen({ name: 'error', message: e instanceof ApiError ? e.message : 'Карточка не найдена' }); } }}

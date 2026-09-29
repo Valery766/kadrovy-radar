@@ -10,7 +10,7 @@ import { Bot, Context } from '@maxhub/max-bot-api';
 import type { Update } from '@maxhub/max-bot-api/types';
 import { loadConfig } from '../src/config.js';
 import { loadCatalog } from '../src/packs/loader.js';
-import { openDb, putCard, upsertUser, type Db } from '../src/db/index.js';
+import { getVacancy, openDb, putCard, putVacancy, upsertUser, type Db } from '../src/db/index.js';
 import { registerBot } from '../src/bot/scenario.js';
 import type { MarketContext, MarketResult } from '../src/services/market.js';
 import type { ReportContext } from '../src/services/report.js';
@@ -68,6 +68,7 @@ interface Harness {
   acks: { id: string; notification: string | undefined }[];
   replies: string[];
   fire: (payload: string, userId: number) => Promise<void>;
+  message: (text: string, userId: number) => Promise<void>;
 }
 
 let seq = 0;
@@ -105,7 +106,14 @@ function harness(): Harness {
     } as unknown as Update;
     await bot.middleware()(new Context(update, bot.api, bot.botInfo), () => Promise.resolve());
   };
-  return { db, acks, replies, fire };
+  const message = async (text: string, userId: number) => {
+    const ts = Date.now();
+    const update = { update_type: 'message_created', timestamp: ts, message: { timestamp: ts,
+      sender: { user_id: userId, first_name: 'Тест', is_bot: false, last_activity_time: ts },
+      recipient: { chat_id: CHAT_ID, chat_type: 'dialog' }, body: { mid: `m-${seq += 1}`, seq: 1, text } } } as unknown as Update;
+    await bot.middleware()(new Context(update, bot.api, bot.botInfo), () => Promise.resolve());
+  };
+  return { db, acks, replies, fire, message };
 }
 
 const vacancyCount = (db: Db) => (db.prepare('SELECT COUNT(*) AS n FROM vacancies').get() as { n: number }).n;
@@ -152,17 +160,76 @@ describe('бот: кнопки чужой карточки', () => {
     expect(h.replies.at(-1)).toContain('Повар');
   });
 
-  it('владельцу своя карточка открыта: публикация создаёт вакансию', async () => {
+  it('публикация требует выбора зарплаты и явного подтверждения', async () => {
     await h.fire('pub:card-owner', OWNER);
+    expect(vacancyCount(h.db)).toBe(0);
+    await h.fire('choose:median:card-owner', OWNER);
+    expect(vacancyCount(h.db)).toBe(0);
+    await h.fire('pubconfirm:card-owner', OWNER);
     expect(lastAck(h)).toBe('Публикую вакансию…');
     expect(vacancyCount(h.db)).toBe(1);
     const v = h.db.prepare('SELECT max_user_id AS owner, card_id AS card FROM vacancies').get() as { owner: number; card: string };
     expect(v).toEqual({ owner: OWNER, card: 'card-owner' });
   });
 
+  it('своя зарплата не заменяется медианой, черновик можно редактировать и добавить в каталог', async () => {
+    await h.fire('custom:card-owner', OWNER);
+    await h.message('83000', OWNER);
+    expect(h.replies.at(-1)).toContain('83 000');
+    await h.fire('draftedit:card-owner', OWNER);
+    await h.message('Повар. Зарплата 83 000 ₽. График 2/2. Работа в учебном кафе.', OWNER);
+    await h.fire('draftlist:card-owner', OWNER);
+    await h.fire('pubconfirm:card-owner', OWNER);
+    const v = h.db.prepare('SELECT salary, text, listed FROM vacancies').get() as { salary: number; text: string; listed: number };
+    expect(v.salary).toBe(83000); expect(v.listed).toBe(1); expect(v.text).toContain('учебном кафе');
+  });
+
+  it('старые кнопки голосования выбирают зарплату, больше не создавая голоса', async () => {
+    await h.fire('vote:median:card-owner', OWNER);
+    expect(h.replies.at(-1)).toContain('Проверьте вакансию');
+    expect(h.replies.at(-1)).not.toContain('голос');
+    expect((h.db.prepare('SELECT COUNT(*) AS n FROM votes').get() as { n: number }).n).toBe(0);
+  });
+
+  it('повторная и конкурентная кнопка подтверждения не создаёт вторую вакансию', async () => {
+    await h.fire('choose:median:card-owner', OWNER);
+    await Promise.all([h.fire('pubconfirm:card-owner', OWNER), h.fire('pubconfirm:card-owner', OWNER)]);
+    await h.fire('pubconfirm:card-owner', OWNER);
+    expect(vacancyCount(h.db)).toBe(1);
+  });
+
+  it('отмена и некорректная зарплата не публикуют вакансию', async () => {
+    await h.fire('pubconfirm:card-owner', OWNER);
+    expect(vacancyCount(h.db)).toBe(0);
+    await h.fire('custom:card-owner', OWNER);
+    await h.message('0', OWNER);
+    expect(h.replies.at(-1)).toContain('Нужна зарплата');
+    await h.message('75000', OWNER);
+    await h.fire('draftcancel', OWNER);
+    await h.fire('pubconfirm:card-owner', OWNER);
+    expect(vacancyCount(h.db)).toBe(0);
+  });
+
   it('несуществующая карточка — понятный отказ, а не ошибка', async () => {
     await h.fire('pub:card-нет', OWNER);
     expect(lastAck(h)).toBe('Карточка не найдена');
     expect(vacancyCount(h.db)).toBe(0);
+  });
+
+  it('каталог в чате виден без QR, но старые приватные вакансии туда не попадают', async () => {
+    for (const [id, listed] of [['public-job', true], ['private-job', false]] as const) {
+      putVacancy(h.db, { id, maxUserId: OWNER, cardId: null, professionKey: 'povar', regionCode: '7800000000000', title: id, salary: 60000, text: 'Тест', employerName: 'Тест', listed });
+    }
+    await h.fire('jobs', STRANGER);
+    expect(h.replies.join('\n')).toContain('public-job');
+    expect(h.replies.join('\n')).not.toContain('private-job');
+  });
+
+  it('разместить вакансию в общем каталоге может только её владелец', async () => {
+    putVacancy(h.db, { id: 'private-job', maxUserId: OWNER, cardId: null, professionKey: 'povar', regionCode: '7800000000000', title: 'Тест', salary: 60000, text: 'Тест', employerName: 'Тест' });
+    await h.fire('listjob:private-job', STRANGER);
+    expect(getVacancy(h.db, 'private-job')!.listed).toBe(false);
+    await h.fire('listjob:private-job', OWNER);
+    expect(getVacancy(h.db, 'private-job')!.listed).toBe(true);
   });
 });

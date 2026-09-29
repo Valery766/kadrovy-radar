@@ -111,7 +111,9 @@ describe('computeMarket on real fixture (повар, Санкт-Петербур
     expect(text).toContain('Повар – Санкт-Петербург');
     expect(text).not.toContain('—');
     expect(text).toContain('70 000 ₽');
-    expect(text).toContain('официальное оформление');
+    expect(text).toContain('до вычета НДФЛ');
+    expect(text).not.toContain('питание за счёт компании');
+    expect(text).not.toContain('обычная ставка рынка');
   });
 });
 

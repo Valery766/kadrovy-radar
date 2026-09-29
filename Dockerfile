@@ -15,13 +15,9 @@ RUN npm run build -w webapp && npm run build -w server \
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
-# Сертификаты Минцифры: без них platform-api2.max.ru не открывается с чистой машины.
-COPY server/certs/russian_trusted_root_ca.pem /usr/local/share/ca-certificates/russian_trusted_root_ca.crt
-COPY server/certs/russian_trusted_sub_ca.pem  /usr/local/share/ca-certificates/russian_trusted_sub_ca.crt
-RUN chmod 644 /usr/local/share/ca-certificates/*.crt
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
- && update-ca-certificates && rm -rf /var/lib/apt/lists/*
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+# Node already trusts public CAs. Add the bundled public MAX chain without
+# requiring apt mirrors or disabling TLS verification.
+ENV NODE_EXTRA_CA_CERTS=/app/server/certs/russian_trusted_bundle.pem
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/server/package.json server/package.json
@@ -29,9 +25,10 @@ COPY --from=build /app/server/assets server/assets
 COPY --from=build /app/server/certs server/certs
 COPY --from=build /app/webapp/dist webapp/dist
 COPY packs packs
-RUN mkdir -p /data && chown node:node /data
+RUN chmod 644 /app/server/certs/*.pem \
+ && mkdir -p /data && chown node:node /data
 USER node
 ENV PORT=8080 DATA_DIR=/data PACKS_DIR=/app/packs
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e "fetch('http://127.0.0.1:8080/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 CMD ["node", "server/dist/main.js"]

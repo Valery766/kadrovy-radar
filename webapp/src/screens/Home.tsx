@@ -12,6 +12,7 @@ interface Props {
   onStart: (prefill?: { inn?: string | null; regionFnsCode?: string | null }) => void;
   onOpenCard: (id: string) => void;
   onInbox: () => void;
+  onJobs: () => void;
   onStaff: () => void;
   onRegions: () => void;
   onDemo: (pack: PackRef) => void;
@@ -32,7 +33,7 @@ const packShortTitle = (p: PackRef): string => {
   return region ? `${head} · ${region}` : head;
 };
 
-export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpenCard, onInbox, onStaff, onRegions, onDemo }: Props) {
+export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpenCard, onInbox, onJobs, onStaff, onRegions, onDemo }: Props) {
   const [inn, setInn] = useState(boot.user.inn ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +69,11 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
       </div>
       {notInMax && <Banner>Открыто {platform === 'browser' ? 'в браузере' : `вне MAX (${platform})`}: демо-режим. Расчёты работают, а отправка отчёта в чат, публикация вакансии и подписка доступны только внутри мессенджера.</Banner>}
 
+      <Section title="Ищу работу">
+        <Text>Посмотрите вакансии и откликнитесь прямо в MAX. Для поиска не нужны ИНН, QR-код или ссылка работодателя.</Text>
+        <Button stretched onClick={onJobs}>Найти работу</Button>
+      </Section>
+
       <Section title="Как это работает: 3 шага">
         <ol className="sv-steps">
           <li className="sv-step">
@@ -82,21 +88,23 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
             <span className="sv-step__num">2</span>
             <div className="sv-step__body">
               <div className="sv-step__title">Найдите людей</div>
-              <Muted>Из карточки ставки опубликуйте вакансию: бот пришлёт ссылку и QR-код, отклики кандидатов придут сюда.</Muted>
+              <Muted>Из карточки ставки опубликуйте вакансию. Добавьте её в общий каталог: кандидаты найдут её без QR. Ссылка и QR также останутся.</Muted>
               <Button stretched variant="secondary" onClick={onInbox}>Вакансии и отклики</Button>
             </div>
           </li>
           <li className="sv-step">
             <span className="sv-step__num">3</span>
             <div className="sv-step__body">
-              <div className="sv-step__title">Проверьте свой штат</div>
-              <Muted>Кто из сотрудников получает меньше рынка, кого легко переманить и сколько стоит это исправить.</Muted>
-              <Button stretched variant="secondary" onClick={onStaff}>Мой штат</Button>
+              <div className="sv-step__title">Ответьте кандидатам</div>
+              <Muted>Посмотрите ответы, пригласите на собеседование. После найма закройте вакансию.</Muted>
+              <Button stretched variant="secondary" onClick={onInbox}>Посмотреть отклики</Button>
             </div>
           </li>
         </ol>
       </Section>
 
+      <details className="sv-stack"><summary className="sv-h2">Настройки и дополнительные расчёты</summary>
+      <Section title="Проверить зарплаты штата"><Muted>Сравните несколько должностей с рынком. Это ориентир по зарплатам, не прогноз увольнений.</Muted><Button stretched variant="secondary" onClick={onStaff}>Мой штат</Button></Section>
       {demoPacks.length > 0 && (
         <Section title="Посмотреть на примере">
           <Muted>Готовая карточка ставки на примере реального микропредприятия из реестра МСП. Это чужой бизнес: ваш профиль не меняется.</Muted>
@@ -142,6 +150,7 @@ export function Home({ boot, notInMax, platform, onProfileSaved, onStart, onOpen
         <Muted>Открываете точку в другом городе или нанимаете вахтой: покажу, где эта должность дешевле и где больше объявлений.</Muted>
         <Button stretched variant="secondary" onClick={onRegions}>Сравнить регионы</Button>
       </Section>
+      </details>
 
       {boot.recentCards.length > 0 && (
         <Section title="Недавние карточки">
