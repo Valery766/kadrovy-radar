@@ -14,7 +14,7 @@ export function VacancyText({ result, salary, onBack }: { result: MarketResult; 
       <div className="sv-head">
         <ScreenTitle>Текст вакансии</ScreenTitle>
         <Text>Готовое объявление «{result.profession.title}, {result.region.name}» со ставкой {rub(salary)}. Отредактируйте под себя и скопируйте.</Text>
-        <Muted>Требования и условия взяты из самых частых формулировок живых объявлений, условия подобраны для отрасли «{result.pack.title}». Ничего не придумано.</Muted>
+        <Muted>Требования и условия собраны из самых частых формулировок живых объявлений отрасли «{result.pack.title}».</Muted>
       </div>
       {error && <Banner kind="error">{error}</Banner>}
       {!text && !error && <div className="sv-center"><Spinner /><Muted className="sv-center">Собираю текст из объявлений…</Muted></div>}

@@ -74,13 +74,13 @@ export function Jobs({ boot, jobId, onSelect, onBack, onHome, onEmployer }: Prop
         </div>)}</div>
         <div className="sv-actions">{filters.offset > 0 && <Button variant="secondary" onClick={() => setFilters({ ...filters, offset: Math.max(0, filters.offset - 12) })}>Назад</Button>}{filters.offset + 12 < total && <Button onClick={() => setFilters({ ...filters, offset: filters.offset + 12 })}>Следующая страница</Button>}</div>
       </Section>}
-      <Muted>Это вакансии нашего сервиса, а не вся база «Работы России», hh.ru или Авито. Данные внешнего рынка используются для расчёта ставки, не выдаются за размещённые здесь вакансии.</Muted>
+      <Muted>Здесь только объявления работодателей «Кадрового радара». Внешние данные «Работы России» используются для расчёта ставки и в каталог не попадают.</Muted>
     </>}
     {jobId && !job && !error && <div className="sv-center"><Spinner /></div>}
     {job && <>
       <Section title={`${job.title} · ${job.regionName}`}>
         <Text>{job.employerName ?? 'Название работодателя не указано'}</Text><Text>{job.salary ? `От ${rub(job.salary)} в месяц` : 'Зарплата обсуждается'}</Text>
-        <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{job.text}</div><Muted>Размещено {fmtDate(job.createdAt)}. Условия указаны работодателем; подтвердите их на собеседовании.</Muted>
+        <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{job.text}</div><Muted>Размещено {fmtDate(job.createdAt)}. Условия указал работодатель.</Muted>
       </Section>
       {job.own ? <Section><Text>Это ваша вакансия.</Text><Button onClick={() => onEmployer(job.id)}>Открыть отклики</Button></Section>
         : job.myResponse ? <Banner>Ваш отклик: {responseStatusLabel(job.myResponse)}. Ответ работодателя придёт в чат с ботом.</Banner>

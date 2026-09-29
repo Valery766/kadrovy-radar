@@ -32,6 +32,22 @@ describe('packs', () => {
     expect(prettyRegionName('г Москва')).toBe('Москва');
     expect(prettyRegionName('Тюменская область')).toBe('Тюменская область');
   });
+  it('renders republics, duplicated types and federal territories the way they are written officially', () => {
+    expect(prettyRegionName('Адыгея республика')).toBe('Республика Адыгея');
+    expect(prettyRegionName('Саха (Якутия) республика')).toBe('Республика Саха (Якутия)');
+    expect(prettyRegionName('Северная Осетия - Алания республика')).toBe('Республика Северная Осетия - Алания');
+    expect(prettyRegionName('Кабардино-Балкарская республика')).toBe('Кабардино-Балкарская Республика');
+    expect(prettyRegionName('Донецкая Народная республика')).toBe('Донецкая Народная Республика');
+    expect(prettyRegionName('Чувашская Республика - чувашия')).toBe('Чувашская Республика');
+    expect(prettyRegionName('Кемеровская область - Кузбасс область')).toBe('Кемеровская область - Кузбасс');
+    expect(prettyRegionName('Ханты-Мансийский Автономный округ - Югра автономный округ')).toBe('Ханты-Мансийский автономный округ - Югра');
+    expect(prettyRegionName('Ямало-Ненецкий автономный округ')).toBe('Ямало-Ненецкий автономный округ');
+    expect(prettyRegionName('Сириус федеральная территория')).toBe('Федеральная территория Сириус');
+  });
+  it('leaves no region name with the type word stuck at the end', () => {
+    for (const r of catalog.regions) expect(r.name, r.name).not.toMatch(/\s(республика|федеральная территория)$/);
+    for (const r of catalog.regions) expect(r.name, r.name).not.toMatch(/^г\s/i);
+  });
 });
 
 describe('free-text profession', () => {

@@ -405,8 +405,9 @@ export interface JobFilters { q?: string; regionCode?: string; minSalary?: numbe
 /** Только добровольно размещённые открытые вакансии. Публичный DTO собирается отдельно от инбокса. */
 export function listOpenJobs(db: Db, filters: JobFilters = {}): { vacancies: VacancyRow[]; total: number } {
   const q = (filters.q ?? '').trim().toLocaleLowerCase('ru-RU').replace(/ё/g, 'е');
-  const where = "listed = 1 AND status = 'open' AND (? = '' OR instr(search_fold(title), ?) > 0) AND (? = '' OR region_code = ?) AND (? = 0 OR salary >= ?)";
-  const args = [q, q, filters.regionCode ?? '', filters.regionCode ?? '', filters.minSalary ?? 0, filters.minSalary ?? 0];
+  // Ищем и по должности, и по работодателю: в каталоге на сотни записей «по названию компании» – обычный запрос.
+  const where = "listed = 1 AND status = 'open' AND (? = '' OR instr(search_fold(title), ?) > 0 OR instr(search_fold(COALESCE(employer_name, '')), ?) > 0) AND (? = '' OR region_code = ?) AND (? = 0 OR salary >= ?)";
+  const args = [q, q, q, filters.regionCode ?? '', filters.regionCode ?? '', filters.minSalary ?? 0, filters.minSalary ?? 0];
   const total = (db.prepare(`SELECT COUNT(*) AS n FROM vacancies WHERE ${where}`).get(...args) as { n: number }).n;
   const limit = Math.max(1, Math.min(50, filters.limit ?? 12));
   const offset = Math.max(0, filters.offset ?? 0);

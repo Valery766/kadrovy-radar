@@ -80,6 +80,12 @@ describe('каталог вакансий и права доступа', () => {
     expect(listOpenJobs(parts.db, { q: "' OR 1=1 --" }).total).toBe(0);
     expect(listOpenJobs(parts.db, { q: '%' }).total).toBe(0);
   });
+  it('находит вакансию по названию работодателя, а не только по должности', async () => {
+    vacancy('bakery', { title: 'Пекарь', employerName: 'Пекарня «Сдоба»' });
+    vacancy('other', { title: 'Повар', employerName: null });
+    expect(listOpenJobs(parts.db, { q: 'сдоба' }).vacancies.map((v) => v.id)).toEqual(['bakery']);
+    expect(listOpenJobs(parts.db, { q: 'пекар' }).total).toBe(1);
+  });
   it('фильтрует регион и зарплату, сохраняет стабильную пагинацию', async () => {
     for (let i = 0; i < 4; i++) vacancy(`v${i}`, { salary: 50000 + i * 10000 });
     vacancy('rt', { regionCode: '1600000000000', salary: 90000 }); vacancy('salary-null', { salary: null });

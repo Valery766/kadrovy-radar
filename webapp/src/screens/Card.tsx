@@ -253,7 +253,7 @@ export function Card({ result, boot, notInMax, onRecalc, onAnother, onText, onOp
       )}
 
         <Section title="1. Выберите зарплату вакансии">
-          <Muted>Рынок – ориентир, не ограничение. Можно выбрать вариант или указать любую свою сумму от 1 000 до 5 000 000 ₽ в месяц до НДФЛ. Это не голосование.</Muted>
+          <Muted>Рынок – ориентир, не ограничение: выберите вариант или укажите свою сумму от 1 000 до 5 000 000 ₽ в месяц до НДФЛ.</Muted>
           <div className="sv-options" role="radiogroup" aria-label="Варианты ставки">
             {card.options.map((o) => (
               <button key={o.kind} type="button" role="radio" disabled={busy !== null || vacancy !== null} aria-checked={selected === o.kind} className={`sv-option ${selected === o.kind ? 'sv-option--active' : ''}`} onClick={() => changeSalary(String(o.value), o.kind)}>

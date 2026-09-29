@@ -14,3 +14,4 @@ out/
 *.log
 .vite/
 tools/.venv/
+tools/node_modules
