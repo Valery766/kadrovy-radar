@@ -60,6 +60,19 @@ describe('публикация со своей зарплатой', () => {
 });
 
 describe('каталог вакансий и права доступа', () => {
+  it('показывает в кабинете старую вакансию с откликами после 50 новых, не включая чужие', async () => {
+    vacancy('old-with-response');
+    parts.db.prepare('UPDATE vacancies SET created_at = ? WHERE id = ?').run('2020-01-01T00:00:00.000Z', 'old-with-response');
+    putResponse(parts.db, { id: 'old-response', vacancyId: 'old-with-response', candidateUserId: CANDIDATE, candidateName: 'Кандидат', answers, phone: null, phoneVerified: false, score: 10 });
+    for (let i = 0; i < 60; i++) vacancy(`new-${i}`);
+    vacancy('someone-elses-vacancy', { maxUserId: STRANGER });
+    const response = await get('/api/vacancies', OWNER);
+    expect(response.statusCode).toBe(200);
+    const data = response.json();
+    expect(data.vacancies).toHaveLength(61);
+    expect(data.vacancies.find((v: { id: string }) => v.id === 'old-with-response')).toMatchObject({ id: 'old-with-response', responses: 1, newResponses: 1 });
+    expect(data.vacancies.map((v: { id: string }) => v.id)).not.toContain('someone-elses-vacancy');
+  });
   it('без сессии каталог закрыт; демо может читать, но не откликаться', async () => {
     vacancy('public');
     expect((await parts.app.inject({ method: 'GET', url: '/api/jobs' })).statusCode).toBe(401);

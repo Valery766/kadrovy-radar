@@ -1,0 +1,21 @@
+{
+  "team": "unecon.tech",
+  "description": "Параметры воспроизводимой проверки. Это входные данные, а не фиктивные ответы API.",
+  "baseUrl": "https://radar.digital-projects.tech",
+  "demoSessionBody": {},
+  "catalogQueries": [
+    {"limit": 12, "offset": 0},
+    {"q": "повар", "region": "78", "minSalary": 60000, "limit": 12, "offset": 0},
+    {"q": "Водитель", "limit": 12, "offset": 0}
+  ],
+  "invalidFilters": {"limit": 0},
+  "missingJobId": "acceptance-resource-does-not-exist",
+  "manualScenario": {
+    "professionText": "повар",
+    "regionFnsCode": "78",
+    "salary": 83000,
+    "requiresTwoRealMaxAccounts": true,
+    "source": "Карточка и идентификаторы создаются в ходе проверки через интерфейс MAX",
+    "noSharedCredentials": true
+  }
+}

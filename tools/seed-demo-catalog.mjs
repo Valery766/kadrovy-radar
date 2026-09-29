@@ -130,7 +130,8 @@ try {
       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, 'open', 1, ?)
       ON CONFLICT(id) DO UPDATE SET max_user_id = excluded.max_user_id, profession_key = excluded.profession_key,
         region_code = excluded.region_code, title = excluded.title, salary = excluded.salary, text = excluded.text,
-        employer_name = excluded.employer_name, listed = excluded.listed, created_at = excluded.created_at`);
+        employer_name = excluded.employer_name, listed = excluded.listed, created_at = excluded.created_at
+      WHERE NOT EXISTS (SELECT 1 FROM responses WHERE vacancy_id = excluded.id AND candidate_user_id > ${CANDIDATE_BASE})`);
     for (const v of dataset.vacancies) {
       const createdAt = iso(now - v.ageDays * 86_400_000 - v.minutes * 60_000);
       upsert.run(idOf(v.key), owner, v.professionKey, v.regionCode, v.title, v.salary, v.text, v.employerName, createdAt);
@@ -148,13 +149,18 @@ try {
     }
 
     if (withResponses) {
-      db.prepare(`DELETE FROM responses WHERE vacancy_id IN (${placeholders})`).run(...ids);
+      // Вакансии с откликами настоящих пользователей сохраняем целиком.
+      // На остальных заменяем только учебные отклики из зарезервированного диапазона.
+      db.prepare(`DELETE FROM responses WHERE vacancy_id IN (${placeholders}) AND candidate_user_id <= ?
+        AND vacancy_id NOT IN (SELECT vacancy_id FROM responses WHERE candidate_user_id > ?)`)
+        .run(...ids, CANDIDATE_BASE, CANDIDATE_BASE);
       const putResponse = db.prepare(`INSERT INTO responses (id, vacancy_id, candidate_user_id, candidate_name, answers, phone, phone_verified, score, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?)`);
       const touch = db.prepare('UPDATE vacancies SET first_response_at = ?, status = ?, closed_at = ?, hired_response_id = ?, listed = ? WHERE id = ?');
       const plan = dataset.responses ?? [];
       for (const r of plan) {
         const vacancyId = idOf(r.vacancyKey);
+        if (one('SELECT 1 AS present FROM responses WHERE vacancy_id = ? AND candidate_user_id > ? LIMIT 1', vacancyId, CANDIDATE_BASE)) continue;
         let first = null;
         let hiredId = null;
         r.candidates.forEach((c, i) => {

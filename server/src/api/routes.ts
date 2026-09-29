@@ -568,7 +568,7 @@ export function registerApi(app: FastifyInstance, deps: ApiDeps): void {
   app.get('/api/vacancies', async (req, reply) => {
     const s = auth(req, reply); if (!s) return;
     if (s.demo || s.uid < 0) return { vacancies: [], demo: true };
-    return { vacancies: listVacanciesByUser(db, s.uid).map(vacancyView), demo: false };
+    return { vacancies: listVacanciesByUser(db, s.uid, 500).map(vacancyView), demo: false };
   });
 
   app.get<{ Params: { id: string } }>('/api/vacancies/:id/responses', async (req, reply) => {

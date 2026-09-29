@@ -1,0 +1,2323 @@
+openapi: 3.1.0
+info:
+  title: "Кадровый радар: API мини-приложения MAX"
+  version: 0.1.0
+  description: "Контракт методов mini-app по исходникам конкурсного выпуска 30.09.2026. API является
+    частью продукта. Основной путь: рынок, публикация, каталог, отклик, решение работодателя. Доступ через
+    сессионный Bearer приложения, не через MAX_BOT_TOKEN. Тяжелые расчеты: 6 вызовов в минуту на
+    MAX-пользователя, 3 в минуту на IP демо, максимум 4 одновременно. Демо-сессии: 20 в минуту на IP.
+    Максимальное JSON-тело 1 МиБ. Входящий webhook MAX относится к транспортной интеграции и не является
+    методом мини-приложения."
+servers:
+  - url: https://radar.digital-projects.tech
+    description: Рабочий сервис
+  - url: http://localhost:8080
+    description: Локальный Docker, MAX_UPDATES_MODE=none
+paths:
+  /api/health:
+    get:
+      operationId: get__api_health
+      summary: Состояние сервиса
+      parameters: []
+      security: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /api/session:
+    post:
+      operationId: post__api_session
+      summary: Создать сессию MAX или демо-сессию
+      parameters: []
+      security: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Превышен лимит запросов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Источник или бот недоступен, либо заняты четыре расчета
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                initData:
+                  type: string
+                  description: Подлинная window.WebApp.initData из запуска MAX. Без этого поля выдается демо-сессия.
+                  maxLength: 8192
+                demo:
+                  type: boolean
+              required: []
+              additionalProperties: true
+      description: Без initData возвращается демо-сессия (публичный каталог и расчеты, без публикаций и откликов).
+        Настоящая initData проверяется HMAC по токену бота, допустимый возраст 3600 секунд; user.id
+        обязателен. Сессионный токен живет 12 часов. Поддельные подписи и общие учетные записи не
+        используются.
+  /api/bootstrap:
+    get:
+      operationId: get__api_bootstrap
+      summary: Справочники и состояние текущего пользователя
+      parameters: []
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bootstrap"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/profile:
+    post:
+      operationId: post__api_profile
+      summary: Получить профиль бизнеса по ИНН
+      parameters: []
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    type: object
+                    properties: {}
+                    required: []
+                    additionalProperties: true
+                  region:
+                    anyOf:
+                      - &a10
+                        type: object
+                        properties:
+                          fnsCode:
+                            type: string
+                          code:
+                            type: string
+                          name:
+                            type: string
+                          avgSalary:
+                            anyOf:
+                              - type: number
+                              - type: "null"
+                        required:
+                          - fnsCode
+                          - code
+                          - name
+                          - avgSalary
+                        additionalProperties: true
+                      - type: "null"
+                  pack:
+                    type: object
+                    properties: {}
+                    required: []
+                    additionalProperties: true
+                required:
+                  - profile
+                  - region
+                  - pack
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Превышен лимит запросов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Источник или бот недоступен, либо заняты четыре расчета
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inn:
+                  type: string
+                  description: Корректный ИНН с контрольной суммой
+                  pattern: ^(\d{10}|\d{12})$
+              required:
+                - inn
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/market:
+    post:
+      operationId: post__api_market
+      summary: Рассчитать карточку рынка
+      parameters: []
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Market"
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Превышен лимит запросов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Источник или бот недоступен, либо заняты четыре расчета
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                professionKey: &a2
+                  type: string
+                  description: Ключ из bootstrap/professions
+                professionText: &a3
+                  type: string
+                  description: Свободное название должности
+                  maxLength: 120
+                regionFnsCode: &a4
+                  type: string
+                  description: Код ФНС, например 78
+                inn: &a5
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                offer: &a6
+                  anyOf:
+                    - type: number
+                      minimum: 1000
+                      maximum: 5000000
+                    - type: "null"
+                forceRefresh: &a7
+                  type: boolean
+                keepRegion: &a8
+                  type: boolean
+              required: []
+              additionalProperties: true
+      description: Требуется professionKey или professionText и выбранный регион/ИНН. Сохраняется карточка расчета,
+        даже для демо. Источники могут временно вернуть 503. forceRefresh учитывается только для реального
+        MAX-пользователя.
+  /api/cards/{id}:
+    get:
+      operationId: get__api_cards_id
+      summary: Прочитать карточку рынка по идентификатору
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Market"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/cards/{id}/report:
+    post:
+      operationId: post__api_cards_id_report
+      summary: Отправить PDF в диалог MAX
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mid:
+                    type: string
+                  chatType:
+                    const: DIALOG
+                  reused:
+                    type: boolean
+                required:
+                  - mid
+                  - chatType
+                  - reused
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/cards/{id}/subscribe:
+    post:
+      operationId: post__api_cards_id_subscribe
+      summary: Подписаться на обновления рынка
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscription:
+                    type: object
+                    properties: {}
+                    required: []
+                    additionalProperties: true
+                required:
+                  - subscription
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/subscriptions:
+    get:
+      operationId: get__api_subscriptions
+      summary: Подписки пользователя
+      parameters: []
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      type: object
+                      properties: {}
+                      required: []
+                      additionalProperties: true
+                required:
+                  - subscriptions
+                additionalProperties: true
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/subscriptions/{id}:
+    delete:
+      operationId: delete__api_subscriptions_id
+      summary: Отключить свою подписку
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+                additionalProperties: true
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/professions/suggest:
+    get:
+      operationId: get__api_professions_suggest
+      summary: Подсказки должностей
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+            maximum: 25
+            default: 10
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties: {}
+                      required: []
+                      additionalProperties: true
+                required:
+                  - suggestions
+                additionalProperties: true
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/staff:
+    post:
+      operationId: post__api_staff
+      summary: Оценить ставки штата
+      parameters: []
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Staff"
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Превышен лимит запросов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Источник или бот недоступен, либо заняты четыре расчета
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &a1
+              type: object
+              properties:
+                positions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      title:
+                        type: string
+                      salary:
+                        type: number
+                        minimum: 1000
+                        maximum: 5000000
+                      professionKey:
+                        anyOf:
+                          - type: string
+                          - type: "null"
+                    required:
+                      - title
+                      - salary
+                    additionalProperties: true
+                  minItems: 1
+                  maxItems: 20
+                regionFnsCode:
+                  type: string
+                inn:
+                  anyOf:
+                    - type: string
+                    - type: "null"
+                forceRefresh:
+                  type: boolean
+              required:
+                - positions
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+    get:
+      operationId: get__api_staff
+      summary: Последняя оценка штата
+      parameters: []
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report:
+                    anyOf:
+                      - $ref: "#/components/schemas/Staff"
+                      - type: "null"
+                required:
+                  - report
+                additionalProperties: true
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *a1
+  /api/inspections:
+    get:
+      operationId: get__api_inspections
+      summary: Плановые проверки из ЕРКНМ
+      parameters:
+        - name: inn
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Необязательный корректный ИНН
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inspections"
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/regions/compare:
+    post:
+      operationId: post__api_regions_compare
+      summary: Сравнить рынки регионов
+      parameters: []
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegionComparison"
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Превышен лимит запросов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Источник или бот недоступен, либо заняты четыре расчета
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                professionKey: *a2
+                professionText: *a3
+                regionFnsCode: *a4
+                inn: *a5
+                offer: *a6
+                forceRefresh: *a7
+                keepRegion: *a8
+                regionFnsCodes:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 8
+                  uniqueItems: true
+                sortBy:
+                  type: string
+                  enum:
+                    - median
+                    - affordability
+                    - vacancies
+              required:
+                - regionFnsCodes
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/regions/{fnsCode}/digest:
+    get:
+      operationId: get__api_regions_fnsCode_digest
+      summary: Сводка рынка по региону
+      parameters:
+        - name: fnsCode
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: professions
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Ключи профессий через запятую, используются первые 12
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegionDigest"
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Превышен лимит запросов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Источник или бот недоступен, либо заняты четыре расчета
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/cards/{id}/vacancy:
+    post:
+      operationId: post__api_cards_id_vacancy
+      summary: Опубликовать вакансию из своей карточки
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vacancy:
+                    $ref: "#/components/schemas/Vacancy"
+                  link:
+                    type: string
+                  qrSent:
+                    type: boolean
+                  reused:
+                    type: boolean
+                required:
+                  - vacancy
+                  - link
+                  - qrSent
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Конфликт состояния или повтор публикации с измененными условиями
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Внутренняя ошибка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Источник или бот недоступен, либо заняты четыре расчета
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                salary:
+                  anyOf:
+                    - &a9
+                      type: integer
+                      minimum: 1000
+                      maximum: 5000000
+                    - type: "null"
+                text:
+                  type: string
+                  description: Подтвержденные работодателем условия
+                  maxLength: 3500
+                listed:
+                  type: boolean
+                requestId:
+                  type: string
+                  description: Одинаковый requestId с одинаковыми условиями возвращает существующую вакансию
+                  pattern: ^[a-zA-Z0-9_-]{8,80}$
+              required: []
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/vacancies:
+    get:
+      operationId: get__api_vacancies
+      summary: Свои вакансии и счетчики откликов
+      parameters: []
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vacancies:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Vacancy"
+                  demo:
+                    type: boolean
+                required:
+                  - vacancies
+                  - demo
+                additionalProperties: true
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/vacancies/{id}/responses:
+    get:
+      operationId: get__api_vacancies_id_responses
+      summary: Отклики на свою вакансию
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vacancy:
+                    $ref: "#/components/schemas/Vacancy"
+                  responses:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CandidateResponse"
+                required:
+                  - vacancy
+                  - responses
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/responses/{id}/invite:
+    post:
+      operationId: post__api_responses_id_invite
+      summary: Пригласить кандидата
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Конфликт состояния или повтор публикации с измененными условиями
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  maxLength: 2000
+              required: []
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/responses/{id}/reject:
+    post:
+      operationId: post__api_responses_id_reject
+      summary: Отказать кандидату
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Конфликт состояния или повтор публикации с измененными условиями
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/responses/{id}/hire:
+    post:
+      operationId: post__api_responses_id_hire
+      summary: Отметить найм и закрыть вакансию
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response: &a15
+                    $ref: "#/components/schemas/CandidateResponse"
+                  delivery: &a16
+                    type: string
+                    enum:
+                      - sent
+                      - failed
+                      - unchanged
+                  vacancy:
+                    $ref: "#/components/schemas/Vacancy"
+                  otherNotificationsFailed:
+                    type: integer
+                required:
+                  - response
+                  - delivery
+                  - vacancy
+                  - otherNotificationsFailed
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Конфликт состояния или повтор публикации с измененными условиями
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/vacancies/{id}/close:
+    post:
+      operationId: post__api_vacancies_id_close
+      summary: Закрыть свою вакансию
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vacancy:
+                    $ref: "#/components/schemas/Vacancy"
+                  notificationsFailed:
+                    type: integer
+                required:
+                  - vacancy
+                  - notificationsFailed
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/cards/{id}/vacancy-text:
+    post:
+      operationId: post__api_cards_id_vacancy_text
+      summary: Подготовить черновик объявления
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text:
+                    type: string
+                  salary: *a9
+                required:
+                  - text
+                  - salary
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Ресурс принадлежит другому пользователю
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                salary: *a9
+              required: []
+              additionalProperties: true
+  /api/jobs:
+    get:
+      operationId: get__api_jobs
+      summary: Открытый каталог вакансий
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Должность или работодатель
+            maxLength: 120
+        - name: region
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Код ФНС или полный код региона
+            maxLength: 20
+        - name: minSalary
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 5000000
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10000
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 12
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Jobs"
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/jobs/{id}:
+    get:
+      operationId: get__api_jobs_id
+      summary: Карточка вакансии каталога
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job:
+                    $ref: "#/components/schemas/Job"
+                required:
+                  - job
+                additionalProperties: true
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/jobs/{id}/apply:
+    post:
+      operationId: post__api_jobs_id_apply
+      summary: Отправить отклик
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      status:
+                        type: string
+                    required:
+                      - id
+                      - status
+                    additionalProperties: true
+                  created:
+                    type: boolean
+                  employerNotified:
+                    type: boolean
+                required:
+                  - response
+                  - created
+                  - employerNotified
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Конфликт состояния или повтор публикации с измененными условиями
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                experience: &a12
+                  type: string
+                  enum:
+                    - none
+                    - lt1
+                    - mid
+                    - senior
+                schedule: &a13
+                  type: boolean
+                expectedSalary: &a14
+                  anyOf:
+                    - *a9
+                    - type: "null"
+                consent:
+                  type: boolean
+                  const: true
+              required:
+                - experience
+                - schedule
+                - expectedSalary
+                - consent
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+  /api/vacancies/{id}/listing:
+    post:
+      operationId: post__api_vacancies_id_listing
+      summary: Изменить видимость своей вакансии в каталоге
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - session: []
+      responses:
+        "200":
+          description: Успешный результат
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listed:
+                    type: boolean
+                required:
+                  - listed
+                additionalProperties: true
+        "400":
+          description: Некорректные параметры или действие недоступно в демо
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Сессия отсутствует/истекла или неверная подпись MAX
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ресурс отсутствует или скрыт от пользователя
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Конфликт состояния или повтор публикации с измененными условиями
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                listed:
+                  type: boolean
+              required:
+                - listed
+              additionalProperties: true
+      description: Вызов может сохранить данные или отправить сообщение. Для публикации, отклика и решений по
+        кандидату нужна настоящая сессия MAX. Эти операции не выполняются автоматическим набором read-only
+        проверок.
+components:
+  securitySchemes:
+    session:
+      type: http
+      scheme: bearer
+      bearerFormat: HMAC-signed application session
+      description: token из POST /api/session. Для настоящих ролей запуск из выданного бота MAX.
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Машинный код причины
+        message:
+          type: string
+          description: Описание для пользователя
+        reason:
+          type: string
+      required:
+        - error
+      additionalProperties: true
+    Health:
+      type: object
+      properties:
+        ok:
+          const: true
+        uptimeSec:
+          type: integer
+        updatesMode:
+          type: string
+          enum:
+            - none
+            - webhook
+            - polling
+        bot:
+          anyOf:
+            - type: object
+              properties:
+                username:
+                  type: string
+              required:
+                - username
+              additionalProperties: true
+            - type: "null"
+        lastUpdateAt:
+          anyOf:
+            - type: string
+            - type: "null"
+        webhookCheckedAt:
+          anyOf:
+            - type: string
+            - type: "null"
+        packs:
+          type: array
+          items:
+            type: string
+        inspections:
+          type: object
+          properties:
+            loaded:
+              type: boolean
+            year:
+              type: integer
+            version:
+              anyOf:
+                - type: string
+                - type: "null"
+            records:
+              type: integer
+            withRegion:
+              type: integer
+            loadedAt:
+              anyOf:
+                - type: string
+                - type: "null"
+          required:
+            - loaded
+            - year
+            - version
+            - records
+            - withRegion
+            - loadedAt
+          additionalProperties: true
+      required:
+        - ok
+        - uptimeSec
+        - updatesMode
+        - bot
+        - lastUpdateAt
+        - webhookCheckedAt
+        - packs
+        - inspections
+      additionalProperties: true
+    Session:
+      type: object
+      properties:
+        token:
+          type: string
+          description: Сессионный Bearer-токен приложения, срок жизни 12 часов; не токен MAX Bot API
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              anyOf:
+                - type: string
+                - type: "null"
+            demo:
+              type: boolean
+            chatId:
+              anyOf:
+                - type: integer
+                - type: "null"
+          required:
+            - id
+            - name
+            - demo
+            - chatId
+          additionalProperties: true
+        startParam:
+          anyOf:
+            - type: string
+            - type: "null"
+      required:
+        - token
+        - user
+        - startParam
+      additionalProperties: true
+    Bootstrap:
+      type: object
+      properties:
+        bot:
+          anyOf:
+            - type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+            - type: "null"
+        packs:
+          type: array
+          items:
+            type: object
+            properties: {}
+            required: []
+            additionalProperties: true
+        regions:
+          type: array
+          items: *a10
+        professions:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              title:
+                type: string
+            required:
+              - key
+              - title
+            additionalProperties: true
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              anyOf:
+                - type: string
+                - type: "null"
+            demo:
+              type: boolean
+            chatId:
+              anyOf:
+                - type: integer
+                - type: "null"
+            inn:
+              anyOf:
+                - type: string
+                - type: "null"
+            regionFnsCode:
+              anyOf:
+                - type: string
+                - type: "null"
+            profile:
+              anyOf:
+                - type: object
+                  properties: {}
+                  required: []
+                  additionalProperties: true
+                - type: "null"
+            pack:
+              type: object
+              properties:
+                id:
+                  type: string
+                title:
+                  type: string
+              required:
+                - id
+                - title
+              additionalProperties: true
+          required:
+            - id
+            - name
+            - demo
+            - chatId
+            - inn
+            - regionFnsCode
+            - profile
+            - pack
+          additionalProperties: true
+        recentCards:
+          type: array
+          items:
+            type: object
+            properties: {}
+            required: []
+            additionalProperties: true
+        sources:
+          type: array
+          items:
+            type: object
+            properties: {}
+            required: []
+            additionalProperties: true
+      required:
+        - bot
+        - packs
+        - regions
+        - professions
+        - user
+        - recentCards
+        - sources
+      additionalProperties: true
+    Market:
+      type: object
+      properties:
+        cardId:
+          type: string
+        card:
+          type: object
+          properties: {}
+          required: []
+          additionalProperties: true
+        pack:
+          type: object
+          properties:
+            id:
+              type: string
+            title:
+              type: string
+            version:
+              type: integer
+          required:
+            - id
+            - title
+            - version
+          additionalProperties: true
+        profession: &a18
+          type: object
+          properties:
+            key:
+              type: string
+            title:
+              type: string
+            query:
+              type: string
+          required:
+            - key
+            - title
+            - query
+          additionalProperties: true
+        region: *a10
+        profile:
+          anyOf:
+            - type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+            - type: "null"
+        sources:
+          type: array
+          items: &a17
+            type: object
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              url:
+                type: string
+              fetchedAt: &a11
+                type: string
+                description: Время ISO 8601
+                format: date-time
+              note:
+                type: string
+            required:
+              - id
+              - title
+              - url
+              - fetchedAt
+            additionalProperties: true
+        fetched:
+          type: object
+          properties:
+            total:
+              type: integer
+            records:
+              type: integer
+            cacheHit:
+              type: boolean
+            fetchedAt: *a11
+          required:
+            - total
+            - records
+            - cacheHit
+            - fetchedAt
+          additionalProperties: true
+        closure:
+          anyOf:
+            - type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+            - type: "null"
+        createdAt: *a11
+      required:
+        - cardId
+        - card
+        - pack
+        - profession
+        - region
+        - profile
+        - sources
+        - fetched
+        - closure
+        - createdAt
+      additionalProperties: true
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        salary:
+          anyOf:
+            - type: number
+            - type: "null"
+        employerName:
+          anyOf:
+            - type: string
+            - type: "null"
+        regionCode:
+          type: string
+        regionName:
+          type: string
+        createdAt: *a11
+        status:
+          type: string
+          enum:
+            - open
+            - closed
+        own:
+          type: boolean
+        link:
+          anyOf:
+            - type: string
+            - type: "null"
+        text:
+          type: string
+        myResponse:
+          anyOf:
+            - type: string
+            - type: "null"
+      required:
+        - id
+        - title
+        - salary
+        - employerName
+        - regionCode
+        - regionName
+        - createdAt
+        - status
+        - own
+        - link
+      additionalProperties: true
+    Jobs:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Job"
+        total:
+          type: integer
+          minimum: 0
+        offset:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+      required:
+        - jobs
+        - total
+        - offset
+        - limit
+      additionalProperties: true
+    Vacancy:
+      type: object
+      properties:
+        id:
+          type: string
+        cardId:
+          type: string
+        title:
+          type: string
+        professionKey:
+          type: string
+        regionCode:
+          type: string
+        regionName:
+          type: string
+        salary:
+          anyOf:
+            - type: number
+            - type: "null"
+        text:
+          type: string
+        employerName:
+          anyOf:
+            - type: string
+            - type: "null"
+        status:
+          type: string
+        listed:
+          type: boolean
+        createdAt: *a11
+        closedAt:
+          anyOf:
+            - type: string
+            - type: "null"
+        hiredResponseId:
+          anyOf:
+            - type: string
+            - type: "null"
+        firstResponseAt:
+          anyOf:
+            - type: string
+            - type: "null"
+        responses:
+          type: integer
+        newResponses:
+          type: integer
+        link:
+          anyOf:
+            - type: string
+            - type: "null"
+        metrics:
+          type: object
+          properties:
+            timeToFirstResponseMin:
+              anyOf:
+                - type: number
+                - type: "null"
+            timeToHireMin:
+              anyOf:
+                - type: number
+                - type: "null"
+          required:
+            - timeToFirstResponseMin
+            - timeToHireMin
+          additionalProperties: true
+      required:
+        - id
+        - cardId
+        - title
+        - professionKey
+        - regionCode
+        - regionName
+        - salary
+        - text
+        - employerName
+        - status
+        - listed
+        - createdAt
+        - closedAt
+        - hiredResponseId
+        - firstResponseAt
+        - responses
+        - newResponses
+        - link
+        - metrics
+      additionalProperties: true
+    CandidateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        vacancyId:
+          type: string
+        candidateName:
+          anyOf:
+            - type: string
+            - type: "null"
+        answers:
+          type: object
+          properties:
+            experience: *a12
+            schedule: *a13
+            expectedSalary: *a14
+          required:
+            - experience
+            - schedule
+            - expectedSalary
+          additionalProperties: true
+        experienceLabel:
+          type: string
+        phone:
+          anyOf:
+            - type: string
+            - type: "null"
+        phoneVerified:
+          type: boolean
+        score:
+          type: number
+        maxScore:
+          type: number
+        status:
+          type: string
+          enum:
+            - new
+            - invited
+            - rejected
+            - hired
+        createdAt: *a11
+        updatedAt: *a11
+      required:
+        - id
+        - vacancyId
+        - candidateName
+        - answers
+        - experienceLabel
+        - phone
+        - phoneVerified
+        - score
+        - maxScore
+        - status
+        - createdAt
+        - updatedAt
+      additionalProperties: true
+    Decision:
+      type: object
+      properties:
+        response: *a15
+        delivery: *a16
+      required:
+        - response
+        - delivery
+      additionalProperties: true
+    Staff:
+      type: object
+      properties:
+        report:
+          type: object
+          properties: {}
+          required: []
+          additionalProperties: true
+        markets:
+          type: array
+          items:
+            type: object
+            properties: {}
+            required: []
+            additionalProperties: true
+        region: *a10
+        profile:
+          anyOf:
+            - type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+            - type: "null"
+        pack:
+          type: object
+          properties: {}
+          required: []
+          additionalProperties: true
+        sources:
+          type: array
+          items: *a17
+        text:
+          type: string
+        createdAt: *a11
+      required:
+        - report
+        - markets
+        - region
+        - profile
+        - pack
+        - sources
+        - text
+        - createdAt
+      additionalProperties: true
+    RegionComparison:
+      type: object
+      properties:
+        profession: *a18
+        comparison:
+          type: object
+          properties: {}
+          required: []
+          additionalProperties: true
+        cardIds:
+          type: object
+          properties: {}
+          required: []
+          additionalProperties: true
+        sources:
+          type: array
+          items: *a17
+        text:
+          type: string
+        createdAt: *a11
+      required:
+        - profession
+        - comparison
+        - cardIds
+        - sources
+        - text
+        - createdAt
+      additionalProperties: true
+    RegionDigest:
+      type: object
+      properties:
+        region: *a10
+        rows:
+          type: array
+          items:
+            type: object
+            properties: {}
+            required: []
+            additionalProperties: true
+        avgSalary:
+          anyOf:
+            - type: number
+            - type: "null"
+        sources:
+          type: array
+          items: *a17
+        text:
+          type: string
+        createdAt: *a11
+      required:
+        - region
+        - rows
+        - avgSalary
+        - sources
+        - text
+        - createdAt
+      additionalProperties: true
+    Inspections:
+      type: object
+      properties:
+        loaded:
+          type: boolean
+        inn:
+          anyOf:
+            - type: string
+            - type: "null"
+        own:
+          type: array
+          items:
+            type: object
+            properties: {}
+            required: []
+            additionalProperties: true
+        context:
+          type: object
+          properties: {}
+          required: []
+          additionalProperties: true
+        dataset:
+          anyOf:
+            - type: object
+              properties: {}
+              required: []
+              additionalProperties: true
+            - type: "null"
+        sources:
+          type: array
+          items: *a17
+      required:
+        - loaded
+        - inn
+        - own
+        - context
+        - dataset
+        - sources
+      additionalProperties: true

@@ -1,0 +1,267 @@
+schema_version: '1.0'
+schema_note: >-
+  Самоописанный формат команды по девяти пунктам ТЗ, с. 10. Отдельная машинная схема
+  организаторов в предоставленных ТЗ и FAQ не опубликована.
+solution: Кадровый радар
+team: unecon.tech
+release_reference: "Точный commit и SHA-256 исходников указаны в RELEASE.json конкурсного комплекта"
+base_url: https://radar.digital-projects.tech
+openapi_file: openapi.yaml
+test_data_file: TEST-DATA.json
+content_type: application/json
+roles:
+  anonymous:
+    authentication: none
+  demo:
+    authentication: POST /api/session with an empty JSON object
+    token_response_path: $.token
+    authorization_header: 'Bearer ${DEMO_TOKEN}'
+    privileges: Публичный каталог, справочники, расчеты; публикация и отклики запрещены
+  employer:
+    authentication: Подлинная initData из запуска мини-приложения внутри своего аккаунта MAX
+    token_exchange: POST /api/session
+    token_response_path: $.token
+    authorization_header: 'Bearer ${EMPLOYER_TOKEN}'
+    privileges: Свои карточки, вакансии, отклики на них, решения по кандидатам
+  candidate:
+    authentication: Подлинная initData другого аккаунта MAX
+    token_exchange: POST /api/session
+    token_response_path: $.token
+    authorization_header: 'Bearer ${CANDIDATE_TOKEN}'
+    privileges: Каталог и отклик на чужую открытую вакансию
+account_access: >-
+  Отдельных логинов и паролей приложения нет. Для работодателя и кандидата нужны два
+  реальных аккаунта MAX проверяющих. Токены сессий получает само мини-приложение после
+  запуска из бота. Рабочие секреты, сессии команды и синтетически подписанная initData
+  в набор не включены. Токен MAX Bot API не заменяет сессию пользователя.
+limits:
+  demo_sessions_per_ip_per_minute: 20
+  heavy_requests_per_demo_ip_per_minute: 3
+  heavy_requests_per_max_user_per_minute: 6
+  heavy_requests_concurrent_per_process: 4
+  request_body_bytes: 1048576
+  session_lifetime_seconds: 43200
+  init_data_max_age_seconds: 3600
+execution:
+  default: read_only
+  automatic_side_effects: >-
+    Только краткоживущая демо-сессия в памяти проверки. Вакансии, анкеты, отклики,
+    подписки и сообщения не создаются. POST /api/market сохраняет карточку, поэтому
+    вынесен в явный пользовательский сценарий вместе с остальными изменениями.
+  order: sequential
+  retry_429: Подождать минуту, не запускать нагрузочный перебор
+checks:
+  - id: health
+    required: true
+    role: anonymous
+    method: GET
+    path: /api/health
+    parameters: {}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      schema_ref: '#/components/schemas/Health'
+      required_fields: [ok, uptimeSec, updatesMode, bot, packs, inspections]
+      equals: {ok: true}
+  - id: demo_session
+    required: true
+    role: anonymous
+    method: POST
+    path: /api/session
+    parameters:
+      headers: {Content-Type: application/json}
+      body: {}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      schema_ref: '#/components/schemas/Session'
+      required_fields: [token, user, startParam]
+      equals: {user.demo: true}
+    capture: {DEMO_TOKEN: $.token}
+  - id: bootstrap
+    required: true
+    role: demo
+    method: GET
+    path: /api/bootstrap
+    parameters:
+      headers: {Authorization: 'Bearer ${DEMO_TOKEN}'}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      schema_ref: '#/components/schemas/Bootstrap'
+      required_fields: [bot, packs, regions, professions, user, recentCards, sources]
+  - id: catalog
+    required: true
+    role: demo
+    method: GET
+    path: /api/jobs
+    parameters:
+      query: {limit: 12, offset: 0}
+      headers: {Authorization: 'Bearer ${DEMO_TOKEN}'}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      schema_ref: '#/components/schemas/Jobs'
+      required_fields: [jobs, total, offset, limit]
+      forbidden_job_fields: [maxUserId, cardId, phone, answers, candidateName]
+    capture: {JOB_ID: '$.jobs[0].id'}
+  - id: catalog_filter
+    required: true
+    role: demo
+    method: GET
+    path: /api/jobs
+    parameters:
+      query: {q: повар, region: '78', minSalary: 60000, limit: 12, offset: 0}
+      headers: {Authorization: 'Bearer ${DEMO_TOKEN}'}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      schema_ref: '#/components/schemas/Jobs'
+      required_fields: [jobs, total, offset, limit]
+      note: Нулевой результат допустим; каталог меняется, число записей не зафиксировано
+  - id: job_card
+    required: true
+    role: demo
+    method: GET
+    path: /api/jobs/{id}
+    precondition: JOB_ID получен из непустого каталога; иначе проверка отмечается как пропущенная
+    parameters:
+      path: {id: '${JOB_ID}'}
+      headers: {Authorization: 'Bearer ${DEMO_TOKEN}'}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [job]
+      required_job_fields: [id, title, salary, employerName, regionCode, regionName, status, own, text, myResponse]
+  - id: unauthorized_catalog
+    required: true
+    role: anonymous
+    method: GET
+    path: /api/jobs
+    parameters: {}
+    expected_status_codes: [401]
+    expected_response:
+      content_type: application/json
+      schema_ref: '#/components/schemas/Error'
+      equals: {error: unauthorized}
+  - id: invalid_filter
+    required: true
+    role: demo
+    method: GET
+    path: /api/jobs
+    parameters:
+      query: {limit: 0}
+      headers: {Authorization: 'Bearer ${DEMO_TOKEN}'}
+    expected_status_codes: [400]
+    expected_response:
+      content_type: application/json
+      equals: {error: filters_invalid}
+  - id: absent_job
+    required: true
+    role: demo
+    method: GET
+    path: /api/jobs/{id}
+    parameters:
+      path: {id: acceptance-resource-does-not-exist}
+      headers: {Authorization: 'Bearer ${DEMO_TOKEN}'}
+    expected_status_codes: [404]
+    expected_response:
+      content_type: application/json
+      equals: {error: not_found}
+  - id: employer_market
+    required: true
+    execution: manual_in_max
+    role: employer
+    method: POST
+    path: /api/market
+    parameters:
+      headers: {Authorization: 'Bearer ${EMPLOYER_TOKEN}', Content-Type: application/json}
+      body: {professionText: повар, regionFnsCode: '78', offer: null, forceRefresh: false}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      schema_ref: '#/components/schemas/Market'
+      required_fields: [cardId, card, pack, profession, region, profile, sources, fetched, closure, createdAt]
+      note: При недоступном источнике возможен 503; это ограничение источника, а не успешная проверка
+    capture: {OWN_CARD_ID: $.cardId}
+  - id: employer_publish
+    required: true
+    execution: manual_in_max
+    role: employer
+    method: POST
+    path: /api/cards/{id}/vacancy
+    precondition: Работодатель получил свою карточку через POST /api/market и подтвердил условия в интерфейсе
+    parameters:
+      path: {id: '${OWN_CARD_ID}'}
+      headers: {Authorization: 'Bearer ${EMPLOYER_TOKEN}', Content-Type: application/json}
+      body:
+        salary: 83000
+        text: 'Проверка командой unecon.tech. Учебная вакансия, набор сотрудников не ведется.'
+        listed: true
+        requestId: acceptance-max-20260930
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [vacancy, link, qrSent]
+      equals: {vacancy.salary: 83000, vacancy.listed: true}
+  - id: candidate_apply
+    required: true
+    execution: manual_in_max
+    role: candidate
+    method: POST
+    path: /api/jobs/{id}/apply
+    precondition: Другой аккаунт MAX, чужая открытая учебная вакансия, явное согласие кандидата
+    parameters:
+      path: {id: '${OWN_TEST_VACANCY_ID}'}
+      headers: {Authorization: 'Bearer ${CANDIDATE_TOKEN}', Content-Type: application/json}
+      body: {experience: mid, schedule: true, expectedSalary: 83000, consent: true}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [response, created, employerNotified]
+      note: Повтор возвращает тот же отклик и created=false, без второй записи
+  - id: employer_inbox
+    required: true
+    execution: manual_in_max
+    role: employer
+    method: GET
+    path: /api/vacancies/{id}/responses
+    parameters:
+      path: {id: '${OWN_TEST_VACANCY_ID}'}
+      headers: {Authorization: 'Bearer ${EMPLOYER_TOKEN}'}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [vacancy, responses]
+  - id: employer_invite
+    required: true
+    execution: manual_in_max
+    role: employer
+    method: POST
+    path: /api/responses/{id}/invite
+    parameters:
+      path: {id: '${OWN_TEST_RESPONSE_ID}'}
+      headers: {Authorization: 'Bearer ${EMPLOYER_TOKEN}', Content-Type: application/json}
+      body: {message: Учебная проверка доставки приглашения команды unecon.tech}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [response, delivery]
+      equals: {response.status: invited}
+      note: delivery=sent означает успешный ответ MAX API; получатель отдельно подтверждает сообщение
+  - id: employer_hire
+    required: true
+    execution: manual_in_max
+    role: employer
+    method: POST
+    path: /api/responses/{id}/hire
+    parameters:
+      path: {id: '${OWN_TEST_RESPONSE_ID}'}
+      headers: {Authorization: 'Bearer ${EMPLOYER_TOKEN}', Content-Type: application/json}
+      body: {}
+    expected_status_codes: [200]
+    expected_response:
+      content_type: application/json
+      required_fields: [response, vacancy, delivery, otherNotificationsFailed]
+      equals: {response.status: hired, vacancy.status: closed}
+      note: Использовать только согласованный учебный отклик; это не реальное трудоустройство

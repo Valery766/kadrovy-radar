@@ -58,7 +58,7 @@ export function Jobs({ boot, jobId, onSelect, onBack, onHome, onEmployer }: Prop
     {!jobId && <>
       <Section title="Поиск вакансий">
         <form className="sv-stack" onSubmit={(e) => { e.preventDefault(); setFilters({ ...draft, offset: 0 }); }}>
-          <label htmlFor="job-query">Должность<Input id="job-query" placeholder="Например, повар или водитель" value={draft.q} maxLength={120} onChange={(e) => setDraft({ ...draft, q: e.target.value })} /></label>
+          <label htmlFor="job-query">Должность или работодатель<Input id="job-query" placeholder="Например, повар или название компании" value={draft.q} maxLength={120} onChange={(e) => setDraft({ ...draft, q: e.target.value })} /></label>
           <label htmlFor="job-region">Регион<select className="sv-select" id="job-region" value={draft.region} onChange={(e) => setDraft({ ...draft, region: e.target.value })}>
             <option value="">Все регионы</option>{boot.regions.map((r) => <option key={r.fnsCode} value={r.fnsCode}>{r.name}</option>)}
           </select></label>
@@ -68,7 +68,7 @@ export function Jobs({ boot, jobId, onSelect, onBack, onHome, onEmployer }: Prop
       </Section>
       {!items && !error && <div className="sv-center"><Spinner /></div>}
       {items && <Section title={`Найдено вакансий: ${total}`}>
-        {items.length === 0 && <Text>{total ? 'На этой странице вакансий больше нет. Вернитесь к первой странице.' : 'Подходящих вакансий пока нет. Попробуйте другой регион или сбросьте фильтры. Каталог наполняется объявлениями работодателей, разрешивших общий показ; вымышленных вакансий здесь нет.'}</Text>}
+        {items.length === 0 && <Text>{total ? 'На этой странице вакансий больше нет. Вернитесь к первой странице.' : 'Подходящих вакансий пока нет. Попробуйте другой регион или сбросьте фильтры.'}</Text>}
         <div className="sv-list">{items.map((v) => <div className="sv-item" key={v.id}>
           <div><div className="sv-item__title">{v.title}</div><div className="sv-item__sub">{v.regionName}{v.employerName ? ` · ${v.employerName}` : ''}</div><Text>{v.salary ? `От ${rub(v.salary)} в месяц` : 'Зарплата не указана'}</Text><Muted>{fmtDate(v.createdAt)}{v.own ? ' · ваша вакансия' : ''}</Muted><Button variant="secondary" onClick={() => onSelect(v.id)}>Посмотреть</Button></div>
         </div>)}</div>
